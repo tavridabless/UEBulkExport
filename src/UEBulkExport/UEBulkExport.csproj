@@ -46,25 +46,33 @@
   <PropertyGroup>
     <NativesPackageVersion>1.2.2</NativesPackageVersion>
     <NativesLibraryPath>$(NuGetPackageRoot)cue4parse/$(NativesPackageVersion)/lib/net8.0/CUE4Parse-Natives.dll</NativesLibraryPath>
+
+    <!--
+      The only build upstream publishes is a Windows DLL, so it is copied for Windows targets
+      only. On other platforms ACL animation export is unavailable until someone builds the
+      library from the CUE4Parse-Natives sources; everything else works.
+    -->
+    <NativesApply Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier.StartsWith('win'))</NativesApply>
+    <NativesApply Condition="'$(RuntimeIdentifier)' == ''">$([MSBuild]::IsOSPlatform('Windows'))</NativesApply>
+    <NativesWanted>$([System.String]::Copy('$(NativesApply)').ToLowerInvariant())</NativesWanted>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(NativesWanted)' == 'true'">
     <PackageDownload Include="CUE4Parse" Version="[$(NativesPackageVersion)]" />
   </ItemGroup>
 
-  <Target Name="CopyCUE4ParseNatives" AfterTargets="Build" Condition="Exists('$(NativesLibraryPath)')">
-    <Copy SourceFiles="$(NativesLibraryPath)"
-          DestinationFolder="$(OutDir)"
-          SkipUnchangedFiles="true" />
+  <Target Name="CopyCUE4ParseNatives" AfterTargets="Build"
+          Condition="'$(NativesWanted)' == 'true' and Exists('$(NativesLibraryPath)')">
+    <Copy SourceFiles="$(NativesLibraryPath)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
-  <Target Name="PublishCUE4ParseNatives" AfterTargets="Publish" Condition="Exists('$(NativesLibraryPath)')">
-    <Copy SourceFiles="$(NativesLibraryPath)"
-          DestinationFolder="$(PublishDir)"
-          SkipUnchangedFiles="true" />
+  <Target Name="PublishCUE4ParseNatives" AfterTargets="Publish"
+          Condition="'$(NativesWanted)' == 'true' and Exists('$(NativesLibraryPath)')">
+    <Copy SourceFiles="$(NativesLibraryPath)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
 
-  <Target Name="WarnMissingNatives" AfterTargets="Build" Condition="!Exists('$(NativesLibraryPath)')">
+  <Target Name="WarnMissingNatives" AfterTargets="Build"
+          Condition="'$(NativesWanted)' == 'true' and !Exists('$(NativesLibraryPath)')">
     <Warning Text="CUE4Parse-Natives.dll was not found at $(NativesLibraryPath). Animations will not export until it is available. Run 'dotnet restore' with network access, or drop the library next to the executable." />
   </Target>
 

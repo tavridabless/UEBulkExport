@@ -32,8 +32,10 @@ jobs:
         run: dotnet build src/UEBulkExport -c Release --no-restore -warnaserror
 
       # The native helper is lifted out of a downloaded NuGet package by the build. If that ever
-      # breaks, animations silently stop exporting, so fail loudly here instead.
+      # breaks, animations silently stop exporting, so fail loudly here instead. Upstream only
+      # publishes a Windows build of it, hence the condition.
       - name: Verify the native helper was fetched
+        if: runner.os == 'Windows'
         shell: bash
         run: |
           if ! ls src/UEBulkExport/bin/Release/net10.0/CUE4Parse-Natives.* >/dev/null 2>&1; then

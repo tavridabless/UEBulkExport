@@ -291,8 +291,15 @@ dotnet publish src/UEBulkExport -c Release -r win-x64 --self-contained -o artifa
 `artifacts/publish/UEBulkExport.exe` runs anywhere, with no runtime installed. For development,
 `dotnet build -c Release` is enough; that build needs .NET 10 present.
 
-Other runtime identifiers work too — `linux-x64`, `osx-arm64` — but Oodle and vgmstream are
-Windows-first, so a non-Windows build will be limited to containers that avoid Oodle compression.
+Releases ship a Windows build only, and that is a deliberate choice rather than an oversight.
+Everything a real export leans on outside managed code — the Oodle decompressor that almost every
+modern container needs, the ACL native behind animation export, vgmstream — is published by its
+upstream for Windows alone.
+
+Other runtime identifiers do build and are covered by CI, so `linux-x64` and `osx-arm64` are
+perfectly usable for containers that avoid Oodle compression. Animation export there needs a
+native library built from the `CUE4Parse-Natives` sources in the CUE4Parse repository; without
+it, animations are skipped and everything else still works.
 
 ---
 

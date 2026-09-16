@@ -16,12 +16,14 @@ jobs:
   release:
     name: Publish ${{ matrix.rid }}
     runs-on: ${{ matrix.os }}
+    # Windows only, deliberately. Every piece a real export needs off the managed path -
+    # the Oodle decompressor, the ACL native, vgmstream - is published by its upstream for
+    # Windows alone, so a Linux binary would only disappoint. Linux still builds from source
+    # and is covered by CI; see the README.
     strategy:
-      fail-fast: false
       matrix:
         include:
           - { os: windows-latest, rid: win-x64 }
-          - { os: ubuntu-latest,  rid: linux-x64 }
 
     steps:
       - uses: actions/checkout@v4
@@ -61,17 +63,11 @@ jobs:
         run: |
           name="UEBulkExport-${{ steps.version.outputs.value }}-${{ matrix.rid }}"
           cd staging
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            7z a -tzip "../$name.zip" UEBulkExport >/dev/null
-          else
-            tar -czf "../$name.tar.gz" UEBulkExport
-          fi
+          7z a -tzip "../$name.zip" UEBulkExport >/dev/null
 
       - name: Attach to the release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           generate_release_notes: true
-          files: |
-            UEBulkExport-*.zip
-            UEBulkExport-*.tar.gz
+          files: UEBulkExport-*.zip

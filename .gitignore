@@ -1,7 +1,10 @@
-# Build output
+# Build output and packaged releases
 bin/
 obj/
 artifacts/
+release/
+*.zip
+*.tar.gz
 
 # Native libraries: fetched at build time, never committed
 *.dll
