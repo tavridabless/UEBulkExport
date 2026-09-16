@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, without the leading v (e.g. 1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64 }
+          - { os: ubuntu-latest,  rid: linux-x64 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Work out the version
+        id: version
+        shell: bash
+        run: |
+          version="${{ github.event.inputs.version }}"
+          [ -n "$version" ] || version="${GITHUB_REF_NAME#v}"
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        run: >
+          dotnet publish src/UEBulkExport
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained true
+          -p:Version=${{ steps.version.outputs.value }}
+          -o staging/UEBulkExport
+
+      - name: Add the documentation people will need offline
+        shell: bash
+        run: |
+          cp README.md README.ru.md LICENSE NOTICE THIRD-PARTY-NOTICES.md staging/UEBulkExport/
+          mkdir -p staging/UEBulkExport/docs
+          cp docs/mappings.md staging/UEBulkExport/docs/
+          cp -r tools staging/UEBulkExport/
+
+      - name: Archive
+        shell: bash
+        run: |
+          name="UEBulkExport-${{ steps.version.outputs.value }}-${{ matrix.rid }}"
+          cd staging
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a -tzip "../$name.zip" UEBulkExport >/dev/null
+          else
+            tar -czf "../$name.tar.gz" UEBulkExport
+          fi
+
+      - name: Attach to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            UEBulkExport-*.zip
+            UEBulkExport-*.tar.gz

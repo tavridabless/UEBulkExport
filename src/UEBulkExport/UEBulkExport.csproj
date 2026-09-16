@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>UEBulkExport</AssemblyName>
+    <RootNamespace>UEBulkExport</RootNamespace>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- A native helper library has no managed metadata; the copy step warns about it harmlessly. -->
+    <NoWarn>$(NoWarn);MSB3246</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <Description>Bulk export of an entire Unreal Engine container (.utoc/.ucas/.pak) into one folder.</Description>
+    <Authors>UEBulkExport contributors</Authors>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/tavridabless/UEBulkExport</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/tavridabless/UEBulkExport.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CUE4Parse" Version="1.2.2.202609" />
+    <PackageReference Include="CUE4Parse-Conversion" Version="1.2.2.202609" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+
+    <!--
+      Pulled in transitively at 9.0.0, which carries a published advisory
+      (GHSA-73j8-2gch-69rq). Referencing it directly pins the fixed version instead.
+    -->
+    <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.12" />
+  </ItemGroup>
+
+  <!--
+    ACL animation decompression and several texture codecs live in CUE4Parse-Natives, a native
+    library that current CUE4Parse packages no longer ship. The last package that carried it was
+    CUE4Parse 1.2.2, and that build still matches the current managed ABI, so pull the package
+    down (without referencing its assemblies) and lift the native library out of it. This keeps
+    a third-party binary out of version control while still giving a working build out of the box.
+  -->
+  <PropertyGroup>
+    <NativesPackageVersion>1.2.2</NativesPackageVersion>
+    <NativesLibraryPath>$(NuGetPackageRoot)cue4parse/$(NativesPackageVersion)/lib/net8.0/CUE4Parse-Natives.dll</NativesLibraryPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageDownload Include="CUE4Parse" Version="[$(NativesPackageVersion)]" />
+  </ItemGroup>
+
+  <Target Name="CopyCUE4ParseNatives" AfterTargets="Build" Condition="Exists('$(NativesLibraryPath)')">
+    <Copy SourceFiles="$(NativesLibraryPath)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="PublishCUE4ParseNatives" AfterTargets="Publish" Condition="Exists('$(NativesLibraryPath)')">
+    <Copy SourceFiles="$(NativesLibraryPath)"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="WarnMissingNatives" AfterTargets="Build" Condition="!Exists('$(NativesLibraryPath)')">
+    <Warning Text="CUE4Parse-Natives.dll was not found at $(NativesLibraryPath). Animations will not export until it is available. Run 'dotnet restore' with network access, or drop the library next to the executable." />
+  </Target>
+
+</Project>

@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE', 'NOTICE']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore src/UEBulkExport
+
+      - name: Build
+        run: dotnet build src/UEBulkExport -c Release --no-restore -warnaserror
+
+      # The native helper is lifted out of a downloaded NuGet package by the build. If that ever
+      # breaks, animations silently stop exporting, so fail loudly here instead.
+      - name: Verify the native helper was fetched
+        shell: bash
+        run: |
+          if ! ls src/UEBulkExport/bin/Release/net10.0/CUE4Parse-Natives.* >/dev/null 2>&1; then
+            echo "::error::CUE4Parse-Natives was not copied into the build output"
+            exit 1
+          fi
+
+      - name: Smoke test the CLI
+        run: dotnet run --project src/UEBulkExport -c Release --no-build -- --version

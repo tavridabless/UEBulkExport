@@ -1,0 +1,29 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# Native libraries: fetched at build time, never committed
+*.dll
+*.so
+*.dylib
+
+# Mappings and exported assets must never be published: they are derived from,
+# or literally are, someone else's game content.
+*.usmap
+Export/
+export/
+_completed.txt
+errors.csv
+*.log
+
+# IDE
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+.DS_Store
