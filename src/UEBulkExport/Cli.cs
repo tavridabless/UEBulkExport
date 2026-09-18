@@ -41,6 +41,7 @@ public static class Cli
                 case "--oodle": o.OodlePath = Next(a); break;
                 case "--zlib": o.ZlibPath = Next(a); break;
                 case "--vgmstream": o.VgmStreamPath = Next(a); break;
+                case "--retoc": o.RetocPath = Next(a); break;
                 case "--game": o.Game = ParseGame(Next(a)); break;
                 case "--platform": o.Platform = ParseEnum<ETexturePlatform>(Next(a), a); break;
                 case "--mode": o.Mode = ParseEnum<ExportMode>(Next(a), a); break;
@@ -90,6 +91,9 @@ public static class Cli
 
         if (o.VgmStreamPath is not null && !File.Exists(o.VgmStreamPath))
             throw new UserFacingException($"vgmstream not found: {o.VgmStreamPath}");
+
+        if (o.RetocPath is not null && !File.Exists(o.RetocPath))
+            throw new UserFacingException($"retoc not found: {o.RetocPath}");
     }
 
     /// <summary>Fills in whatever the user did not have to spell out.</summary>

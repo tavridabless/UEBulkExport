@@ -11,6 +11,7 @@ using CUE4Parse.UE4.Assets.Exports.Material;
 using CUE4Parse.UE4.Assets.Exports.Sound;
 using CUE4Parse.UE4.Assets.Exports.Texture;
 using CUE4Parse.UE4.Assets.Exports.Wwise;
+using CUE4Parse.UE4.IO.Objects;
 using CUE4Parse.UE4.Objects.Core.Misc;
 using CUE4Parse.UE4.Objects.Engine;
 using CUE4Parse.UE4.Objects.Engine.Animation;
@@ -33,8 +34,9 @@ public sealed class BulkExporter : IDisposable
     private readonly HashSet<string> _alreadyDone = new(StringComparer.OrdinalIgnoreCase);
     private readonly Lock _indexGate = new();
     private StreamWriter? _index;
+    private bool _indexLoaded;
 
-    private int _processed, _exported, _skipped, _failed, _written, _unsupported;
+    private int _processed, _exported, _skipped, _failed, _written, _unsupported, _retocPackages;
 
     private readonly record struct ExportError(string Path, string Exception, string Message);
 
@@ -162,6 +164,7 @@ public sealed class BulkExporter : IDisposable
 
         var selected = _provider.Files.Values
             .DistinctBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
+            .Where(f => _options.Mode != ExportMode.Legacy || f.IsUePackage)
             .Where(f => include is null || include.IsMatch(f.Path))
             .Where(f => exclude is null || !exclude.IsMatch(f.Path))
             .OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
@@ -171,6 +174,10 @@ public sealed class BulkExporter : IDisposable
             throw new UserFacingException(
                 "The filters matched nothing.",
                 "Check --include / --exclude, or run with --mode list to see the container paths.");
+
+        if (selected.Count == 0 && _options.Mode == ExportMode.Legacy)
+            throw new UserFacingException("No .uasset or .umap packages were found.",
+                "Run --mode list to inspect the container, or use --mode raw for loose files.");
 
         return selected;
     }
@@ -207,6 +214,7 @@ public sealed class BulkExporter : IDisposable
     /// <summary>Shows how each entry would be treated, without touching the disk.</summary>
     public void PrintPlan(IReadOnlyList<GameFile> files)
     {
+        LoadIndex();
         var work = files.Where(ShouldProcess).ToList();
 
         var packages = work.Count(f => f.IsUePackage);
@@ -222,9 +230,19 @@ public sealed class BulkExporter : IDisposable
         Log.Raw("");
         Log.Raw($"  entries selected     {files.Count}");
         Log.Raw($"  already done         {files.Count - work.Count}");
-        Log.Raw($"  packages to parse    {packages}");
-        Log.Raw($"  loose files to copy  {loose}");
-        Log.Raw($"  payloads folded in   {payloads}");
+        if (_options.Mode == ExportMode.Legacy)
+        {
+            Log.Raw($"  packages to extract  {packages}");
+            Log.Raw("  payloads             included with their packages");
+            Log.Raw($"  IoStore conversion   {work.Count(f => f.IsUePackage && f is FIoStoreEntry)} package(s) via retoc");
+            Log.Raw("  editor compatibility cooked assets only; supported types may load read-only");
+        }
+        else
+        {
+            Log.Raw($"  packages to {(_options.Mode == ExportMode.Raw ? "copy" : "parse"),-8} {packages}");
+            Log.Raw($"  loose files to copy  {loose}");
+            Log.Raw($"  payload entries      {payloads}");
+        }
 
         if (_options.Mode is ExportMode.Full)
         {
@@ -250,7 +268,14 @@ public sealed class BulkExporter : IDisposable
         var clock = Stopwatch.StartNew();
         await using var progress = StartProgressReporter(work.Count, clock);
 
-        await Parallel.ForEachAsync(work,
+        if (_options.Mode == ExportMode.Legacy)
+            await ConvertIoStoreAsync(work, ct);
+
+        var individualWork = _options.Mode == ExportMode.Legacy
+            ? work.Where(f => f is not FIoStoreEntry).ToList()
+            : work;
+
+        await Parallel.ForEachAsync(individualWork,
             new ParallelOptions { MaxDegreeOfParallelism = _options.Threads, CancellationToken = ct },
             async (file, token) =>
             {
@@ -280,15 +305,64 @@ public sealed class BulkExporter : IDisposable
         return _failed == 0 ? 0 : 2;
     }
 
+    private async Task ConvertIoStoreAsync(IReadOnlyList<GameFile> work, CancellationToken ct)
+    {
+        var packages = work.Where(f => f.IsUePackage && f is FIoStoreEntry).ToList();
+        if (packages.Count == 0) return;
+
+        // retoc's filter is a substring, not a regex. Applying our regex after conversion would
+        // require writing potentially the entire game to a temporary directory first.
+        if (_options.IncludeRegex is not null || _options.ExcludeRegex is not null)
+            throw new UserFacingException(
+                "--include/--exclude cannot be used with legacy IoStore conversion.",
+                "retoc cannot apply regular-expression filters. Use --mode raw for filtered byte dumps.");
+
+        // A previous raw run may already have written a Zen .uasset at the same path. Require
+        // retoc to actually create or replace every package before marking it converted.
+        var previousWrites = packages.ToDictionary(f => f.Path, f =>
+        {
+            var path = OutputPath(f.Path);
+            return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : (DateTime?) null;
+        }, StringComparer.OrdinalIgnoreCase);
+
+        var executable = await Retoc.ResolveAsync(_options.RetocPath, ct);
+        Log.Info($"converting {packages.Count} IoStore package(s) to legacy cooked format with retoc");
+        await Retoc.ConvertAsync(executable, _options, ct);
+
+        foreach (var file in packages)
+        {
+            var path = OutputPath(file.Path);
+            if (File.Exists(path) && (previousWrites[file.Path] is null ||
+                                      File.GetLastWriteTimeUtc(path) > previousWrites[file.Path]))
+            {
+                _retocPackages++;
+                _exported++;
+                MarkDone(file.Path);
+            }
+            else
+            {
+                _failed++;
+                RecordError(file.Path, new IOException(
+                    "retoc did not create or replace the expected package; try an empty --out directory"));
+            }
+
+            _processed++;
+        }
+    }
+
     private void PrintSummary(TimeSpan elapsed, int preSkipped)
     {
         Log.Raw("");
         Log.Info($"done in {elapsed:hh\\:mm\\:ss}");
         Log.Info($"  entries processed : {_processed}");
         Log.Info($"  entries exported  : {_exported}");
-        Log.Info($"  files written     : {_written}");
+        Log.Info($"  files written     : {_written}" +
+                 (_retocPackages > 0 ? " (plus files written by retoc)" : ""));
+        if (_retocPackages > 0)
+            Log.Info($"  IoStore converted : {_retocPackages}");
         Log.Info($"  nothing to do     : {_skipped + preSkipped}");
-        Log.Info($"  no converter      : {_unsupported}  (properties still written as .json)");
+        if (_options.Mode is ExportMode.Full)
+            Log.Info($"  no converter      : {_unsupported}  (properties still written as .json)");
 
         if (_failed > 0)
             Log.Warn($"  failed            : {_failed}  (see errors.csv)");
@@ -300,6 +374,7 @@ public sealed class BulkExporter : IDisposable
     {
         if (_options.Resume && _alreadyDone.Contains(file.Path)) return false;
         if (_options.Mode == ExportMode.Raw) return true;
+        if (_options.Mode == ExportMode.Legacy) return file.IsUePackage;
         if (file.IsUePackagePayload) return _options.WriteRawPackages;
         if (file.IsUePackage) return true;
 
@@ -312,6 +387,14 @@ public sealed class BulkExporter : IDisposable
     {
         if (_options.Mode == ExportMode.Raw)
             return WriteBytes(OutputPath(file.Path), file.Read());
+
+        if (_options.Mode == ExportMode.Legacy)
+        {
+            var wrotePackage = false;
+            foreach (var (path, bytes) in _provider.SavePackage(file))
+                wrotePackage |= WriteBytes(OutputPath(path), bytes);
+            return wrotePackage;
+        }
 
         if (!file.IsUePackage)
         {
@@ -493,7 +576,9 @@ public sealed class BulkExporter : IDisposable
 
     // ------------------------------------------------------------------ resume index
 
-    private string IndexPath => Path.Combine(_options.OutputDirectory, "_completed.txt");
+    // A previous JSON or conversion run must not mark packages as extracted.
+    private string IndexPath => Path.Combine(_options.OutputDirectory,
+        $"_completed.{_options.Mode.ToString().ToLowerInvariant()}.txt");
 
     private void OpenIndex()
     {
@@ -501,10 +586,7 @@ public sealed class BulkExporter : IDisposable
         {
             if (_options.Resume)
             {
-                foreach (var line in File.ReadLines(IndexPath))
-                    if (line.Length > 0) _alreadyDone.Add(line);
-
-                Log.Info($"resuming: {_alreadyDone.Count} entries already finished (pass --overwrite to redo them)");
+                LoadIndex();
             }
             else
             {
@@ -513,6 +595,18 @@ public sealed class BulkExporter : IDisposable
         }
 
         _index = new StreamWriter(IndexPath, append: true) { AutoFlush = false };
+    }
+
+    private void LoadIndex()
+    {
+        if (_indexLoaded || !_options.Resume) return;
+        _indexLoaded = true;
+        if (!File.Exists(IndexPath)) return;
+
+        foreach (var line in File.ReadLines(IndexPath))
+            if (line.Length > 0) _alreadyDone.Add(line);
+
+        Log.Info($"resuming: {_alreadyDone.Count} entries already finished (pass --overwrite to redo them)");
     }
 
     private void MarkDone(string containerPath)

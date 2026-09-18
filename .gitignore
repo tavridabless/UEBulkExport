@@ -17,6 +17,7 @@ release/
 Export/
 export/
 _completed.txt
+_completed.*.txt
 errors.csv
 *.log
 

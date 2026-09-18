@@ -6,6 +6,9 @@ namespace UEBulkExport;
 
 public enum ExportMode
 {
+    /// <summary>Extract legacy-format cooked packages; convert IoStore packages with retoc.</summary>
+    Legacy,
+
     /// <summary>Parse every package and convert it to usable formats. Needs mappings.</summary>
     Full,
 
@@ -29,7 +32,7 @@ public sealed class Options
     public string? VgmStreamPath;
     public EGame Game = EGame.GAME_UE5_3;
     public ETexturePlatform Platform = ETexturePlatform.DesktopMobile;
-    public ExportMode Mode = ExportMode.Full;
+    public ExportMode Mode = ExportMode.Legacy;
     public List<string> AesKeys = [];
     public int Threads = Math.Max(1, Environment.ProcessorCount - 1);
 
@@ -46,6 +49,7 @@ public sealed class Options
     public bool Resume = true;
     public bool Verbose;
     public bool DryRun;
+    public string? RetocPath;
 
     public EMeshFormat MeshFormat = EMeshFormat.Gltf2;
     public EMeshFormat? AnimFormatOverride;
@@ -96,22 +100,27 @@ public sealed class Options
           --paks <path>         Where the containers are. Accepts the Paks folder itself, any
                                 folder above it (the game's root works), or a single .utoc file.
           --out <dir>           Destination folder. The container tree is mirrored inside it.
-          --usmap <file>        Mappings file. Found automatically when a single .usmap sits next
-                                to this executable, in the working directory, or beside the
-                                containers. Required for --mode full and --mode json.
+          --usmap <file>        Mappings file for full/json modes. Auto-detected when unique.
 
         CORE OPTIONS
-          --mode <m>            full (default) | raw | json | list
-                                  full - parse and convert everything          (needs mappings)
-                                  json - property dumps only                   (needs mappings)
-                                  raw  - byte-exact dump of every entry        (no mappings)
-                                  list - print the container contents and exit (no mappings)
+          --mode <m>            legacy (default) | full | raw | json | list
+                                  legacy - cooked .uasset/.umap and payloads; IoStore is
+                                           converted to legacy format with retoc (no mappings)
+                                  full   - parse and convert everything        (needs mappings)
+                                  json   - property dumps only                 (needs mappings)
+                                  raw    - byte-exact dump of every entry      (no mappings)
+                                  list   - print container contents and exit   (no mappings)
+                                Cooked assets are not restored to original editable assets.
+                                Unreal Editor can use only supported cooked types, read-only;
+                                opening them in an asset editor is not guaranteed.
           --game <version>      Engine version, default GAME_UE5_3.
                                 Accepts "5.3", "UE5_3" or "GAME_UE5_3".
           --aes <0x...>         AES key for encrypted containers. Repeatable.
                                 Use --aes <guid>:<0x...> to tie a key to one container.
           --threads <n>         Worker threads, default = CPU count - 1.
           --dry-run             Report what would be exported and write nothing.
+          --retoc <file>        retoc executable for IoStore-to-legacy conversion. On Windows
+                                x64, a verified copy is downloaded if one is not supplied.
 
         FILTERING
           --include <regex>     Only export entries whose container path matches.
@@ -158,12 +167,15 @@ public sealed class Options
           # What is in there? Works without mappings.
           UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" --mode list
 
-          # Everything, converted. Mappings picked up automatically if one .usmap is nearby.
+          # Extract cooked .uasset/.umap packages and their payloads; no JSON or usmap.
           UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export"
 
-          # Game content only, no stock engine assets, no levels.
+          # Convert to viewable formats. Mappings picked up if one .usmap is nearby.
+          UEBulkExport --paks "D:\Games\MyGame" --out "D:\Converted" --mode full
+
+          # Game content only, no stock engine assets, no levels (full mode).
           UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" ^
-                       --exclude "^Engine/" --no-worlds
+                       --mode full --exclude "^Engine/" --no-worlds
 
           # Byte-exact dump. No mappings required.
           UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export\raw" --mode raw

@@ -43,9 +43,13 @@ public static class Natives
 
         SetUpZlib(options.ZlibPath, searchDirs);
         SetUpOodle(options.OodlePath, searchDirs);
-        SetUpDetex(searchDirs);
-        SetUpCUE4ParseNatives(searchDirs, options);
-        Audio.Initialize(options, searchDirs);
+
+        if (options.Mode == ExportMode.Full)
+        {
+            SetUpDetex(searchDirs);
+            SetUpCUE4ParseNatives(searchDirs, options);
+            Audio.Initialize(options, searchDirs);
+        }
     }
 
     /// <summary>Places a previous run, or an FModel install, tends to leave these libraries.</summary>

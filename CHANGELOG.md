@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The default mode extracts cooked `.uasset`/`.umap` packages and payloads instead of writing
+  JSON. IoStore packages are converted to legacy cooked layout with retoc; no `.usmap` is needed.
+  Cooked packages do not restore editor-only data and open only where Unreal Editor supports the
+  cooked asset type, usually read-only.
+- Completion indexes are mode-specific, so earlier JSON runs cannot skip package extraction.
+  JSON and converted output remain available with `--mode json` and `--mode full`.
+
 ## [1.0.0] - 2026-09-17
 
 First release.

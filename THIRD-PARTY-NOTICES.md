@@ -47,6 +47,7 @@ point `--oodle` at a copy you already have instead.
 
 | Tool | License | Role |
 |---|---|---|
+| [retoc](https://github.com/trumank/retoc) | MIT | Converts IoStore Zen packages into legacy cooked `.uasset`/`.uexp` packages in the default mode. Version 0.1.5 is downloaded on Windows x64 after SHA-256 verification, or supplied with `--retoc`. It is never committed to this repository. |
 | [vgmstream](https://github.com/vgmstream/vgmstream) | ISC (with GPL-licensed optional codecs) | Converts BINKA/ADPCM audio to `.wav`. Never bundled; supply it with `--vgmstream`. |
 | [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) | MIT | Generates the `.usmap` mappings file from a running game. A separate program — UEBulkExport neither bundles nor links it. See [docs/mappings.md](docs/mappings.md). |
 

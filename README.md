@@ -2,7 +2,7 @@
 
 # UEBulkExport
 
-**Export an entire Unreal Engine container into one folder — in one command.**
+**Extract cooked Unreal Engine packages into one folder — in one command.**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/download)
@@ -22,9 +22,10 @@
 pulling out the handful of assets you need. What it deliberately does not have is a *take
 everything* button.
 
-UEBulkExport is that button, as a command line tool. Point it at a game, and every texture, mesh,
-animation, sound, level and property table in its containers lands in one folder, in formats you
-can actually open, with the original directory tree preserved.
+UEBulkExport extracts `.uasset`/`.umap` packages and their `.uexp`/`.ubulk`/`.uptnl` payloads,
+preserving the container's directory tree. This is the default behavior; it does not write JSON.
+IoStore packages are converted from Zen to the traditional cooked package layout with
+[retoc](https://github.com/trumank/retoc). The `full` and `json` modes remain available explicitly.
 
 ```
 UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export"
@@ -32,26 +33,30 @@ UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export"
 
 ### What it is built on
 
-**All of the difficult work belongs to [CUE4Parse](https://github.com/FabianFG/CUE4Parse)** — the
-same library FModel is built on. Mounting `.utoc`/`.ucas`/`.pak`, reading IoStore packages,
-resolving unversioned properties against a `.usmap`, decoding every texture format, writing glTF,
-ActorX, USD and UEFormat: that is CUE4Parse and CUE4Parse-Conversion, by FabianFG and
-contributors, under Apache-2.0.
+**Container reading and conversion use [CUE4Parse](https://github.com/FabianFG/CUE4Parse)** — the
+same library FModel is built on. IoStore-to-legacy cooked package conversion uses
+[retoc](https://github.com/trumank/retoc). CUE4Parse and CUE4Parse-Conversion are Apache-2.0;
+retoc is MIT licensed.
 
 UEBulkExport is roughly a thousand lines of orchestration on top: path discovery, work scheduling,
 the multi-pass export strategy, resumable runs, and diagnostics. It is a front end, and the
 [notices](THIRD-PARTY-NOTICES.md) spell out exactly who did what.
 
-**This is not a decompiler.** It unpacks and converts assets. Blueprints come out as serialised
-properties in JSON — readable, diffable, and enough to understand how something was configured,
-but not source code you can recompile.
+**This is not an uncooker.** Cooking removes editor-only data, so extracted packages are not the
+original editable assets. Unreal Editor supports opening only some cooked asset types, generally
+read-only, with cooked-content support enabled in the project. Blueprint source graphs cannot be
+recovered from cooked packages. The explicit `json` mode still writes serialised properties.
 
 ---
 
 ## Output
 
-The container's directory tree is mirrored exactly, so the result looks like the folder tree in
-FModel's left-hand panel.
+By default, the container's package tree is mirrored. For a package, the output is its cooked
+`.uasset` or `.umap` plus any associated `.uexp`, `.ubulk` and `.uptnl`. No `.usmap` is needed.
+Legacy `.pak` entries are extracted directly; IoStore packages are converted to legacy cooked
+layout by retoc. Neither route recreates uncooked editor data.
+
+With `--mode full`, the tool instead writes converted files:
 
 | Asset | Output |
 |---|---|
@@ -74,29 +79,28 @@ FModel's left-hand panel.
 Download the latest archive from [Releases](https://github.com/tavridabless/UEBulkExport/releases)
 and unpack it. The build is self-contained — no .NET installation required.
 
-### 2. Get a `.usmap`
-
-Shipping UE5 builds store properties **unversioned**: the packages hold hashes where property
-names should be. Nothing can read them without a mappings file — not this tool, not FModel, not
-anything else.
-
-**[docs/mappings.md](docs/mappings.md) explains how to produce one**, which takes about two
-minutes with UE4SS. Drop the resulting `.usmap` next to `UEBulkExport.exe` and it is picked up
-automatically.
-
-No mappings available? `--mode raw` gives a byte-exact dump that needs none — see
-[Modes](#modes) for the caveat.
-
-### 3. Run it
+### 2. Run the package extraction
 
 ```bat
 UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export"
 ```
 
-`--paks` accepts the game's root folder, the `Content\Paks` folder, or a single `.utoc` file —
-whichever you happen to have to hand.
+`--paks` accepts the game's root folder, the `Content\Paks` folder, or a single `.utoc` file.
+Add `--dry-run` to inspect the plan first. On Windows x64, a verified retoc binary is downloaded
+on the first IoStore conversion; use `--retoc` to supply your own. The result contains cooked
+packages. See [Epic's cooked-content guidance](https://dev.epicgames.com/documentation/unreal-engine/working-with-cooked-content-in-the-unreal-engine)
+for editor requirements and type limitations.
 
-Add `--dry-run` first if you want to see the plan before anything is written.
+### For converted files or JSON: get a `.usmap`
+
+The `full` and `json` modes deserialize properties, and shipping UE5 builds usually store those
+properties **unversioned**. Those modes need a mappings file; package extraction does not.
+
+**[docs/mappings.md](docs/mappings.md) explains how to produce one**, which takes about two
+minutes with UE4SS. Drop the resulting `.usmap` next to `UEBulkExport.exe` and it is picked up
+automatically.
+
+Run `--mode full` for converted files or `--mode json` for property dumps.
 
 ---
 
@@ -104,14 +108,30 @@ Add `--dry-run` first if you want to see the plan before anything is written.
 
 | Mode | Mappings | What it does |
 |---|---|---|
-| `full` *(default)* | required | Parses every package and converts it to usable formats |
+| `legacy` *(default)* | not needed | Extracts cooked `.uasset`/`.umap` with payloads; converts IoStore to legacy cooked layout using retoc |
+| `full` | required | Parses every package and converts it to usable formats |
 | `json` | required | Property dumps only — fast, small, great for diffing two builds |
 | `raw` | not needed | Byte-exact dump of every container entry |
 | `list` | not needed | Prints the container's contents and exits |
 
-> **About `raw`:** it always works, but IoStore `.uasset` files come out in their packed form.
-> They are readable by CUE4Parse-based tools and will *not* open in the Unreal editor. Use it to
-> inspect a container you have no mappings for, not as a substitute for a real export.
+> **Editor limitation:** `legacy` converts the *package layout*, not cooked assets back to their
+> uncooked originals. Unreal Editor opens only supported cooked types, generally read-only, when
+> configured to allow cooked content. `raw` keeps IoStore packages in Zen layout; those are not
+> ordinary editor packages.
+
+To try cooked packages in an Unreal project on Windows, use a matching engine version, preserve
+the original `Content` path, and add this to the project's `Config/DefaultEngine.ini`:
+
+```ini
+[/Script/UnrealEd.CookerSettings]
+cook.AllowCookedDataInEditorBuilds=True
+s.AllowUnversionedContentInEditor=1
+```
+
+Copy the package and every associated payload into the matching `Content` path. Epic notes that
+asset editors and many classes remain unsupported; this does not make the package editable.
+The automatic retoc 0.1.5 download supports versions through UE5.7; for newer versions, supply
+a compatible retoc build with `--retoc` when one becomes available.
 
 ---
 
@@ -131,19 +151,20 @@ Run `UEBulkExport --help` for the authoritative list.
 
 | Option | Meaning |
 |---|---|
-| `--mode full\|json\|raw\|list` | See [Modes](#modes) |
+| `--mode legacy\|full\|json\|raw\|list` | See [Modes](#modes) |
 | `--game <version>` | Engine version, default `GAME_UE5_3`. Accepts `5.3`, `UE5_3`, `GAME_UE5_3` |
 | `--aes 0x…` | AES key for encrypted containers. Repeatable; `--aes <guid>:0x…` ties a key to one container |
 | `--threads <n>` | Worker threads, default = CPU count − 1 |
 | `--dry-run` | Report the plan and write nothing |
+| `--retoc <file>` | retoc executable for IoStore legacy conversion; auto-downloaded on Windows x64 if omitted |
 | `--version` | Print the version and exit |
 
 ### Filtering
 
 | Option | Meaning |
 |---|---|
-| `--include <regex>` | Only entries whose container path matches |
-| `--exclude <regex>` | Skip entries whose container path matches |
+| `--include <regex>` | Only entries whose container path matches; unavailable for IoStore in `legacy` mode |
+| `--exclude <regex>` | Skip entries whose container path matches; unavailable for IoStore in `legacy` mode |
 
 ### What to write
 
@@ -184,24 +205,23 @@ Run `UEBulkExport --help` for the authoritative list.
 
 ## Recipes
 
-**Game content only, skipping stock engine assets and levels** — the usual starting point, and
-much faster:
+**Game content only, skipping stock engine assets and levels**, in conversion mode:
 
 ```bat
-UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" --exclude "^Engine/" --no-worlds
+UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" --mode full --exclude "^Engine/" --no-worlds
 ```
 
 **Only the textures, as TGA:**
 
 ```bat
 UEBulkExport --paks "D:\Games\MyGame" --out "D:\Textures" ^
-             --no-raw-misc --include "/Textures?/" --texture tga
+             --mode full --no-raw-misc --include "/Textures?/" --texture tga
 ```
 
 **Meshes and skeletons for Blender's PSK/PSA importer:**
 
 ```bat
-UEBulkExport --paks "D:\Games\MyGame" --out "D:\Meshes" --mesh actorx --no-json
+UEBulkExport --paks "D:\Games\MyGame" --out "D:\Meshes" --mode full --mesh actorx --no-json
 ```
 
 **Diff two builds** — property dumps only, then compare the folders with any diff tool:
@@ -222,19 +242,19 @@ UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" ^
 
 ## Resuming, logs and errors
 
-Every processed entry is appended to `_completed.txt` in the output folder. Re-running the same
+Every processed entry is appended to `_completed.<mode>.txt` in the output folder. Re-running the same
 command picks up where it stopped — handy when an export is interrupted, or when you want to add
 `--materials` to a finished run without redoing everything. `--overwrite` starts fresh.
 
-Two more files land in the output folder:
+Two more files may land in the output folder:
 
 - **`UEBulkExport.log`** — the full run log.
 - **`errors.csv`** — one row per entry that could not be converted, with the exception and
   message. The five most common causes are printed at the end of the run.
 
-The summary also reports a **`no converter`** count. Those are objects CUE4Parse has no file
-format for — components, anim notifies, blueprint nodes, actors inside levels. Nothing is lost:
-their properties are in the `.json` output. Assets that hold no data on disk are skipped
+In `full` mode, the summary also reports a **`no converter`** count. Those are objects CUE4Parse
+has no file format for — components, anim notifies, blueprint nodes, actors inside levels. Their
+properties are in the `.json` output. Assets that hold no data on disk are skipped
 deliberately: `TextureRenderTarget`, `MediaTexture`, `BinkMediaTexture` (filled by the engine at
 runtime) and `BlendSpace` (a set of blending rules, not an animation).
 
@@ -244,7 +264,7 @@ runtime) and `BlendSpace` (a set of blending rules, not an animation).
 
 A few details that are not obvious, and cost time to rediscover:
 
-**Three export passes, not one.** CUE4Parse's `ExportSession` keys its queue by object path, so
+**The `full` mode needs multiple passes.** CUE4Parse's `ExportSession` keys its queue by object path, so
 queuing two exporters for the same object silently drops one. The property dump and the asset
 conversion therefore run as separate sessions. Animations, standalone skeletons and levels each
 need a format glTF cannot provide, so they run as further passes with their own options —
@@ -269,6 +289,7 @@ or downloaded. Full detail, with licences, in [THIRD-PARTY-NOTICES.md](THIRD-PAR
 | Component | Licence | How it arrives |
 |---|---|---|
 | CUE4Parse, CUE4Parse-Conversion | Apache-2.0 | NuGet, on restore |
+| retoc 0.1.5 (IoStore legacy conversion) | MIT | Verified download on Windows x64 or supplied via `--retoc` |
 | Newtonsoft.Json | MIT | NuGet, on restore |
 | `CUE4Parse-Natives` (ACL animations) | Apache-2.0 | Lifted from the CUE4Parse 1.2.2 package at build time; downloaded at runtime if missing |
 | `Detex` (BC/ETC/ASTC textures) | ISC | Unpacked from a resource embedded in CUE4Parse-Conversion |
