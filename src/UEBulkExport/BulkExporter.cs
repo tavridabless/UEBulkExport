@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 using CUE4Parse.Encryption.Aes;
 using CUE4Parse.FileProvider;
 using CUE4Parse.FileProvider.Objects;
@@ -159,8 +158,8 @@ public sealed class BulkExporter : IDisposable
 
     public IReadOnlyList<GameFile> SelectFiles()
     {
-        var include = CompileFilter(_options.IncludeRegex, "--include");
-        var exclude = CompileFilter(_options.ExcludeRegex, "--exclude");
+        var include = Cli.CompileFilter(_options.IncludeRegex, "--include");
+        var exclude = Cli.CompileFilter(_options.ExcludeRegex, "--exclude");
 
         var selected = _provider.Files.Values
             .DistinctBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
@@ -179,17 +178,6 @@ public sealed class BulkExporter : IDisposable
                 "Run --mode list to inspect the container.");
 
         return selected;
-    }
-
-    private static Regex? CompileFilter(string? pattern, string argument)
-    {
-        if (pattern is null) return null;
-
-        try { return new Regex(pattern, RegexOptions.IgnoreCase); }
-        catch (ArgumentException e)
-        {
-            throw new UserFacingException($"{argument} is not a valid regular expression: {e.Message}");
-        }
     }
 
     public void PrintListing(IReadOnlyList<GameFile> files)
@@ -312,13 +300,6 @@ public sealed class BulkExporter : IDisposable
     {
         var packages = work.Where(f => f.IsUePackage && f is FIoStoreEntry).ToList();
         if (packages.Count == 0) return;
-
-        // retoc's filter is a substring, not a regex. Applying our regex after conversion would
-        // require writing potentially the entire game to a temporary directory first.
-        if (_options.IncludeRegex is not null || _options.ExcludeRegex is not null)
-            throw new UserFacingException(
-                "--include/--exclude cannot be used with legacy IoStore conversion.",
-                "retoc cannot apply regular-expression filters. Use --mode raw for filtered byte dumps.");
 
         // A previous raw run may already have written a Zen .uasset at the same path. Require
         // retoc to actually create or replace every package before marking it converted.

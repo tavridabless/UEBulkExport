@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using CUE4Parse.UE4.Assets.Exports.Texture;
 using CUE4Parse.UE4.Versions;
 using CUE4Parse_Conversion.Options;
@@ -74,6 +75,7 @@ public static class Cli
 
         Validate(o);
         Resolve(o);
+        ValidateResolved(o);
         return o;
     }
 
@@ -94,6 +96,33 @@ public static class Cli
 
         if (o.RetocPath is not null && !File.Exists(o.RetocPath))
             throw new UserFacingException($"retoc not found: {o.RetocPath}");
+
+        _ = CompileFilter(o.IncludeRegex, "--include");
+        _ = CompileFilter(o.ExcludeRegex, "--exclude");
+    }
+
+    /// <summary>Checks rules that depend on the actual container directory.</summary>
+    private static void ValidateResolved(Options o)
+    {
+        if (o.Mode == ExportMode.Legacy &&
+            (o.IncludeRegex is not null || o.ExcludeRegex is not null) &&
+            Discovery.HasIoStoreContainers(o.PaksDirectory))
+        {
+            throw new UserFacingException(
+                "--include/--exclude cannot be used with legacy IoStore conversion.",
+                "retoc cannot apply regular-expression filters. Use --mode raw for filtered byte dumps.");
+        }
+    }
+
+    internal static Regex? CompileFilter(string? pattern, string argument)
+    {
+        if (pattern is null) return null;
+
+        try { return new Regex(pattern, RegexOptions.IgnoreCase); }
+        catch (ArgumentException e)
+        {
+            throw new UserFacingException($"{argument} is not a valid regular expression: {e.Message}");
+        }
     }
 
     /// <summary>Fills in whatever the user did not have to spell out.</summary>

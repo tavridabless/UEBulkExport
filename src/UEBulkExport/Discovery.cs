@@ -86,6 +86,23 @@ public static class Discovery
         };
     }
 
+    /// <summary>True when the resolved container folder contains an IoStore table of contents.</summary>
+    public static bool HasIoStoreContainers(string directory)
+    {
+        try
+        {
+            return Directory
+                .EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly)
+                .Any(f => Path.GetExtension(f).Equals(".utoc", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            throw new UserFacingException(
+                $"Cannot inspect the container folder: {directory}",
+                "Check that the current user has permission to read it.");
+        }
+    }
+
     private static IEnumerable<string> MappingSearchDirectories(string paksDirectory, string? outputDirectory)
     {
         yield return AppContext.BaseDirectory;
