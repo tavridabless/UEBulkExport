@@ -164,7 +164,6 @@ public sealed class BulkExporter : IDisposable
 
         var selected = _provider.Files.Values
             .DistinctBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
-            .Where(f => _options.Mode != ExportMode.Legacy || f.IsUePackage)
             .Where(f => include is null || include.IsMatch(f.Path))
             .Where(f => exclude is null || !exclude.IsMatch(f.Path))
             .OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
@@ -176,8 +175,8 @@ public sealed class BulkExporter : IDisposable
                 "Check --include / --exclude, or run with --mode list to see the container paths.");
 
         if (selected.Count == 0 && _options.Mode == ExportMode.Legacy)
-            throw new UserFacingException("No .uasset or .umap packages were found.",
-                "Run --mode list to inspect the container, or use --mode raw for loose files.");
+            throw new UserFacingException("No files were found to extract.",
+                "Run --mode list to inspect the container.");
 
         return selected;
     }
@@ -220,6 +219,8 @@ public sealed class BulkExporter : IDisposable
         var packages = work.Count(f => f.IsUePackage);
         var loose = work.Count(f => !f.IsUePackage && !f.IsUePackagePayload);
         var payloads = work.Count(f => f.IsUePackagePayload);
+        var alreadyDone = _options.Resume ? files.Count(f => _alreadyDone.Contains(f.Path)) : 0;
+        var skippedByMode = files.Count - work.Count - alreadyDone;
 
         Log.Raw("");
         Log.Raw("dry run - nothing will be written");
@@ -229,10 +230,12 @@ public sealed class BulkExporter : IDisposable
         Log.Raw($"  mappings             {_options.UsmapPath ?? "(none)"}");
         Log.Raw("");
         Log.Raw($"  entries selected     {files.Count}");
-        Log.Raw($"  already done         {files.Count - work.Count}");
+        Log.Raw($"  already done         {alreadyDone}");
+        Log.Raw($"  skipped by mode      {skippedByMode}");
         if (_options.Mode == ExportMode.Legacy)
         {
             Log.Raw($"  packages to extract  {packages}");
+            Log.Raw($"  loose files to copy  {loose}");
             Log.Raw("  payloads             included with their packages");
             Log.Raw($"  IoStore conversion   {work.Count(f => f.IsUePackage && f is FIoStoreEntry)} package(s) via retoc");
             Log.Raw("  editor compatibility cooked assets only; supported types may load read-only");
@@ -272,7 +275,7 @@ public sealed class BulkExporter : IDisposable
             await ConvertIoStoreAsync(work, ct);
 
         var individualWork = _options.Mode == ExportMode.Legacy
-            ? work.Where(f => f is not FIoStoreEntry).ToList()
+            ? work.Where(f => !(f.IsUePackage && f is FIoStoreEntry)).ToList()
             : work;
 
         await Parallel.ForEachAsync(individualWork,
@@ -374,7 +377,7 @@ public sealed class BulkExporter : IDisposable
     {
         if (_options.Resume && _alreadyDone.Contains(file.Path)) return false;
         if (_options.Mode == ExportMode.Raw) return true;
-        if (_options.Mode == ExportMode.Legacy) return file.IsUePackage;
+        if (_options.Mode == ExportMode.Legacy) return !file.IsUePackagePayload;
         if (file.IsUePackagePayload) return _options.WriteRawPackages;
         if (file.IsUePackage) return true;
 
@@ -390,6 +393,9 @@ public sealed class BulkExporter : IDisposable
 
         if (_options.Mode == ExportMode.Legacy)
         {
+            if (!file.IsUePackage)
+                return WriteBytes(OutputPath(file.Path), file.Read());
+
             var wrotePackage = false;
             foreach (var (path, bytes) in _provider.SavePackage(file))
                 wrotePackage |= WriteBytes(OutputPath(path), bytes);
