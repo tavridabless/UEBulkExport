@@ -105,6 +105,18 @@ public static class Retoc
         }
 
         start.ArgumentList.Add("to-legacy");
+
+        // retoc can usually infer this from the container header, but some games use a header
+        // version shared by several engine releases. Honour UEBulkExport's --game option so the
+        // conversion is deterministic instead of silently relying on that inference.
+        var engineVersion = ToRetocEngineVersion(options.Game.ToString());
+        if (engineVersion is not null)
+        {
+            start.ArgumentList.Add("--version");
+            start.ArgumentList.Add(engineVersion);
+            Log.Info($"retoc engine version: {engineVersion}");
+        }
+
         start.ArgumentList.Add(options.PaksDirectory);
         start.ArgumentList.Add(options.OutputDirectory);
 
@@ -145,4 +157,18 @@ public static class Retoc
 
     private static string LastLines(string output) =>
         string.Join(Environment.NewLine, output.Split('\n').TakeLast(8)).Trim();
+
+    internal static string? ToRetocEngineVersion(string cue4ParseGame)
+    {
+        const string prefix = "GAME_UE";
+        if (!cue4ParseGame.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+
+        var components = cue4ParseGame[prefix.Length..].Split('_');
+        if (components.Length != 2 ||
+            !int.TryParse(components[0], out var major) ||
+            !int.TryParse(components[1], out var minor))
+            return null;
+
+        return $"UE{major}_{minor}";
+    }
 }

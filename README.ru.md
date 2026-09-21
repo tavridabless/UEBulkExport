@@ -116,8 +116,9 @@ UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export"
 > разрешения cooked-контента. `raw` оставляет IoStore-пакеты в формате Zen; это не обычные пакеты
 > для редактора.
 
-Чтобы попробовать cooked-пакеты в проекте Unreal на Windows, используйте подходящую версию
-движка, сохраните исходный путь `Content` и добавьте в `Config/DefaultEngine.ini` проекта:
+Чтобы попробовать cooked-пакеты в проекте Unreal на Windows, используйте ту же версию движка,
+на которой собрана игра (включая minor-версию), сохраните исходный путь `Content` и добавьте в
+`Config/DefaultEngine.ini` проекта:
 
 ```ini
 [/Script/UnrealEd.CookerSettings]

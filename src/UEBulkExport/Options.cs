@@ -112,7 +112,8 @@ public sealed class Options
                                   list   - print container contents and exit   (no mappings)
                                 Cooked assets are not restored to original editable assets.
                                 Unreal Editor can use only supported cooked types, read-only;
-                                opening them in an asset editor is not guaranteed.
+                                use the same engine version that cooked them. Opening them in an
+                                asset editor is not supported.
           --game <version>      Engine version, default GAME_UE5_3.
                                 Accepts "5.3", "UE5_3" or "GAME_UE5_3".
           --aes <0x...>         AES key for encrypted containers. Repeatable.

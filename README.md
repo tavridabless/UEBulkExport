@@ -119,8 +119,9 @@ Run `--mode full` for converted files or `--mode json` for property dumps.
 > configured to allow cooked content. `raw` keeps IoStore packages in Zen layout; those are not
 > ordinary editor packages.
 
-To try cooked packages in an Unreal project on Windows, use a matching engine version, preserve
-the original `Content` path, and add this to the project's `Config/DefaultEngine.ini`:
+To try cooked packages in an Unreal project on Windows, use the same engine version that built
+the game (including its minor version), preserve the original `Content` path, and add this to the
+project's `Config/DefaultEngine.ini`:
 
 ```ini
 [/Script/UnrealEd.CookerSettings]

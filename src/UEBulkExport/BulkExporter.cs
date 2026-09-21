@@ -38,6 +38,7 @@ public sealed class BulkExporter : IDisposable
     private int _processed, _exported, _skipped, _failed, _written, _unsupported, _retocPackages;
 
     private readonly record struct ExportError(string Path, string Exception, string Message);
+    private readonly record struct WorkResult(bool Wrote, bool HadErrors);
 
     public BulkExporter(Options options)
     {
@@ -254,6 +255,9 @@ public sealed class BulkExporter : IDisposable
 
         var work = files.Where(ShouldProcess).ToList();
         var preSkipped = files.Count - work.Count;
+        if (_options.Mode == ExportMode.Full && _options.ExportMaterials && _options.Threads > 1)
+            Log.Warn("parallel material export may contend on shared dependencies; rerun with --threads 1 to resume only incomplete packages");
+
         Log.Info($"{work.Count} entries to process ({preSkipped} skipped by mode/resume), {_options.Threads} threads");
 
         var clock = Stopwatch.StartNew();
@@ -272,10 +276,11 @@ public sealed class BulkExporter : IDisposable
             {
                 try
                 {
-                    if (await ProcessFileAsync(file, token)) Interlocked.Increment(ref _exported);
+                    var result = await ProcessFileAsync(file, token);
+                    if (result.Wrote) Interlocked.Increment(ref _exported);
                     else Interlocked.Increment(ref _skipped);
 
-                    MarkDone(file.Path);
+                    if (!result.HadErrors) MarkDone(file.Path);
                 }
                 catch (Exception e)
                 {
@@ -367,29 +372,30 @@ public sealed class BulkExporter : IDisposable
 
     // ------------------------------------------------------------------ per entry
 
-    private async Task<bool> ProcessFileAsync(GameFile file, CancellationToken ct)
+    private async Task<WorkResult> ProcessFileAsync(GameFile file, CancellationToken ct)
     {
         if (_options.Mode == ExportMode.Raw)
-            return WriteBytes(OutputPath(file.Path), file.Read());
+            return new WorkResult(WriteBytes(OutputPath(file.Path), file.Read()), false);
 
         if (_options.Mode == ExportMode.Legacy)
         {
             if (!file.IsUePackage)
-                return WriteBytes(OutputPath(file.Path), file.Read());
+                return new WorkResult(WriteBytes(OutputPath(file.Path), file.Read()), false);
 
             var wrotePackage = false;
             foreach (var (path, bytes) in _provider.SavePackage(file))
                 wrotePackage |= WriteBytes(OutputPath(path), bytes);
-            return wrotePackage;
+            return new WorkResult(wrotePackage, false);
         }
 
         if (!file.IsUePackage)
         {
-            if (file.IsUePackagePayload && !_options.WriteRawPackages) return false;
-            return _options.WriteRawMisc && WriteBytes(OutputPath(file.Path), file.Read());
+            if (file.IsUePackagePayload && !_options.WriteRawPackages) return default;
+            return new WorkResult(_options.WriteRawMisc && WriteBytes(OutputPath(file.Path), file.Read()), false);
         }
 
         var wrote = false;
+        var hadErrors = false;
 
         if (_options.WriteRawPackages)
             foreach (var (path, bytes) in _provider.SavePackage(file))
@@ -401,7 +407,8 @@ public sealed class BulkExporter : IDisposable
         // The property dump and the asset conversion have to be separate passes: a session keys
         // its queue by object path, so queuing both for one object silently drops one of them.
         if (_options.WriteJson)
-            wrote |= await RunSessionAsync(session =>
+        {
+            var result = await RunSessionAsync(session =>
             {
                 foreach (var export in exports)
                 {
@@ -411,21 +418,33 @@ public sealed class BulkExporter : IDisposable
                     session.Add(new JsonPropertiesExporter(export));
                 }
             }, file.Path, _exportOptions, ct);
+            wrote |= result.Wrote;
+            hadErrors |= result.HadErrors;
+        }
 
         if (_options.WriteAssets && _options.Mode == ExportMode.Full)
         {
             // Animations, bare skeletons and levels each need a format glTF cannot provide,
             // so every group runs as its own pass with its own options.
-            wrote |= await RunSessionAsync(s => Queue(s, exports, ExportKind.Standard), file.Path, _exportOptions, ct);
-            wrote |= await RunSessionAsync(s => Queue(s, exports, ExportKind.Animation), file.Path, _animExportOptions, ct);
+            var standard = await RunSessionAsync(s => Queue(s, exports, ExportKind.Standard), file.Path, _exportOptions, ct);
+            wrote |= standard.Wrote;
+            hadErrors |= standard.HadErrors;
+
+            var animation = await RunSessionAsync(s => Queue(s, exports, ExportKind.Animation), file.Path, _animExportOptions, ct);
+            wrote |= animation.Wrote;
+            hadErrors |= animation.HadErrors;
 
             if (_options.ExportWorlds)
-                wrote |= await RunSessionAsync(s => Queue(s, exports, ExportKind.World), file.Path, _worldExportOptions, ct);
+            {
+                var world = await RunSessionAsync(s => Queue(s, exports, ExportKind.World), file.Path, _worldExportOptions, ct);
+                wrote |= world.Wrote;
+                hadErrors |= world.HadErrors;
+            }
 
             wrote |= await ExportSoundsAsync(exports, file, ct);
         }
 
-        return wrote;
+        return new WorkResult(wrote, hadErrors);
     }
 
     private enum ExportKind { Standard, Animation, World }
@@ -464,16 +483,17 @@ public sealed class BulkExporter : IDisposable
     /// Runs one export session rooted at the output folder. CUE4Parse rebuilds the container path
     /// from each object's package, so the result mirrors the container tree without further work.
     /// </summary>
-    private async Task<bool> RunSessionAsync(Action<ExportSession> fill, string containerPath,
+    private async Task<WorkResult> RunSessionAsync(Action<ExportSession> fill, string containerPath,
         ExportOptions options, CancellationToken ct)
     {
         var session = new ExportSession { MaxDegreeOfParallelism = 1 };
         fill(session);
 
-        if (!session.HasQueuedItems) return false;
+        if (!session.HasQueuedItems) return default;
 
         var results = await session.RunAsync(_options.OutputDirectory, options, ct: ct);
         var wrote = false;
+        var hadErrors = false;
 
         foreach (var result in results)
         {
@@ -489,6 +509,7 @@ public sealed class BulkExporter : IDisposable
                 }
 
                 Interlocked.Increment(ref _failed);
+                hadErrors = true;
                 RecordError($"{containerPath} :: {result.ObjectPath}",
                     result.Error ?? new Exception("exporter reported failure"));
                 continue;
@@ -502,7 +523,7 @@ public sealed class BulkExporter : IDisposable
             }
         }
 
-        return wrote;
+        return new WorkResult(wrote, hadErrors);
     }
 
     // ------------------------------------------------------------------ audio
@@ -627,9 +648,12 @@ public sealed class BulkExporter : IDisposable
 
     private void WriteErrorReport()
     {
-        if (_errors.IsEmpty) return;
-
         var path = Path.Combine(_options.OutputDirectory, "errors.csv");
+        if (_errors.IsEmpty)
+        {
+            if (File.Exists(path)) File.Delete(path);
+            return;
+        }
 
         using (var writer = new StreamWriter(path, append: false))
         {

@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-20
+
 ### Changed
 
 - The default mode extracts cooked `.uasset`/`.umap` packages and payloads instead of writing
@@ -14,6 +16,12 @@ All notable changes to this project are documented here. The format follows
   cooked asset type, usually read-only.
 - Completion indexes are mode-specific, so earlier JSON runs cannot skip package extraction.
   JSON and converted output remain available with `--mode json` and `--mode full`.
+- Legacy IoStore conversion now passes the selected `--game` engine version to retoc instead of
+  relying on container-header inference.
+- Cooked packages are documented as requiring the same engine version that produced them.
+- Partially failed packages are no longer recorded as completed, so shared material/texture write
+  races from a parallel pass can be resumed safely with `--threads 1`; a successful retry also
+  removes the stale error report.
 
 ## [1.0.0] - 2026-09-17
 
@@ -41,3 +49,4 @@ First release.
   keypad.
 
 [1.0.0]: https://github.com/tavridabless/UEBulkExport/releases/tag/v1.0.0
+[1.1.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.0.0...v1.1.0
