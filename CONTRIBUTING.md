@@ -10,8 +10,8 @@ decides where a change belongs:
 - **Parsing a container, decoding a format, exporting an asset type** → that is CUE4Parse. Report
   it, or contribute it, [there](https://github.com/FabianFG/CUE4Parse/issues). Everyone using the
   library benefits, this tool included.
-- **Which assets get exported, in what order, where they land, what the CLI looks like, how
-  failures are reported** → that is here.
+- **Which assets get exported, in what order, where they land, what the CLI and the window look
+  like, how failures are reported** → that is here.
 
 If you are unsure, open an issue and we can work it out.
 
@@ -19,7 +19,7 @@ If you are unsure, open an issue and we can work it out.
 
 An export failure is far easier to act on with:
 
-- the exact command you ran;
+- the exact command you ran (the window shows it in the "Equivalent command line" box);
 - the engine version (`--game`, or what the game's `.uproject` says);
 - the summary block at the end of the run;
 - the relevant rows from `errors.csv`;
@@ -34,11 +34,36 @@ redistribute, and the paths and error messages are enough.
 ## Building
 
 ```bash
-dotnet build src/UEBulkExport -c Release
+dotnet build UEBulkExport.slnx -c Release
+dotnet test tests/UEBulkExport.Tests -c Release
 ```
 
 Requires the .NET 10 SDK. The first build downloads a NuGet package to extract
-`CUE4Parse-Natives` from; after that it works offline.
+`CUE4Parse-Natives` from; after that it works offline. The tests need neither network access nor
+game files.
+
+The solution has three source projects and one test project:
+
+- `src/UEBulkExport.Core` — the library with all export logic. Anything that is not presentation
+  belongs here, so both front ends behave the same.
+- `src/UEBulkExport.Cli` — the console front end, `UEBulkExport.Cli.exe`.
+- `src/UEBulkExport` — the desktop window, `UEBulkExport.exe`.
+- `tests/UEBulkExport.Tests` — xunit tests for the core.
+
+To produce the release layout, publish both executables into one folder:
+
+```bash
+dotnet publish src/UEBulkExport     -c Release -r win-x64 --self-contained -o artifacts/publish
+dotnet publish src/UEBulkExport.Cli -c Release -r win-x64 --self-contained -o artifacts/publish
+```
+
+### GUI code
+
+The window lives under `src/UEBulkExport` and is built with Avalonia, MVVM style, using
+CommunityToolkit.Mvvm for observable properties and commands. User-visible strings go into
+`Localization/Strings.en.json` and `Localization/Strings.ru.json` with the same keys in both
+files — never hard-coded in XAML or view models. Never copy code, XAML, icons or text from FModel:
+it is GPL-3.0 and this project is Apache-2.0.
 
 ## Code style
 

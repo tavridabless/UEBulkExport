@@ -1,0 +1,382 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:UEBulkExport.Gui.ViewModels"
+             xmlns:loc="using:UEBulkExport.Gui.Localization"
+             xmlns:svc="using:UEBulkExport.Gui.Services"
+             x:Class="UEBulkExport.Gui.Views.ExportView"
+             x:DataType="vm:ExportViewModel">
+
+  <Grid RowDefinitions="*,Auto">
+
+    <!-- The page is as wide as the viewport, never wider: long paths and wide cards clip instead of
+         pushing the layout past the window edge. -->
+    <ScrollViewer Grid.Row="0">
+      <Grid Width="{Binding $parent[ScrollViewer].Viewport.Width}">
+      <StackPanel Margin="28,24,28,12" Spacing="14" MaxWidth="1100" HorizontalAlignment="Stretch">
+
+        <StackPanel Margin="0,0,0,6">
+          <TextBlock Classes="PageTitle" Text="{loc:Tr Export.Title}" />
+          <TextBlock Classes="PageSubtitle" Text="{loc:Tr Export.Subtitle}" />
+        </StackPanel>
+
+        <!-- Recent games -->
+        <Border Classes="Card" IsVisible="{Binding HasRecent}" Padding="20,14">
+          <StackPanel>
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Recent.Title}" FontSize="14" />
+            <ItemsControl ItemsSource="{Binding Recent}" Margin="0,10,0,0">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <WrapPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="svc:RecentGame">
+                  <Border CornerRadius="8" Background="{DynamicResource Brush.Field}"
+                          BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1"
+                          Margin="0,0,8,8" Padding="0">
+                    <Grid ColumnDefinitions="*,Auto">
+                      <Button Grid.Column="0" Background="Transparent" Padding="12,8" MinHeight="0"
+                              Command="{Binding $parent[ItemsControl].((vm:ExportViewModel)DataContext).ApplyRecentCommand}"
+                              CommandParameter="{Binding}">
+                        <StackPanel>
+                          <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" />
+                          <TextBlock Text="{Binding PaksPath}" FontSize="11" Classes="Muted" MaxWidth="320"
+                                     TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </Button>
+                      <Button Grid.Column="1" Background="Transparent" Padding="8" MinHeight="0"
+                              VerticalAlignment="Center" ToolTip.Tip="{loc:Tr Recent.Remove}"
+                              Command="{Binding $parent[ItemsControl].((vm:ExportViewModel)DataContext).RemoveRecentCommand}"
+                              CommandParameter="{Binding}">
+                        <PathIcon Data="M6 6 L18 18 M18 6 L6 18" Width="10" Height="10" />
+                      </Button>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <!-- Selection made in the Browser -->
+        <Border Classes="Card" IsVisible="{Binding HasSelection}" Padding="20,14" BorderBrush="{DynamicResource Brush.Accent}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <StackPanel Grid.Column="0">
+              <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Selection.Title}" FontSize="14" />
+              <TextBlock Classes="Hint" Text="{Binding SelectionText}" />
+            </StackPanel>
+            <Button Grid.Column="1" Content="{loc:Tr Export.Selection.Clear}" Command="{Binding ClearSelectionCommand}" VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+
+        <!-- 1 · Source -->
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Source.Title}" />
+            <TextBlock Classes="CardSubtitle" Text="{loc:Tr Export.Source.Subtitle}" />
+
+            <TextBlock Classes="Label" Text="{loc:Tr Export.Paks.Label}" Margin="0,0,0,4" />
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <TextBox Grid.Column="0" AutomationProperties.AutomationId="PaksPath" Text="{Binding PaksPath}" Watermark="{loc:Tr Export.Paks.Placeholder}" />
+              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFolder}" Command="{Binding BrowsePaksFolderCommand}" />
+              <Button Grid.Column="2" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowsePaksFileCommand}" />
+            </Grid>
+            <TextBlock Classes="Hint" Text="{loc:Tr Export.Paks.Hint}" />
+
+            <Grid ColumnDefinitions="2*,3*" ColumnSpacing="20" Margin="0,4,0,0">
+              <StackPanel Grid.Column="0">
+                <TextBlock Classes="Label" Text="{loc:Tr Export.Game.Label}" />
+                <ComboBox ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}" MaxDropDownHeight="360" />
+                <TextBlock Classes="Hint" Text="{loc:Tr Export.Game.Hint}" />
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock Classes="Label" Text="{loc:Tr Export.Aes.Label}" />
+                <TextBox Classes="Mono" Text="{Binding AesText}" AcceptsReturn="True" MinHeight="64" MaxHeight="120"
+                         Watermark="{loc:Tr Export.Aes.Placeholder}" TextWrapping="NoWrap" />
+                <TextBlock Classes="Hint" Text="{loc:Tr Export.Aes.Hint}" />
+              </StackPanel>
+            </Grid>
+
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Margin="0,14,0,0">
+              <Button Grid.Column="0" AutomationProperties.AutomationId="ScanButton" Content="{loc:Tr Export.Scan}" Command="{Binding ScanCommand}" />
+              <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="{Binding ScanSummary}" FontSize="13" TextWrapping="Wrap"
+                           IsVisible="{Binding ScanSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource Brush.Text}" />
+                <TextBlock Classes="Hint" Text="{loc:Tr Export.Scan.Hint}" Margin="0"
+                           IsVisible="{Binding ScanSummary, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <!-- 2 · Destination and mode -->
+        <Border Classes="Card">
+          <StackPanel>
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Output.Title}" />
+            <TextBlock Classes="CardSubtitle" Text="{loc:Tr Export.Output.Subtitle}" />
+
+            <TextBlock Classes="Label" Text="{loc:Tr Export.Out.Label}" Margin="0,0,0,4" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Grid.Column="0" AutomationProperties.AutomationId="OutputPath" Text="{Binding OutputPath}" Watermark="{loc:Tr Export.Out.Placeholder}" />
+              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFolder}" Command="{Binding BrowseOutputCommand}" />
+            </Grid>
+            <TextBlock Classes="Hint" Text="{loc:Tr Export.Out.Hint}" />
+
+            <TextBlock Classes="Label" Text="{loc:Tr Export.Mode.Label}" Margin="0,14,0,6" />
+            <ListBox Classes="Modes" ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     ScrollViewer.VerticalScrollBarVisibility="Disabled">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <UniformGrid Columns="4" />
+                </ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:ModeOption">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Description}" FontSize="12" TextWrapping="Wrap" Classes="Muted" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+
+            <StackPanel IsVisible="{Binding NeedsMappings}" Margin="0,14,0,0">
+              <TextBlock Classes="Label" Text="{loc:Tr Export.Usmap.Label}" Margin="0,0,0,4" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBox Grid.Column="0" Text="{Binding UsmapPath}" Watermark="{loc:Tr Export.Usmap.Placeholder}" />
+                <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseUsmapCommand}" />
+              </Grid>
+              <TextBlock Classes="Hint" Text="{loc:Tr Export.Usmap.Hint}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- 3 · Options -->
+        <Expander>
+          <Expander.Header>
+            <StackPanel Margin="4,2">
+              <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Options.Title}" />
+              <TextBlock Classes="CardSubtitle" Text="{loc:Tr Export.Options.Subtitle}" Margin="0,2,0,0" />
+            </StackPanel>
+          </Expander.Header>
+
+          <StackPanel Margin="4,6,4,4">
+            <TextBlock Classes="Label" Text="{loc:Tr Export.Threads}" Margin="0,0,0,4" />
+            <Grid ColumnDefinitions="*,56" ColumnSpacing="12">
+              <Slider Grid.Column="0" Minimum="1" Maximum="{Binding MaxThreads}" Value="{Binding Threads}"
+                      TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Text="{Binding Threads}" VerticalAlignment="Center" FontWeight="SemiBold"
+                         HorizontalAlignment="Right" />
+            </Grid>
+
+            <Separator />
+
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Filters.Title}" FontSize="14" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+              <StackPanel Grid.Column="0">
+                <TextBlock Classes="Label" Text="{loc:Tr Export.Include}" />
+                <TextBox Classes="Mono" Text="{Binding IncludeRegex}" Watermark="^MyGame/Content/Characters/" />
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock Classes="Label" Text="{loc:Tr Export.Exclude}" />
+                <TextBox Classes="Mono" Text="{Binding ExcludeRegex}" Watermark="^Engine/" />
+              </StackPanel>
+            </Grid>
+            <TextBlock Classes="Hint" Text="{loc:Tr Export.Filters.Hint}" />
+            <TextBlock Classes="Warning" Text="{loc:Tr Export.Filters.LegacyIoStore}" IsVisible="{Binding IsLegacyMode}" />
+
+            <Separator />
+
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Export.What.Title}" FontSize="14" Margin="0,0,0,8" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+              <StackPanel Grid.Column="0" Spacing="2">
+                <CheckBox IsChecked="{Binding Overwrite}" Content="{loc:Tr Opt.Overwrite}" ToolTip.Tip="{loc:Tr Opt.Overwrite.Hint}" />
+                <CheckBox IsChecked="{Binding Verbose}" Content="{loc:Tr Opt.Verbose}" />
+                <CheckBox IsChecked="{Binding SkipWorlds}" Content="{loc:Tr Opt.NoWorlds}" ToolTip.Tip="{loc:Tr Opt.NoWorlds.Hint}" IsEnabled="{Binding IsFullMode}" />
+                <CheckBox IsChecked="{Binding ExportMaterials}" Content="{loc:Tr Opt.Materials}" ToolTip.Tip="{loc:Tr Opt.Materials.Hint}" IsEnabled="{Binding IsFullMode}" />
+                <CheckBox IsChecked="{Binding RawPackages}" Content="{loc:Tr Opt.RawPackages}" IsEnabled="{Binding NeedsMappings}" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Spacing="2">
+                <CheckBox IsChecked="{Binding SkipJson}" Content="{loc:Tr Opt.NoJson}" IsEnabled="{Binding IsFullMode}" />
+                <CheckBox IsChecked="{Binding SkipAssets}" Content="{loc:Tr Opt.NoAssets}" IsEnabled="{Binding IsFullMode}" />
+                <CheckBox IsChecked="{Binding SkipRawMisc}" Content="{loc:Tr Opt.NoRawMisc}" IsEnabled="{Binding IsFullMode}" />
+                <CheckBox IsChecked="{Binding SkipAudioConvert}" Content="{loc:Tr Opt.NoAudioConvert}" IsEnabled="{Binding IsFullMode}" />
+                <CheckBox IsChecked="{Binding AllMips}" Content="{loc:Tr Opt.AllMips}" IsEnabled="{Binding IsFullMode}" />
+                <CheckBox IsChecked="{Binding SkipMorphs}" Content="{loc:Tr Opt.NoMorphs}" IsEnabled="{Binding IsFullMode}" />
+              </StackPanel>
+            </Grid>
+
+            <Separator />
+
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Formats.Title}" FontSize="14" />
+            <TextBlock Classes="Hint" Text="{loc:Tr Export.Formats.Hint}" Margin="0,2,0,4" />
+            <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="16"
+                  IsEnabled="{Binding IsFullMode}">
+              <StackPanel Grid.Row="0" Grid.Column="0">
+                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Mesh}" />
+                <ComboBox ItemsSource="{Binding MeshFormats}" SelectedItem="{Binding MeshFormat}" />
+              </StackPanel>
+              <StackPanel Grid.Row="0" Grid.Column="1">
+                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Anim}" />
+                <ComboBox ItemsSource="{Binding AnimFormats}" SelectedItem="{Binding AnimFormat}" />
+              </StackPanel>
+              <StackPanel Grid.Row="0" Grid.Column="2">
+                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Texture}" />
+                <ComboBox ItemsSource="{Binding TextureFormats}" SelectedItem="{Binding TextureFormat}" />
+              </StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="0">
+                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Quality}" />
+                <ComboBox ItemsSource="{Binding MeshQualities}" SelectedItem="{Binding MeshQuality}" />
+              </StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="1">
+                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Nanite}" />
+                <ComboBox ItemsSource="{Binding NaniteFormats}" SelectedItem="{Binding NaniteFormat}" />
+              </StackPanel>
+              <StackPanel Grid.Row="1" Grid.Column="2">
+                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Sockets}" />
+                <ComboBox ItemsSource="{Binding SocketFormats}" SelectedItem="{Binding SocketFormat}" />
+              </StackPanel>
+              <StackPanel Grid.Row="2" Grid.Column="0">
+                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Platform}" />
+                <ComboBox ItemsSource="{Binding Platforms}" SelectedItem="{Binding Platform}" />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
+        </Expander>
+
+        <!-- 4 · Helper binaries -->
+        <Expander>
+          <Expander.Header>
+            <StackPanel Margin="4,2">
+              <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Tools.Title}" />
+              <TextBlock Classes="CardSubtitle" Text="{loc:Tr Export.Tools.Subtitle}" Margin="0,2,0,0" />
+            </StackPanel>
+          </Expander.Header>
+          <StackPanel Margin="4,6,4,4">
+            <TextBlock Classes="Label" Text="{loc:Tr Tools.Retoc}" Margin="0,0,0,4" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Text="{Binding RetocPath}" Watermark="{loc:Tr Common.Auto}" />
+              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseRetocCommand}" />
+            </Grid>
+            <TextBlock Classes="Hint" Text="{loc:Tr Tools.Retoc.Hint}" />
+
+            <TextBlock Classes="Label" Text="{loc:Tr Tools.Oodle}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Text="{Binding OodlePath}" Watermark="{loc:Tr Common.Auto}" />
+              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseOodleCommand}" />
+            </Grid>
+
+            <TextBlock Classes="Label" Text="{loc:Tr Tools.Zlib}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Text="{Binding ZlibPath}" Watermark="{loc:Tr Common.Auto}" />
+              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseZlibCommand}" />
+            </Grid>
+
+            <TextBlock Classes="Label" Text="{loc:Tr Tools.Vgmstream}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Text="{Binding VgmStreamPath}" Watermark="{loc:Tr Common.Optional}" />
+              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseVgmStreamCommand}" />
+            </Grid>
+            <TextBlock Classes="Hint" Text="{loc:Tr Tools.Vgmstream.Hint}" />
+          </StackPanel>
+        </Expander>
+
+        <!-- Outcome: error -->
+        <Border x:Name="ErrorCard" Classes="Card" IsVisible="{Binding HasError}" BorderBrush="{DynamicResource Brush.Error}">
+          <StackPanel Spacing="6">
+            <TextBlock Text="{loc:Tr Error.Title}" Classes="Muted" FontSize="12" />
+            <TextBlock Text="{Binding ErrorHeadline}" Classes="Error" FontWeight="SemiBold" FontSize="14" />
+            <TextBlock Text="{Binding ErrorHint}" Classes="Mono" TextWrapping="Wrap"
+                       IsVisible="{Binding ErrorHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Outcome: summary / plan -->
+        <Border x:Name="SummaryCard" Classes="Card" IsVisible="{Binding HasSummary}">
+          <StackPanel>
+            <TextBlock Classes="CardTitle" Text="{Binding SummaryTitle}" Margin="0,0,0,10" />
+            <ItemsControl ItemsSource="{Binding Summary}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:SummaryLine">
+                  <Grid ColumnDefinitions="260,*" Margin="0,3">
+                    <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="Muted" />
+                    <TextBlock Grid.Column="1" Text="{Binding Value}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,14,0,0" IsVisible="{Binding CanOpenOutput}">
+              <Button Content="{loc:Tr Export.OpenOutput}" Command="{Binding OpenOutputCommand}" />
+              <Button Content="{loc:Tr Export.OpenErrors}" Command="{Binding OpenErrorsCommand}" IsVisible="{Binding HasErrorsFile}" />
+              <Button Content="{loc:Tr Export.OpenLog}" Command="{Binding OpenLogCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- Equivalent command -->
+        <Border Classes="Card" Padding="20,14">
+          <StackPanel>
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Grid.Column="0">
+                <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Command.Label}" FontSize="14" />
+                <TextBlock Classes="Hint" Text="{loc:Tr Export.Command.Hint}" Margin="0,2,0,8" />
+              </StackPanel>
+              <Button Grid.Column="1" Content="{loc:Tr Common.Copy}" Command="{Binding CopyCommandCommand}" VerticalAlignment="Top" />
+            </Grid>
+            <TextBox Classes="Mono" Text="{Binding CommandLine}" IsReadOnly="True" TextWrapping="Wrap" MinHeight="0" />
+          </StackPanel>
+        </Border>
+
+      </StackPanel>
+      </Grid>
+    </ScrollViewer>
+
+    <!-- Action bar -->
+    <Border Grid.Row="1" Background="{DynamicResource Brush.Card}"
+            BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,1,0,0" Padding="28,14">
+      <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10">
+        <Button Grid.Column="0" AutomationProperties.AutomationId="StartButton" Classes="Primary" Content="{loc:Tr Export.Start}" Command="{Binding StartCommand}" />
+        <Button Grid.Column="1" AutomationProperties.AutomationId="DryRunButton" Content="{loc:Tr Export.DryRun}" Command="{Binding DryRunCommand}"
+                ToolTip.Tip="{loc:Tr Export.DryRun.Hint}" />
+
+        <Grid Grid.Column="2" Margin="18,0" VerticalAlignment="Center" IsVisible="{Binding ShowProgress}"
+              RowDefinitions="Auto,Auto" RowSpacing="6">
+          <ProgressBar Grid.Row="0" Value="{Binding ProgressFraction}" Maximum="1"
+                       IsIndeterminate="{Binding ProgressIndeterminate}" />
+          <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="18">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{loc:Tr Progress.Processed}" Classes="Muted" FontSize="12" />
+              <TextBlock Text="{Binding ProgressProcessed}" FontSize="12" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{loc:Tr Progress.Written}" Classes="Muted" FontSize="12" />
+              <TextBlock Text="{Binding ProgressWritten}" FontSize="12" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{loc:Tr Progress.Failed}" Classes="Muted" FontSize="12" />
+              <TextBlock Text="{Binding ProgressFailed}" FontSize="12" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{loc:Tr Progress.Rate}" Classes="Muted" FontSize="12" />
+              <TextBlock Text="{Binding ProgressRate}" FontSize="12" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{loc:Tr Progress.Elapsed}" Classes="Muted" FontSize="12" />
+              <TextBlock Text="{Binding ProgressElapsed}" FontSize="12" FontWeight="SemiBold" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock Text="{loc:Tr Progress.Eta}" Classes="Muted" FontSize="12" />
+              <TextBlock Text="{Binding ProgressEta}" FontSize="12" FontWeight="SemiBold" />
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+
+        <Button Grid.Column="3" AutomationProperties.AutomationId="CancelButton" Classes="Danger" Content="{loc:Tr Export.Cancel}" Command="{Binding CancelCommand}"
+                IsVisible="{Binding CanCancel}" />
+      </Grid>
+    </Border>
+  </Grid>
+
+</UserControl>

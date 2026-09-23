@@ -6,6 +6,58 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-23
+
+### Added
+
+- `--paths-file <file>`: export only the container paths listed in a text file. The Browser page
+  of the window uses it: tick folders or files, or tick and press "Exclude" to export everything
+  else; the selection is saved as `_selection.txt` in the output folder.
+- The window ships with its own icon and a green visual theme; the Browser page has a breadcrumb,
+  type filter chips, a details panel and a selection bar.
+- A graphical interface. `UEBulkExport.exe` is now a desktop application (Avalonia UI): pages for
+  Export (source, destination and mode, options, helper binaries; Start, Dry run and Cancel;
+  progress with ETA; result summary; an "equivalent command line" box with Copy; recent games),
+  Browser (folder tree of the mounted containers, file list with search, by-type statistics,
+  container list with locked status; "Export only this folder" / "Exclude this folder" generate
+  include/exclude filters), Log (filter by level, copy, clear, follow), Settings (language
+  English/Russian with live switching, theme Light/Dark/System, remember last paths, confirm close
+  while running, default threads, default helper binary paths, reset) and About. A game folder or
+  a `.utoc`/`.pak` dropped onto the window fills in the source. A fresh install starts in English
+  with the light theme. Settings live in `%LOCALAPPDATA%\UEBulkExport\settings.json`; a startup crash
+  is written to `%LOCALAPPDATA%\UEBulkExport\crash.log`. Nothing leaves the machine.
+- A unit test project, `tests/UEBulkExport.Tests` (xunit, 119 tests), that needs neither network
+  access nor game files.
+- `--verbose` (log every file written) is now listed in the README options tables, together with
+  the exit codes: 0 success, 1 could not start or crashed, 2 finished with failed entries or
+  cancelled.
+
+### Changed
+
+- The console program is now `UEBulkExport.Cli.exe`; all flags are unchanged. `UEBulkExport.exe`
+  (the GUI build) accepts the same arguments and then runs in command-line mode attached to the
+  calling terminal, but scripts and CI should call `UEBulkExport.Cli.exe`, since a GUI-subsystem
+  executable does not block the shell or return its exit code reliably from an interactive
+  cmd/PowerShell prompt.
+- The solution is split into `src/UEBulkExport.Core` (library with all export logic),
+  `src/UEBulkExport.Cli` (console front end) and `src/UEBulkExport` (GUI). The release archive
+  contains both executables side by side.
+- The summary separates "failed entries" from "failed objects" instead of one mixed count.
+- `UEBulkExport.log` in the output folder is appended to across runs, each run starting with a
+  "run started" separator, instead of being overwritten.
+- Using several `--aes` keys with IoStore containers in the default mode is rejected before
+  mounting (retoc supports one key), not after.
+
+### Fixed
+
+- Ctrl+C in the CLI cancels cleanly: the resume index is flushed and a summary printed, so the
+  next run continues where this one stopped.
+- Invalid `--aes` values (not 64 hex characters, malformed GUID) are reported with a hint instead
+  of a stack trace.
+- The `--platform` help text listed `XboxAndPlaystation`; the accepted values are `DesktopMobile`,
+  `XboxAndPlaystation4`, `Playstation5` and `NintendoSwitch`. The README options tables are fixed
+  as well.
+
 ## [1.1.0] - 2026-09-20
 
 ### Changed
@@ -50,3 +102,4 @@ First release.
 
 [1.0.0]: https://github.com/tavridabless/UEBulkExport/releases/tag/v1.0.0
 [1.1.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.0.0...v1.1.0
+[1.2.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.1.0...v1.2.0

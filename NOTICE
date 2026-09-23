@@ -5,7 +5,8 @@ This product includes software developed as part of the CUE4Parse project
 (https://github.com/FabianFG/CUE4Parse), licensed under the Apache License,
 Version 2.0.
 
-UEBulkExport is a command line front end. All container parsing and asset
+UEBulkExport is a front end (a command line program and a desktop window
+built with Avalonia, MIT licensed). All container parsing and asset
 conversion - mounting .utoc/.ucas/.pak, reading IoStore packages, resolving
 unversioned properties against a .usmap, decoding textures, and writing
 glTF, ActorX, USD and UEFormat output - is performed by CUE4Parse and

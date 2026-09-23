@@ -82,10 +82,9 @@ public static class Retoc
 
     public static async Task ConvertAsync(string executable, Options options, CancellationToken ct)
     {
+        // Cli.Prepare rejects several keys up front; a second key here means a caller skipped it.
         if (options.AesKeys.Count > 1)
-            throw new UserFacingException(
-                "retoc accepts only one AES key for a conversion run.",
-                "Run containers with different keys separately, using one --aes value each time.");
+            throw new UserFacingException("retoc accepts only one AES key for a conversion run.");
 
         var start = new ProcessStartInfo(executable)
         {
@@ -97,9 +96,7 @@ public static class Retoc
 
         if (options.AesKeys.Count == 1)
         {
-            var key = options.AesKeys[0];
-            var separator = key.LastIndexOf(':');
-            if (separator >= 0) key = key[(separator + 1)..];
+            var (_, key) = Cli.SplitAesKey(options.AesKeys[0]);
             start.ArgumentList.Add("--aes-key");
             start.ArgumentList.Add(key);
         }

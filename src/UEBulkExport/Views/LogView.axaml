@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:UEBulkExport.Gui.ViewModels"
+             xmlns:loc="using:UEBulkExport.Gui.Localization"
+             xmlns:conv="using:UEBulkExport.Gui.Converters"
+             xmlns:core="using:UEBulkExport"
+             x:Class="UEBulkExport.Gui.Views.LogView"
+             x:DataType="vm:LogViewModel">
+
+  <Grid RowDefinitions="Auto,Auto,*" Margin="28,24,28,20">
+
+    <StackPanel Grid.Row="0">
+      <TextBlock Classes="PageTitle" Text="{loc:Tr Log.Title}" />
+      <TextBlock Classes="PageSubtitle" Text="{loc:Tr Log.Subtitle}" />
+    </StackPanel>
+
+    <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="10" Margin="0,16,0,12">
+      <ComboBox Grid.Column="0" SelectedIndex="{Binding Filter}" MinWidth="220">
+        <ComboBoxItem Content="{loc:Tr Log.Filter.All}" />
+        <ComboBoxItem Content="{loc:Tr Log.Filter.Warnings}" />
+        <ComboBoxItem Content="{loc:Tr Log.Filter.Errors}" />
+      </ComboBox>
+      <CheckBox Grid.Column="1" IsChecked="{Binding AutoScroll}" Content="{loc:Tr Log.AutoScroll}" />
+      <Button Grid.Column="3" Content="{loc:Tr Log.Copy}" Click="OnCopyAll" />
+      <Button Grid.Column="4" Content="{loc:Tr Log.Clear}" Command="{Binding ClearCommand}" />
+    </Grid>
+
+    <Border Grid.Row="2" Classes="Card" Padding="0">
+      <Grid>
+        <ListBox x:Name="List" Classes="Data" ItemsSource="{Binding Visible}" Background="Transparent" Margin="8">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="core:LogEntry">
+              <Grid ColumnDefinitions="64,36,*">
+                <TextBlock Grid.Column="0" Text="{Binding Time, StringFormat=HH:mm:ss}" Classes="Mono Muted" />
+                <TextBlock Grid.Column="1" Text="{Binding Level, Converter={x:Static conv:LogLevelTagConverter.Instance}}"
+                           Classes="Mono" FontWeight="SemiBold"
+                           Foreground="{Binding Level, Converter={x:Static conv:LogLevelBrushConverter.Instance}}" />
+                <TextBlock Grid.Column="2" Text="{Binding Message}" Classes="Mono" TextWrapping="Wrap"
+                           Foreground="{Binding Level, Converter={x:Static conv:LogLevelBrushConverter.Instance}}" />
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock Text="{loc:Tr Log.Empty}" Classes="Muted" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   IsVisible="{Binding IsEmpty}" />
+      </Grid>
+    </Border>
+  </Grid>
+
+</UserControl>

@@ -28,8 +28,11 @@ IoStore packages are converted from Zen to the traditional cooked package layout
 [retoc](https://github.com/trumank/retoc). The `full` and `json` modes remain available explicitly.
 
 ```
-UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export"
+UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export"
 ```
+
+Or double-click `UEBulkExport.exe` and do the same thing in a window — see
+[Graphical interface](#graphical-interface).
 
 ### What it is built on
 
@@ -38,14 +41,52 @@ same library FModel is built on. IoStore-to-legacy cooked package conversion use
 [retoc](https://github.com/trumank/retoc). CUE4Parse and CUE4Parse-Conversion are Apache-2.0;
 retoc is MIT licensed.
 
-UEBulkExport is roughly a thousand lines of orchestration on top: path discovery, work scheduling,
-the multi-pass export strategy, resumable runs, and diagnostics. It is a front end, and the
+The UEBulkExport core is roughly a thousand lines of orchestration on top: path discovery, work
+scheduling, the multi-pass export strategy, resumable runs, and diagnostics. The command line and
+the desktop window are two front ends over that same core, and the
 [notices](THIRD-PARTY-NOTICES.md) spell out exactly who did what.
 
 **This is not an uncooker.** Cooking removes editor-only data, so extracted packages are not the
 original editable assets. Unreal Editor supports opening only some cooked asset types, generally
 read-only, with cooked-content support enabled in the project. Blueprint source graphs cannot be
 recovered from cooked packages. The explicit `json` mode still writes serialised properties.
+
+---
+
+## Graphical interface
+
+`UEBulkExport.exe` is a desktop application built with [Avalonia](https://avaloniaui.net/)
+(MIT). Double-click it and a window opens; every option the command line has is in there as a
+form.
+
+![The Export page of UEBulkExport](docs/screenshot.png)
+
+The pages:
+
+- **Export** — source (game folder, engine version, AES keys) → destination and mode → options
+  → helper binaries. Start, Dry run and Cancel; progress with a rate and an ETA; a result summary at
+  the end. An **equivalent command line** box with a Copy button shows the `UEBulkExport.Cli`
+  invocation for whatever you clicked together, so a configured export can be pasted into a
+  script. Recent games are listed for one-click reuse.
+- **Browser** — the folder tree of the mounted containers, a file list with search, statistics by
+  file type, and the container list with its locked (wrong or missing AES key) status. *Export only
+  this folder* and *Exclude this folder* fill in the include/exclude filters on the Export page.
+- **Log** — everything the exporter reports, filtered by level, with copy, clear and follow.
+- **Settings** — language (English / Russian, switched live), theme (Light / Dark / System),
+  remember last paths, confirm closing while an export runs, default worker threads, default
+  helper binary paths, reset.
+- **About** — version, what it is built on, licence, links.
+
+Dropping a game folder or a `.utoc`/`.pak` file onto the window fills in the source. A fresh
+install starts in English with the light theme; both are changed on the Settings page and
+remembered. Settings are stored per user in
+`%LOCALAPPDATA%\UEBulkExport\settings.json`; nothing leaves the machine. Should the window fail
+to start, the exception is written to `%LOCALAPPDATA%\UEBulkExport\crash.log`.
+
+`UEBulkExport.exe` also accepts the same arguments as `UEBulkExport.Cli.exe` and then runs in
+command-line mode attached to the calling terminal. For scripts and CI use `UEBulkExport.Cli.exe`:
+a GUI-subsystem executable does not block the shell or return its exit code reliably from an
+interactive cmd or PowerShell prompt.
 
 ---
 
@@ -77,12 +118,17 @@ With `--mode full`, the tool instead writes converted files:
 ### 1. Get the tool
 
 Download the latest archive from [Releases](https://github.com/tavridabless/UEBulkExport/releases)
-and unpack it. The build is self-contained — no .NET installation required.
+and unpack it. The build is self-contained — no .NET installation required. The archive holds two
+executables side by side: `UEBulkExport.exe` (the window) and `UEBulkExport.Cli.exe` (the console
+program).
 
 ### 2. Run the package extraction
 
+Double-click `UEBulkExport.exe`, point it at the game, pick an output folder and press Start — or
+from a terminal:
+
 ```bat
-UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export"
+UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export"
 ```
 
 `--paks` accepts the game's root folder, the `Content\Paks` folder, or a single `.utoc` file.
@@ -97,7 +143,7 @@ The `full` and `json` modes deserialize properties, and shipping UE5 builds usua
 properties **unversioned**. Those modes need a mappings file; package extraction does not.
 
 **[docs/mappings.md](docs/mappings.md) explains how to produce one**, which takes about two
-minutes with UE4SS. Drop the resulting `.usmap` next to `UEBulkExport.exe` and it is picked up
+minutes with UE4SS. Drop the resulting `.usmap` next to the executables and it is picked up
 automatically.
 
 Run `--mode full` for converted files or `--mode json` for property dumps.
@@ -138,7 +184,8 @@ a compatible retoc build with `--retoc` when one becomes available.
 
 ## Options
 
-Run `UEBulkExport --help` for the authoritative list.
+Run `UEBulkExport.Cli --help` for the authoritative list. Every option below is also a control on
+the Export page of the window.
 
 ### Paths
 
@@ -158,6 +205,7 @@ Run `UEBulkExport --help` for the authoritative list.
 | `--threads <n>` | Worker threads, default = CPU count − 1 |
 | `--dry-run` | Report the plan and write nothing |
 | `--retoc <file>` | retoc executable for IoStore legacy conversion; auto-downloaded on Windows x64 if omitted |
+| `--verbose` | Log every file written |
 | `--version` | Print the version and exit |
 
 ### Filtering
@@ -166,6 +214,7 @@ Run `UEBulkExport --help` for the authoritative list.
 |---|---|
 | `--include <regex>` | Only entries whose container path matches; unavailable for IoStore in `legacy` mode |
 | `--exclude <regex>` | Skip entries whose container path matches; unavailable for IoStore in `legacy` mode |
+| `--paths-file <file>` | Export only the entries listed in the file, one container path per line. The window writes `_selection.txt` for its tick-box selections, so a GUI export can be repeated from a script |
 
 ### What to write
 
@@ -192,7 +241,7 @@ Run `UEBulkExport --help` for the authoritative list.
 | `--sockets` | `bone` *(default)*, `socket`, `none` |
 | `--all-mips` | Write every texture mip |
 | `--no-morphs` | Skip morph targets |
-| `--platform` | `DesktopMobile` *(default)*, `XboxAndPlaystation`, `NintendoSwitch` |
+| `--platform` | `DesktopMobile` *(default)*, `XboxAndPlaystation4`, `Playstation5`, `NintendoSwitch` |
 
 ### Helper binaries
 
@@ -202,6 +251,11 @@ Run `UEBulkExport --help` for the authoritative list.
 | `--zlib <file>` | zlib-ng library. Same treatment |
 | `--vgmstream <file>` | `vgmstream-cli`, used to turn BINKA/ADPCM audio into `.wav` |
 
+### Exit codes
+
+`0` — success. `1` — the run could not start (bad arguments, missing paths) or crashed. `2` — the
+run finished with failed entries, or was cancelled.
+
 ---
 
 ## Recipes
@@ -209,33 +263,33 @@ Run `UEBulkExport --help` for the authoritative list.
 **Game content only, skipping stock engine assets and levels**, in conversion mode:
 
 ```bat
-UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" --mode full --exclude "^Engine/" --no-worlds
+UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export" --mode full --exclude "^Engine/" --no-worlds
 ```
 
 **Only the textures, as TGA:**
 
 ```bat
-UEBulkExport --paks "D:\Games\MyGame" --out "D:\Textures" ^
+UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Textures" ^
              --mode full --no-raw-misc --include "/Textures?/" --texture tga
 ```
 
 **Meshes and skeletons for Blender's PSK/PSA importer:**
 
 ```bat
-UEBulkExport --paks "D:\Games\MyGame" --out "D:\Meshes" --mode full --mesh actorx --no-json
+UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Meshes" --mode full --mesh actorx --no-json
 ```
 
 **Diff two builds** — property dumps only, then compare the folders with any diff tool:
 
 ```bat
-UEBulkExport --paks "D:\Games\MyGame-1.0" --out "D:\diff\1.0" --mode json --usmap "1.0.usmap"
-UEBulkExport --paks "D:\Games\MyGame-1.1" --out "D:\diff\1.1" --mode json --usmap "1.1.usmap"
+UEBulkExport.Cli --paks "D:\Games\MyGame-1.0" --out "D:\diff\1.0" --mode json --usmap "1.0.usmap"
+UEBulkExport.Cli --paks "D:\Games\MyGame-1.1" --out "D:\diff\1.1" --mode json --usmap "1.1.usmap"
 ```
 
 **Encrypted containers:**
 
 ```bat
-UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" ^
+UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export" ^
              --aes 0x0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
 ```
 
@@ -245,13 +299,19 @@ UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" ^
 
 Every processed entry is appended to `_completed.<mode>.txt` in the output folder. Re-running the same
 command picks up where it stopped — handy when an export is interrupted, or when you want to add
-`--materials` to a finished run without redoing everything. `--overwrite` starts fresh.
+`--materials` to a finished run without redoing everything. `--overwrite` starts fresh. Ctrl+C
+(or Cancel in the window) stops cleanly: the resume index is flushed and a summary printed, so
+the next run continues from that point.
 
 Two more files may land in the output folder:
 
-- **`UEBulkExport.log`** — the full run log.
+- **`UEBulkExport.log`** — the full run log. Runs into the same folder are appended, each
+  starting with a `----- run started … -----` line.
 - **`errors.csv`** — one row per entry that could not be converted, with the exception and
   message. The five most common causes are printed at the end of the run.
+
+The summary counts **failed entries** (container entries that produced nothing) separately from
+**failed objects** (single objects inside an otherwise exported package).
 
 In `full` mode, the summary also reports a **`no converter`** count. Those are objects CUE4Parse
 has no file format for — components, anim notifies, blueprint nodes, actors inside levels. Their
@@ -292,6 +352,8 @@ or downloaded. Full detail, with licences, in [THIRD-PARTY-NOTICES.md](THIRD-PAR
 | CUE4Parse, CUE4Parse-Conversion | Apache-2.0 | NuGet, on restore |
 | retoc 0.1.5 (IoStore legacy conversion) | MIT | Verified download on Windows x64 or supplied via `--retoc` |
 | Newtonsoft.Json | MIT | NuGet, on restore |
+| Avalonia, Avalonia.Themes.Fluent, Avalonia.Fonts.Inter (window only) | MIT; Inter font OFL-1.1 | NuGet, on restore |
+| CommunityToolkit.Mvvm (window only) | MIT | NuGet, on restore |
 | `CUE4Parse-Natives` (ACL animations) | Apache-2.0 | Lifted from the CUE4Parse 1.2.2 package at build time; downloaded at runtime if missing |
 | `Detex` (BC/ETC/ASTC textures) | ISC | Unpacked from a resource embedded in CUE4Parse-Conversion |
 | `zlib-ng` | zlib | Downloaded on first run |
@@ -307,11 +369,24 @@ Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 ```bash
 git clone https://github.com/tavridabless/UEBulkExport.git
 cd UEBulkExport
-dotnet publish src/UEBulkExport -c Release -r win-x64 --self-contained -o artifacts/publish
+dotnet publish src/UEBulkExport     -c Release -r win-x64 --self-contained -o artifacts/publish
+dotnet publish src/UEBulkExport.Cli -c Release -r win-x64 --self-contained -o artifacts/publish
 ```
 
-`artifacts/publish/UEBulkExport.exe` runs anywhere, with no runtime installed. For development,
-`dotnet build -c Release` is enough; that build needs .NET 10 present.
+`artifacts/publish/` then holds `UEBulkExport.exe` and `UEBulkExport.Cli.exe` side by side — the
+same layout as the release archive — and runs anywhere, with no runtime installed. For
+development, `dotnet build UEBulkExport.slnx -c Release` is enough; that build needs .NET 10
+present. `dotnet test tests/UEBulkExport.Tests -c Release` runs the unit tests; they need neither
+network access nor game files.
+
+The solution is laid out as:
+
+| Project | What it is |
+|---|---|
+| `src/UEBulkExport.Core` | Library with all the export logic: discovery, options, the exporter, retoc, reporting |
+| `src/UEBulkExport.Cli` | Console front end → `UEBulkExport.Cli.exe` |
+| `src/UEBulkExport` | Desktop window (Avalonia) → `UEBulkExport.exe` |
+| `tests/UEBulkExport.Tests` | xunit tests for the core |
 
 Releases ship a Windows build only, and that is a deliberate choice rather than an oversight.
 Everything a real export leans on outside managed code — the Oodle decompressor that almost every

@@ -1,0 +1,131 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="UEBulkExport.Gui.App"
+             RequestedThemeVariant="Light">
+
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <!-- Graphite surfaces with an amber accent: the tool's own look, shared by both variants. -->
+        <ColorPaletteResources x:Key="Dark"
+                               Accent="#8CF23A"
+                               RegionColor="#0D110E"
+                               AltHigh="#131813"
+                               AltMediumHigh="#171D18"
+                               AltMedium="#1C231D"
+                               AltMediumLow="#222B23"
+                               AltLow="#2A352B"
+                               BaseHigh="#F2F6F0"
+                               BaseMediumHigh="#CFD8CC"
+                               BaseMedium="#9AA898"
+                               BaseMediumLow="#6C7A6B"
+                               BaseLow="#33413A"
+                               ChromeHigh="#33413A"
+                               ChromeMedium="#222B23"
+                               ChromeMediumLow="#1C231D"
+                               ChromeLow="#131813"
+                               ChromeAltLow="#9AA898"
+                               ChromeBlackHigh="#000000"
+                               ChromeBlackMedium="#CC000000"
+                               ChromeBlackMediumLow="#66000000"
+                               ChromeBlackLow="#33000000"
+                               ChromeWhite="#FFFFFF"
+                               ChromeDisabledHigh="#33413A"
+                               ChromeDisabledLow="#6C7A6B"
+                               ChromeGray="#9AA898"
+                               ListLow="#1C231D"
+                               ListMedium="#222B23"
+                               ErrorText="#FF7B72" />
+        <ColorPaletteResources x:Key="Light"
+                               Accent="#3E9A12"
+                               RegionColor="#F4F5F7"
+                               AltHigh="#FFFFFF"
+                               AltMediumHigh="#FAFBFC"
+                               AltMedium="#F0F2F5"
+                               AltMediumLow="#E6E9EE"
+                               AltLow="#DCE0E6"
+                               BaseHigh="#1B1E24"
+                               BaseMediumHigh="#333945"
+                               BaseMedium="#5B6473"
+                               BaseMediumLow="#8A93A1"
+                               BaseLow="#CBD1DA"
+                               ChromeHigh="#CBD1DA"
+                               ChromeMedium="#E6E9EE"
+                               ChromeMediumLow="#F0F2F5"
+                               ChromeLow="#FAFBFC"
+                               ChromeAltLow="#5B6473"
+                               ChromeBlackHigh="#000000"
+                               ChromeBlackMedium="#CC000000"
+                               ChromeBlackMediumLow="#66000000"
+                               ChromeBlackLow="#33000000"
+                               ChromeWhite="#FFFFFF"
+                               ChromeDisabledHigh="#CBD1DA"
+                               ChromeDisabledLow="#8A93A1"
+                               ChromeGray="#5B6473"
+                               ListLow="#F0F2F5"
+                               ListMedium="#E6E9EE"
+                               ErrorText="#B42318" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+
+    <StyleInclude Source="avares://UEBulkExport/Styles/Theme.axaml" />
+  </Application.Styles>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Dark">
+          <Color x:Key="App.Bg">#0D110E</Color>
+          <Color x:Key="App.Sidebar">#0A0D0B</Color>
+          <Color x:Key="App.Card">#141A15</Color>
+          <Color x:Key="App.CardBorder">#243027</Color>
+          <Color x:Key="App.Field">#0F1410</Color>
+          <Color x:Key="App.Text">#F2F6F0</Color>
+          <Color x:Key="App.TextMuted">#8E9C8C</Color>
+          <Color x:Key="App.Accent">#8CF23A</Color>
+          <Color x:Key="App.AccentText">#0B1604</Color>
+          <Color x:Key="App.AccentSoft">#1B2E14</Color>
+          <Color x:Key="App.Success">#8CF23A</Color>
+          <Color x:Key="App.Warning">#F2C53B</Color>
+          <Color x:Key="App.Error">#FF7B72</Color>
+          <Color x:Key="App.Info">#6CB6FF</Color>
+          <Color x:Key="App.Selection">#1A231B</Color>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+          <Color x:Key="App.Bg">#F4F5F7</Color>
+          <Color x:Key="App.Sidebar">#E9ECF0</Color>
+          <Color x:Key="App.Card">#FFFFFF</Color>
+          <Color x:Key="App.CardBorder">#DCE0E6</Color>
+          <Color x:Key="App.Field">#FAFBFC</Color>
+          <Color x:Key="App.Text">#1B1E24</Color>
+          <Color x:Key="App.TextMuted">#5B6473</Color>
+          <Color x:Key="App.Accent">#3E9A12</Color>
+          <Color x:Key="App.AccentText">#FFFFFF</Color>
+          <Color x:Key="App.AccentSoft">#E4F7D6</Color>
+          <Color x:Key="App.Success">#3E9A12</Color>
+          <Color x:Key="App.Warning">#A57B0A</Color>
+          <Color x:Key="App.Error">#B42318</Color>
+          <Color x:Key="App.Info">#1F6FD1</Color>
+          <Color x:Key="App.Selection">#E6E9EE</Color>
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+
+      <SolidColorBrush x:Key="Brush.Bg" Color="{DynamicResource App.Bg}" />
+      <SolidColorBrush x:Key="Brush.Sidebar" Color="{DynamicResource App.Sidebar}" />
+      <SolidColorBrush x:Key="Brush.Card" Color="{DynamicResource App.Card}" />
+      <SolidColorBrush x:Key="Brush.CardBorder" Color="{DynamicResource App.CardBorder}" />
+      <SolidColorBrush x:Key="Brush.Field" Color="{DynamicResource App.Field}" />
+      <SolidColorBrush x:Key="Brush.Text" Color="{DynamicResource App.Text}" />
+      <SolidColorBrush x:Key="Brush.TextMuted" Color="{DynamicResource App.TextMuted}" />
+      <SolidColorBrush x:Key="Brush.Accent" Color="{DynamicResource App.Accent}" />
+      <SolidColorBrush x:Key="Brush.AccentText" Color="{DynamicResource App.AccentText}" />
+      <SolidColorBrush x:Key="Brush.AccentSoft" Color="{DynamicResource App.AccentSoft}" />
+      <SolidColorBrush x:Key="Brush.Success" Color="{DynamicResource App.Success}" />
+      <SolidColorBrush x:Key="Brush.Warning" Color="{DynamicResource App.Warning}" />
+      <SolidColorBrush x:Key="Brush.Error" Color="{DynamicResource App.Error}" />
+      <SolidColorBrush x:Key="Brush.Info" Color="{DynamicResource App.Info}" />
+      <SolidColorBrush x:Key="Brush.Selection" Color="{DynamicResource App.Selection}" />
+    </ResourceDictionary>
+  </Application.Resources>
+
+</Application>

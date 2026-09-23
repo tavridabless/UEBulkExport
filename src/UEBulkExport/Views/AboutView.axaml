@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:UEBulkExport.Gui.ViewModels"
+             xmlns:loc="using:UEBulkExport.Gui.Localization"
+             x:Class="UEBulkExport.Gui.Views.AboutView"
+             x:DataType="vm:AboutViewModel">
+
+  <ScrollViewer>
+    <Grid Width="{Binding $parent[ScrollViewer].Viewport.Width}">
+    <StackPanel Margin="28,24,28,20" Spacing="14" MaxWidth="900" HorizontalAlignment="Stretch">
+
+      <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,0,0,6">
+        <Image Source="avares://UEBulkExport/Assets/logo.png" Width="64" Height="64" />
+        <StackPanel VerticalAlignment="Center">
+          <TextBlock Classes="PageTitle" Text="{loc:Tr App.Title}" />
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Classes="PageSubtitle" Text="{loc:Tr About.Version}" Margin="0" />
+            <TextBlock Classes="PageSubtitle" Text="{Binding Version}" Margin="0" FontWeight="SemiBold" />
+            <TextBlock Classes="PageSubtitle" Text="·" Margin="0" />
+            <TextBlock Classes="PageSubtitle" Text="{Binding Runtime}" Margin="0" />
+          </StackPanel>
+        </StackPanel>
+      </StackPanel>
+
+      <Border Classes="Card">
+        <TextBlock Text="{loc:Tr About.Description}" TextWrapping="Wrap" FontSize="14" LineHeight="22" />
+      </Border>
+
+      <Border Classes="Card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="CardTitle" Text="{loc:Tr About.BuiltOn}" />
+          <TextBlock Text="{loc:Tr About.BuiltOn.Text}" TextWrapping="Wrap" Classes="Muted" LineHeight="20" />
+          <TextBlock Text="{loc:Tr About.NotUncooker}" TextWrapping="Wrap" LineHeight="20" Margin="0,8,0,0"
+                     Foreground="{DynamicResource Brush.Warning}" />
+        </StackPanel>
+      </Border>
+
+      <Grid ColumnDefinitions="*,14,*">
+        <Border Grid.Column="0" Classes="Card">
+          <StackPanel Spacing="6">
+            <TextBlock Classes="CardTitle" Text="{loc:Tr About.License}" />
+            <TextBlock Text="{loc:Tr About.License.Text}" TextWrapping="Wrap" Classes="Muted" LineHeight="20" />
+            <Button Classes="Link" Content="THIRD-PARTY-NOTICES.md" Command="{Binding OpenNoticesCommand}" Margin="0,6,0,0" />
+          </StackPanel>
+        </Border>
+        <Border Grid.Column="2" Classes="Card">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="CardTitle" Text="{loc:Tr About.Links}" />
+            <Button Classes="Link" Content="{loc:Tr About.Link.Project}" Command="{Binding OpenProjectCommand}" />
+            <Button Classes="Link" Content="{loc:Tr About.Link.Mappings}" Command="{Binding OpenMappingsCommand}" />
+            <Button Classes="Link" Content="{loc:Tr About.Link.Issues}" Command="{Binding OpenIssuesCommand}" />
+            <Button Classes="Link" Content="{loc:Tr About.Link.Cue4Parse}" Command="{Binding OpenCue4ParseCommand}" />
+            <Button Classes="Link" Content="{loc:Tr About.Link.Retoc}" Command="{Binding OpenRetocCommand}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <Border Classes="Card">
+        <StackPanel Spacing="6">
+          <TextBlock Classes="CardTitle" Text="{loc:Tr About.Legal}" />
+          <TextBlock Text="{loc:Tr About.Legal.Text}" TextWrapping="Wrap" Classes="Muted" LineHeight="20" />
+        </StackPanel>
+      </Border>
+
+    </StackPanel>
+    </Grid>
+  </ScrollViewer>
+
+</UserControl>

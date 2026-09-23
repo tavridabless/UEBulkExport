@@ -24,41 +24,47 @@ public enum ExportMode
 
 public sealed class Options
 {
-    public string PaksDirectory = "";
-    public string OutputDirectory = "";
-    public string? UsmapPath;
-    public string? OodlePath;
-    public string? ZlibPath;
-    public string? VgmStreamPath;
-    public EGame Game = EGame.GAME_UE5_3;
-    public ETexturePlatform Platform = ETexturePlatform.DesktopMobile;
-    public ExportMode Mode = ExportMode.Legacy;
-    public List<string> AesKeys = [];
-    public int Threads = Math.Max(1, Environment.ProcessorCount - 1);
+    public string PaksDirectory { get; set; } = "";
+    public string OutputDirectory { get; set; } = "";
+    public string? UsmapPath { get; set; }
+    public string? OodlePath { get; set; }
+    public string? ZlibPath { get; set; }
+    public string? VgmStreamPath { get; set; }
+    public EGame Game { get; set; } = EGame.GAME_UE5_3;
+    public ETexturePlatform Platform { get; set; } = ETexturePlatform.DesktopMobile;
+    public ExportMode Mode { get; set; } = ExportMode.Legacy;
+    public List<string> AesKeys { get; set; } = [];
+    public int Threads { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
 
-    public string? IncludeRegex;
-    public string? ExcludeRegex;
+    public string? IncludeRegex { get; set; }
+    public string? ExcludeRegex { get; set; }
 
-    public bool WriteJson = true;
-    public bool WriteAssets = true;
-    public bool WriteRawMisc = true;
-    public bool WriteRawPackages;
-    public bool ExportMaterials;
-    public bool ConvertAudio = true;
-    public bool ExportWorlds = true;
-    public bool Resume = true;
-    public bool Verbose;
-    public bool DryRun;
-    public string? RetocPath;
+    /// <summary>A text file with one container path per line: only those entries are exported.</summary>
+    public string? PathsFile { get; set; }
 
-    public EMeshFormat MeshFormat = EMeshFormat.Gltf2;
-    public EMeshFormat? AnimFormatOverride;
-    public ENaniteMeshFormat NaniteMeshFormat = ENaniteMeshFormat.NoNanite;
-    public EMeshQuality MeshQuality = EMeshQuality.Highest;
-    public ETextureFormat TextureFormat = ETextureFormat.Png;
-    public ESocketFormat SocketFormat = ESocketFormat.Bone;
-    public bool ExportMorphTargets = true;
-    public bool ExportAllTextureMips;
+    /// <summary>The resolved contents of <see cref="PathsFile"/>, or a set handed over directly by the GUI.</summary>
+    public IReadOnlySet<string>? SelectedPaths { get; set; }
+
+    public bool WriteJson { get; set; } = true;
+    public bool WriteAssets { get; set; } = true;
+    public bool WriteRawMisc { get; set; } = true;
+    public bool WriteRawPackages { get; set; }
+    public bool ExportMaterials { get; set; }
+    public bool ConvertAudio { get; set; } = true;
+    public bool ExportWorlds { get; set; } = true;
+    public bool Resume { get; set; } = true;
+    public bool Verbose { get; set; }
+    public bool DryRun { get; set; }
+    public string? RetocPath { get; set; }
+
+    public EMeshFormat MeshFormat { get; set; } = EMeshFormat.Gltf2;
+    public EMeshFormat? AnimFormatOverride { get; set; }
+    public ENaniteMeshFormat NaniteMeshFormat { get; set; } = ENaniteMeshFormat.NoNanite;
+    public EMeshQuality MeshQuality { get; set; } = EMeshQuality.Highest;
+    public ETextureFormat TextureFormat { get; set; } = ETextureFormat.Png;
+    public ESocketFormat SocketFormat { get; set; } = ESocketFormat.Bone;
+    public bool ExportMorphTargets { get; set; } = true;
+    public bool ExportAllTextureMips { get; set; }
 
     /// <summary>Modes that have to deserialize packages, and therefore need a mappings file.</summary>
     public bool RequiresMappings => Mode is ExportMode.Full or ExportMode.Json;
@@ -92,9 +98,11 @@ public sealed class Options
 
     public const string Usage = """
         UEBulkExport - export an entire Unreal Engine container (.utoc/.ucas/.pak) into one folder
+        Run UEBulkExport.exe without arguments to open the graphical interface.
 
         USAGE
-          UEBulkExport --paks <path> --out <dir> [options]
+          UEBulkExport.Cli --paks <path> --out <dir> [options]
+          UEBulkExport --paks <path> --out <dir> [options]      (the GUI build accepts the same arguments)
 
         PATHS
           --paks <path>         Where the containers are. Accepts the Paks folder itself, any
@@ -127,6 +135,8 @@ public sealed class Options
           --include <regex>     Only export entries whose container path matches.
           --exclude <regex>     Skip entries whose container path matches.
                                 e.g. --exclude "^Engine/" to drop stock engine content.
+          --paths-file <file>   Export only the entries listed in the file, one container path
+                                per line (the GUI writes _selection.txt for its selections).
 
         WHAT TO WRITE (mode=full)
           --no-json             Skip the .json property dumps.
@@ -152,7 +162,7 @@ public sealed class Options
           --sockets <f>         bone (default) | socket | none
           --no-morphs           Skip morph targets on skeletal meshes.
           --all-mips            Write every texture mip, not just the largest.
-          --platform <p>        DesktopMobile (default) | XboxAndPlaystation | NintendoSwitch
+          --platform <p>        DesktopMobile (default) | XboxAndPlaystation4 | Playstation5 | NintendoSwitch
 
         HELPER BINARIES
           --oodle <file>        Oodle library. Auto-detected, else downloaded on first run.
@@ -166,19 +176,19 @@ public sealed class Options
 
         EXAMPLES
           # What is in there? Works without mappings.
-          UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" --mode list
+          UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export" --mode list
 
           # Extract cooked .uasset/.umap packages and their payloads; no JSON or usmap.
-          UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export"
+          UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export"
 
           # Convert to viewable formats. Mappings picked up if one .usmap is nearby.
-          UEBulkExport --paks "D:\Games\MyGame" --out "D:\Converted" --mode full
+          UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Converted" --mode full
 
           # Game content only, no stock engine assets, no levels (full mode).
-          UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" ^
-                       --mode full --exclude "^Engine/" --no-worlds
+          UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export" ^
+                               --mode full --exclude "^Engine/" --no-worlds
 
           # Byte-exact dump. No mappings required.
-          UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export\raw" --mode raw
+          UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export\raw" --mode raw
         """;
 }
