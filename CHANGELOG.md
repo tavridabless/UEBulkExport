@@ -21,11 +21,15 @@ All notable changes to this project are documented here. The format follows
   Browser (folder tree of the mounted containers, file list with search, by-type statistics,
   container list with locked status; "Export only this folder" / "Exclude this folder" generate
   include/exclude filters), Log (filter by level, copy, clear, follow), Settings (language
-  English/Russian with live switching, theme Light/Dark/System, remember last paths, confirm close
+  English/Russian with a restart-required notice, theme Light/Dark/System, remember last paths, confirm close
   while running, default threads, default helper binary paths, reset) and About. A game folder or
   a `.utoc`/`.pak` dropped onto the window fills in the source. A fresh install starts in English
   with the light theme. Settings live in `%LOCALAPPDATA%\UEBulkExport\settings.json`; a startup crash
   is written to `%LOCALAPPDATA%\UEBulkExport\crash.log`. Nothing leaves the machine.
+- Windows releases now ship as a `setup.exe` installer instead of a ZIP archive. The installer
+  lets the user choose the destination directory and optional native export features,
+  documentation, helper tools and shortcuts; the full installation selects every component by
+  default and includes an uninstaller.
 - A unit test project, `tests/UEBulkExport.Tests` (xunit, 119 tests), that needs neither network
   access nor game files.
 - `--verbose` (log every file written) is now listed in the README options tables, together with
@@ -40,8 +44,8 @@ All notable changes to this project are documented here. The format follows
   executable does not block the shell or return its exit code reliably from an interactive
   cmd/PowerShell prompt.
 - The solution is split into `src/UEBulkExport.Core` (library with all export logic),
-  `src/UEBulkExport.Cli` (console front end) and `src/UEBulkExport` (GUI). The release archive
-  contains both executables side by side.
+  `src/UEBulkExport.Cli` (console front end) and `src/UEBulkExport` (GUI). The release staging
+  layout and the installed application contain both executables side by side.
 - The summary separates "failed entries" from "failed objects" instead of one mixed count.
 - `UEBulkExport.log` in the output folder is appended to across runs, each run starting with a
   "run started" separator, instead of being overwritten.

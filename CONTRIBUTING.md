@@ -57,6 +57,16 @@ dotnet publish src/UEBulkExport     -c Release -r win-x64 --self-contained -o ar
 dotnet publish src/UEBulkExport.Cli -c Release -r win-x64 --self-contained -o artifacts/publish
 ```
 
+### Release packaging
+
+Windows releases must be distributed as
+`UEBulkExport-<version>-win-x64-setup.exe`, built from `installer/UEBulkExport.iss`; do not replace
+the installer with a ZIP archive. Publish the GUI and CLI into the same staging directory before
+compiling the installer so they continue to share Core, the self-contained .NET runtime and native
+libraries. The default Full installation must include every export dependency and let the user
+choose the destination directory. Whenever installation or release behaviour changes, update
+`README.md` and `README.ru.md` together.
+
 ### GUI code
 
 The window lives under `src/UEBulkExport` and is built with Avalonia, MVVM style, using

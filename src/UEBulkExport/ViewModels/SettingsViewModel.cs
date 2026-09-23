@@ -8,6 +8,7 @@ namespace UEBulkExport.Gui.ViewModels;
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly AppSettings _settings;
+    private readonly string _startupLanguage;
 
     public IReadOnlyList<LanguageInfo> Languages => Loc.Languages;
     public IReadOnlyList<ThemeOption> Themes { get; } =
@@ -18,6 +19,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     ];
 
     [ObservableProperty] private LanguageInfo _language;
+    [ObservableProperty] private bool _restartRequired;
     [ObservableProperty] private ThemeOption _theme;
     [ObservableProperty] private bool _rememberPaths;
     [ObservableProperty] private bool _confirmClose;
@@ -32,10 +34,13 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     /// <summary>Raised after a reset so the export form can re-read its defaults.</summary>
     public event Action? SettingsReset;
+    /// <summary>Handled by the main window, which owns shutdown and running-export confirmation.</summary>
+    public event Action? RestartRequested;
 
     public SettingsViewModel(AppSettings settings)
     {
         _settings = settings;
+        _startupLanguage = Loc.Instance.Language;
         _language = Languages.FirstOrDefault(l => l.Code == Loc.Instance.Language) ?? Languages[0];
         _theme = Themes.FirstOrDefault(t => t.Code == settings.Theme) ?? Themes[0];
         _rememberPaths = settings.RememberPaths;
@@ -49,9 +54,9 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnLanguageChanged(LanguageInfo value)
     {
-        Loc.Instance.Language = value.Code;
         _settings.Language = value.Code;
         _settings.Save();
+        RestartRequired = value.Code != _startupLanguage;
     }
 
     partial void OnThemeChanged(ThemeOption value)
@@ -83,6 +88,9 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     [RelayCommand]
     private void OpenSettingsFolder() => ShellHelper.OpenFolder(Path.GetDirectoryName(AppSettings.FilePath)!);
+
+    [RelayCommand]
+    private void Restart() => RestartRequested?.Invoke();
 
     [RelayCommand]
     private void Reset()

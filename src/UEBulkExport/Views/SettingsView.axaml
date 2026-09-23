@@ -33,6 +33,26 @@
               </ComboBox>
             </StackPanel>
           </Grid>
+          <Border AutomationProperties.AutomationId="LanguageRestartBanner"
+                  IsVisible="{Binding RestartRequired}"
+                  Margin="0,12,0,0" Padding="12,10"
+                  CornerRadius="7"
+                  Background="{DynamicResource Brush.AccentSoft}"
+                  BorderBrush="{DynamicResource Brush.Accent}"
+                  BorderThickness="1">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+              <StackPanel Grid.Column="0">
+              <TextBlock Text="{loc:Tr Settings.Language.RestartTitle}"
+                         FontWeight="SemiBold" Foreground="{DynamicResource Brush.Accent}" />
+              <TextBlock Text="{loc:Tr Settings.Language.RestartHint}"
+                         Margin="0,2,0,0" TextWrapping="Wrap" />
+              </StackPanel>
+              <Button Grid.Column="1" Classes="Primary"
+                      Content="{loc:Tr Settings.Language.RestartNow}"
+                      Command="{Binding RestartCommand}"
+                      VerticalAlignment="Center" />
+            </Grid>
+          </Border>
         </StackPanel>
       </Border>
 

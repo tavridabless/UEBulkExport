@@ -233,6 +233,9 @@
   "Settings.Subtitle": "Хранятся для пользователя; ничего не покидает этот компьютер.",
   "Settings.Appearance": "Внешний вид",
   "Settings.Language": "Язык",
+  "Settings.Language.RestartTitle": "Требуется перезапуск",
+  "Settings.Language.RestartHint": "Перезапустите UEBulkExport, чтобы применить выбранный язык.",
+  "Settings.Language.RestartNow": "Перезапустить",
   "Settings.Theme": "Тема",
   "Theme.Dark": "Тёмная",
   "Theme.Light": "Светлая",
@@ -286,6 +289,10 @@
   "Close.Running.Message": "Экспорт ещё идёт. Закрыть всё равно? Выполненное сохранится, и позже можно продолжить.",
   "Close.Running.Confirm": "Закрыть и остановить",
   "Close.Running.Stay": "Продолжить",
+  "Restart.Running.Title": "Экспорт выполняется",
+  "Restart.Running.Message": "Перезапуск остановит текущий экспорт. Выполненное сохранится, и позже можно будет продолжить.",
+  "Restart.Running.Confirm": "Перезапустить и остановить",
+  "Restart.Running.Stay": "Продолжить экспорт",
 
   "Drop.Hint": "Перетащите сюда папку игры или файл .utoc / .pak"
 }

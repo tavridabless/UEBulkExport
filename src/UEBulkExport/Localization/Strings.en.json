@@ -233,6 +233,9 @@
   "Settings.Subtitle": "Stored per user; nothing leaves this computer.",
   "Settings.Appearance": "Appearance",
   "Settings.Language": "Language",
+  "Settings.Language.RestartTitle": "Restart required",
+  "Settings.Language.RestartHint": "Restart UEBulkExport to apply the selected language.",
+  "Settings.Language.RestartNow": "Restart now",
   "Settings.Theme": "Theme",
   "Theme.Dark": "Dark",
   "Theme.Light": "Light",
@@ -286,6 +289,10 @@
   "Close.Running.Message": "An export is still running. Close anyway? Finished entries are kept, so you can resume later.",
   "Close.Running.Confirm": "Close and stop",
   "Close.Running.Stay": "Keep running",
+  "Restart.Running.Title": "Export in progress",
+  "Restart.Running.Message": "Restarting will stop the active export. Finished entries are kept, so you can resume later.",
+  "Restart.Running.Confirm": "Restart and stop",
+  "Restart.Running.Stay": "Keep running",
 
   "Drop.Hint": "Drop a game folder or a .utoc / .pak file here"
 }

@@ -69,16 +69,45 @@ jobs:
           cp docs/mappings.md docs/screenshot.png staging/UEBulkExport/docs/
           cp -r tools staging/UEBulkExport/
 
-      - name: Archive
-        shell: bash
+      - name: Install Inno Setup
+        shell: powershell
         run: |
-          name="UEBulkExport-${{ steps.version.outputs.value }}-${{ matrix.rid }}"
-          cd staging
-          7z a -tzip "../$name.zip" UEBulkExport >/dev/null
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          $installDir = Join-Path $env:RUNNER_TEMP 'inno-setup'
+          Invoke-WebRequest `
+            'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' `
+            -OutFile $installer
+
+          $expectedHash = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'
+          $actualHash = (Get-FileHash $installer -Algorithm SHA256).Hash
+          if ($actualHash -ne $expectedHash) {
+            throw "Inno Setup checksum mismatch: $actualHash"
+          }
+
+          $process = Start-Process -FilePath $installer -WindowStyle Hidden -Wait -PassThru `
+            -ArgumentList @('/PORTABLE=1', '/VERYSILENT', '/CURRENTUSER', '/NORESTART', "/DIR=`"$installDir`"")
+          if ($process.ExitCode -ne 0) {
+            throw "Inno Setup installation failed with exit code $($process.ExitCode)"
+          }
+          "ISCC_PATH=$(Join-Path $installDir 'ISCC.exe')" >> $env:GITHUB_ENV
+
+      - name: Build the Windows installer
+        shell: powershell
+        run: |
+          $source = (Resolve-Path 'staging\UEBulkExport').Path
+          $output = Join-Path $PWD 'artifacts\installer'
+          & $env:ISCC_PATH `
+            "/DAppVersion=${{ steps.version.outputs.value }}" `
+            "/DSourceDir=$source" `
+            "/DOutputDir=$output" `
+            'installer\UEBulkExport.iss'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE"
+          }
 
       - name: Attach to the release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           generate_release_notes: true
-          files: UEBulkExport-*.zip
+          files: artifacts/installer/UEBulkExport-*-win-x64-setup.exe

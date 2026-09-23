@@ -23,6 +23,27 @@ public static class ShellHelper
         Start(url);
     }
 
+    public static bool TryRestartApplication()
+    {
+        var executable = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(executable) || !File.Exists(executable)) return false;
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(executable)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = AppContext.BaseDirectory
+            });
+            return true;
+        }
+        catch (Exception e)
+        {
+            Log.Warn($"could not restart '{executable}': {e.Message}");
+            return false;
+        }
+    }
+
     private static void Start(string target)
     {
         try

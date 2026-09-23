@@ -45,6 +45,7 @@ public sealed partial class MainWindow : Window
         {
             if (Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
         };
+        shell.Settings.RestartRequested += OnRestartRequested;
 
         shell.PropertyChanged += (_, e) =>
         {
@@ -56,6 +57,31 @@ public sealed partial class MainWindow : Window
     private void ShowPage(string key)
     {
         if (_pages.TryGetValue(key, out var page)) PageHost.Content = page;
+    }
+
+    private async void OnRestartRequested()
+    {
+        if (Shell is not { } shell) return;
+
+        if (shell.Export.IsBusy && shell.AppSettings.ConfirmCloseWhileRunning)
+        {
+            var confirmed = await ConfirmAsync(
+                "Restart.Running.Title",
+                "Restart.Running.Message",
+                "Restart.Running.Confirm",
+                "Restart.Running.Stay");
+            if (!confirmed) return;
+        }
+
+        shell.AppSettings.WindowWidth = Width;
+        shell.AppSettings.WindowHeight = Height;
+        shell.AppSettings.Save();
+
+        if (!ShellHelper.TryRestartApplication()) return;
+
+        _closeConfirmed = true;
+        if (shell.Export.IsBusy) shell.Export.CancelCommand.Execute(null);
+        Close();
     }
 
     // ------------------------------------------------------------------ drag and drop
