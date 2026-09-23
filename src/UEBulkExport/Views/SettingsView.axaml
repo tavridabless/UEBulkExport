@@ -1,0 +1,105 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:UEBulkExport.Gui.ViewModels"
+             xmlns:loc="using:UEBulkExport.Gui.Localization"
+             x:Class="UEBulkExport.Gui.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+
+  <ScrollViewer>
+    <Grid Width="{Binding $parent[ScrollViewer].Viewport.Width}">
+    <StackPanel Margin="28,24,28,20" Spacing="14" MaxWidth="900" HorizontalAlignment="Stretch">
+
+      <StackPanel Margin="0,0,0,6">
+        <TextBlock Classes="PageTitle" Text="{loc:Tr Settings.Title}" />
+        <TextBlock Classes="PageSubtitle" Text="{loc:Tr Settings.Subtitle}" />
+      </StackPanel>
+
+      <Border Classes="Card">
+        <StackPanel>
+          <TextBlock Classes="CardTitle" Text="{loc:Tr Settings.Appearance}" Margin="0,0,0,6" />
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="20">
+            <StackPanel Grid.Column="0">
+              <TextBlock Classes="Label" Text="{loc:Tr Settings.Language}" />
+              <ComboBox AutomationProperties.AutomationId="LanguageBox" ItemsSource="{Binding Languages}" SelectedItem="{Binding Language}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1">
+              <TextBlock Classes="Label" Text="{loc:Tr Settings.Theme}" />
+              <ComboBox AutomationProperties.AutomationId="ThemeBox" ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ThemeOption">
+                    <TextBlock Text="{Binding Label}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="Card">
+        <StackPanel>
+          <TextBlock Classes="CardTitle" Text="{loc:Tr Settings.Behaviour}" Margin="0,0,0,10" />
+          <CheckBox IsChecked="{Binding RememberPaths}" Content="{loc:Tr Settings.RememberPaths}" />
+          <CheckBox IsChecked="{Binding ConfirmClose}" Content="{loc:Tr Settings.ConfirmClose}" />
+
+          <TextBlock Classes="Label" Text="{loc:Tr Settings.Threads}" Margin="0,14,0,4" />
+          <Grid ColumnDefinitions="*,56" ColumnSpacing="12">
+            <Slider Grid.Column="0" Minimum="1" Maximum="{Binding MaxThreads}" Value="{Binding DefaultThreads}"
+                    TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding DefaultThreads}" VerticalAlignment="Center" FontWeight="SemiBold"
+                       HorizontalAlignment="Right" />
+          </Grid>
+          <TextBlock Classes="Hint" Text="{loc:Tr Settings.Threads.Hint}" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="Card">
+        <StackPanel>
+          <TextBlock Classes="CardTitle" Text="{loc:Tr Settings.Tools}" />
+          <TextBlock Classes="CardSubtitle" Text="{loc:Tr Settings.Tools.Hint}" />
+
+          <TextBlock Classes="Label" Text="{loc:Tr Tools.Retoc}" Margin="0,0,0,4" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding RetocPath}" Watermark="{loc:Tr Common.Auto}" />
+            <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseRetocCommand}" />
+          </Grid>
+
+          <TextBlock Classes="Label" Text="{loc:Tr Tools.Oodle}" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding OodlePath}" Watermark="{loc:Tr Common.Auto}" />
+            <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseOodleCommand}" />
+          </Grid>
+
+          <TextBlock Classes="Label" Text="{loc:Tr Tools.Zlib}" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding ZlibPath}" Watermark="{loc:Tr Common.Auto}" />
+            <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseZlibCommand}" />
+          </Grid>
+
+          <TextBlock Classes="Label" Text="{loc:Tr Tools.Vgmstream}" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Text="{Binding VgmStreamPath}" Watermark="{loc:Tr Common.Optional}" />
+            <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseVgmStreamCommand}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="Card">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+          <StackPanel Grid.Column="0">
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Settings.Reset}" FontSize="14" />
+            <TextBlock Classes="Hint" Text="{loc:Tr Settings.Reset.Hint}" />
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+              <TextBlock Text="{loc:Tr Settings.StoredAt}" Classes="Muted" FontSize="12" VerticalAlignment="Center" />
+              <Button Classes="Link" Content="{Binding SettingsFile}" Command="{Binding OpenSettingsFolderCommand}" FontSize="12" />
+            </StackPanel>
+          </StackPanel>
+          <Button Grid.Column="1" Classes="Danger" Content="{loc:Tr Common.Reset}" Command="{Binding ResetCommand}" VerticalAlignment="Top" />
+        </Grid>
+      </Border>
+
+    </StackPanel>
+    </Grid>
+  </ScrollViewer>
+
+</UserControl>

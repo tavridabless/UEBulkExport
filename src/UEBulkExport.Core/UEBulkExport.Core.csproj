@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <AssemblyName>UEBulkExport.Core</AssemblyName>
+    <RootNamespace>UEBulkExport</RootNamespace>
+    <Description>Bulk export of an entire Unreal Engine container (.utoc/.ucas/.pak) into one folder: the engine shared by the CLI and the GUI.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CUE4Parse" Version="1.2.2.202609" />
+    <PackageReference Include="CUE4Parse-Conversion" Version="1.2.2.202609" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+
+    <!--
+      Pulled in transitively at 9.0.0, which carries a published advisory
+      (GHSA-73j8-2gch-69rq). Referencing it directly pins the fixed version instead.
+    -->
+    <PackageReference Include="Microsoft.Bcl.Memory" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="UEBulkExport.Tests" />
+  </ItemGroup>
+
+</Project>

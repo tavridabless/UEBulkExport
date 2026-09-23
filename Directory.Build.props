@@ -1,0 +1,26 @@
+<Project>
+
+  <!-- Settings shared by every project in the solution. Per-project files hold only what differs. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- A native helper library has no managed metadata; the copy step warns about it harmlessly. -->
+    <NoWarn>$(NoWarn);MSB3246</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Version>1.2.0</Version>
+    <Authors>UEBulkExport contributors</Authors>
+    <Product>UEBulkExport</Product>
+    <Copyright>Copyright 2026 UEBulkExport contributors</Copyright>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/tavridabless/UEBulkExport</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/tavridabless/UEBulkExport.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+</Project>

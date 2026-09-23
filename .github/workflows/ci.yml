@@ -10,7 +10,7 @@ on:
 
 jobs:
   build:
-    name: Build (${{ matrix.os }})
+    name: Build and test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -26,22 +26,31 @@ jobs:
           global-json-file: global.json
 
       - name: Restore
-        run: dotnet restore src/UEBulkExport
+        run: dotnet restore UEBulkExport.slnx
 
       - name: Build
-        run: dotnet build src/UEBulkExport -c Release --no-restore -warnaserror
+        run: dotnet build UEBulkExport.slnx -c Release --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test tests/UEBulkExport.Tests -c Release --no-build --logger "trx;LogFileName=results.trx"
 
       # The native helper is lifted out of a downloaded NuGet package by the build. If that ever
       # breaks, animations silently stop exporting, so fail loudly here instead. Upstream only
-      # publishes a Windows build of it, hence the condition.
+      # publishes a Windows build of it, hence the condition. Both executables need their own copy.
       - name: Verify the native helper was fetched
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          if ! ls src/UEBulkExport/bin/Release/net10.0/CUE4Parse-Natives.* >/dev/null 2>&1; then
-            echo "::error::CUE4Parse-Natives was not copied into the build output"
-            exit 1
-          fi
+          for project in UEBulkExport.Cli UEBulkExport; do
+            if ! ls "src/$project/bin/Release/net10.0/CUE4Parse-Natives."* >/dev/null 2>&1; then
+              echo "::error::CUE4Parse-Natives was not copied into the $project build output"
+              exit 1
+            fi
+          done
 
       - name: Smoke test the CLI
+        run: dotnet run --project src/UEBulkExport.Cli -c Release --no-build -- --version
+
+      # The GUI executable accepts the same arguments and must answer without opening a window.
+      - name: Smoke test the GUI executable in command-line mode
         run: dotnet run --project src/UEBulkExport -c Release --no-build -- --version

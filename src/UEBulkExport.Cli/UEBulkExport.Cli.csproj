@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>UEBulkExport.Cli</AssemblyName>
+    <RootNamespace>UEBulkExport.CommandLine</RootNamespace>
+    <Description>Command line front end for UEBulkExport.</Description>
+    <!-- Throughput matters more than footprint for a batch conversion. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ApplicationIcon Condition="Exists('../UEBulkExport/Assets/app.ico')">../UEBulkExport/Assets/app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../UEBulkExport.Core/UEBulkExport.Core.csproj" />
+  </ItemGroup>
+
+  <Import Project="../natives.targets" />
+
+</Project>

@@ -1,70 +1,110 @@
-using UEBulkExport;
+using System.Runtime.InteropServices;
+using Avalonia;
+using UEBulkExport.Gui.Services;
 
-var launchedFromExplorer = args.Length == 0 && !Console.IsOutputRedirected;
+namespace UEBulkExport.Gui;
 
-try
+internal static class Program
 {
-    var options = Cli.Parse(args);
-    if (options is null) return WaitIfNeeded(0);
-
-    if (!string.IsNullOrEmpty(options.OutputDirectory) && !options.DryRun)
+    /// <summary>
+    /// Double-clicked: open the window. Started with arguments: behave exactly like the console
+    /// executable, so the documented commands keep working against this file too. The GUI build
+    /// has no console of its own, so it borrows the parent's when there is one.
+    /// </summary>
+    [STAThread]
+    public static int Main(string[] args)
     {
-        Directory.CreateDirectory(options.OutputDirectory);
-        Log.OpenFile(Path.Combine(options.OutputDirectory, "UEBulkExport.log"));
+        if (args.Length > 0) return RunCommandLine(args);
+
+        try
+        {
+            return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        }
+        catch (Exception e)
+        {
+            WriteCrashLog(e);
+            throw;
+        }
     }
 
-    Log.Info($"UEBulkExport {Cli.Version} - {options.Mode} export");
-    Log.Info($"containers: {options.PaksDirectory}");
-
-    Natives.Initialize(options);
-
-    using var exporter = new BulkExporter(options);
-    exporter.Mount();
-
-    var files = exporter.SelectFiles();
-
-    if (options.Mode == ExportMode.List)
+    private static int RunCommandLine(string[] args)
     {
-        exporter.PrintListing(files);
-        return WaitIfNeeded(0);
+        var attached = ConsoleAttach.TryAttach();
+        Log.AddSink(new PlainConsoleLogSink());
+
+        using var cancellation = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            if (cancellation.IsCancellationRequested) return;
+            e.Cancel = true;
+            cancellation.Cancel();
+        };
+
+        var exitCode = CliRunner.RunAsync(args, cancellation.Token).GetAwaiter().GetResult();
+
+        // Started with arguments from Explorer (a shortcut, a drag-and-drop): a fresh console was
+        // created for the output and would vanish with the process, so hold it open.
+        if (attached == ConsoleAttach.Result.Allocated)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Press any key to close...");
+            try { Console.ReadKey(intercept: true); } catch (InvalidOperationException) { }
+        }
+
+        return exitCode;
     }
 
-    exporter.VerifyMappings(files);
-
-    if (options.DryRun)
+    /// <summary>A window-less process has nowhere to show an exception, so keep it where the user can find it.</summary>
+    private static void WriteCrashLog(Exception e)
     {
-        exporter.PrintPlan(files);
-        return WaitIfNeeded(0);
+        try
+        {
+            var directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UEBulkExport");
+            Directory.CreateDirectory(directory);
+            File.AppendAllText(Path.Combine(directory, "crash.log"), $"----- {DateTime.Now:yyyy-MM-dd HH:mm:ss} -----{Environment.NewLine}{e}{Environment.NewLine}");
+        }
+        catch
+        {
+            // nothing left to report to
+        }
     }
 
-    return WaitIfNeeded(await exporter.RunAsync(files));
-}
-catch (UserFacingException e)
-{
-    Log.Problem(e.Headline, e.Hint);
-    return WaitIfNeeded(1);
-}
-catch (Exception e)
-{
-    Log.Error(e.ToString());
-    return WaitIfNeeded(1);
-}
-finally
-{
-    Log.Close();
+    // Avalonia configuration, don't remove; also used by visual designer.
+    public static AppBuilder BuildAvaloniaApp()
+        => AppBuilder.Configure<App>()
+            .UsePlatformDetect()
+            .WithInterFont()
+            .LogToTrace();
 }
 
-// Double-clicking the executable in Explorer opens a console that closes the instant the process
-// ends, which makes the help text useless. Hold it open when nobody is reading a redirected pipe.
-int WaitIfNeeded(int exitCode)
+/// <summary>Attaches to the parent console (a terminal), or creates one when there is none.</summary>
+internal static class ConsoleAttach
 {
-    if (!launchedFromExplorer) return exitCode;
+    public enum Result { None, Attached, Allocated }
 
-    Console.WriteLine();
-    Console.WriteLine("Press any key to close...");
+    private const int AttachParentProcess = -1;
 
-    try { Console.ReadKey(intercept: true); }
-    catch (InvalidOperationException) { /* no console input available after all */ }
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AttachConsole(int processId);
 
-    return exitCode;
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AllocConsole();
+
+    public static Result TryAttach()
+    {
+        if (!OperatingSystem.IsWindows()) return Result.Attached; // stdio is inherited on Unix
+        if (AttachConsole(AttachParentProcess)) return Result.Attached;
+        return AllocConsole() ? Result.Allocated : Result.None;
+    }
+}
+
+/// <summary>Console output without colours: the attached console may not be ours to recolour.</summary>
+internal sealed class PlainConsoleLogSink : ILogSink
+{
+    private readonly Lock _gate = new();
+
+    public void Write(in LogEntry entry)
+    {
+        lock (_gate) Console.WriteLine(entry.Format());
+    }
 }

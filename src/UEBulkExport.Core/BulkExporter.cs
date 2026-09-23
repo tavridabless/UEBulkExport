@@ -33,12 +33,22 @@ public sealed class BulkExporter : IDisposable
     private readonly HashSet<string> _alreadyDone = new(StringComparer.OrdinalIgnoreCase);
     private readonly Lock _indexGate = new();
     private StreamWriter? _index;
+    private int _indexPending;
     private bool _indexLoaded;
 
-    private int _processed, _exported, _skipped, _failed, _written, _unsupported, _retocPackages;
+    private int _processed, _exported, _skipped, _failed, _failedObjects, _written, _unsupported, _retocPackages;
 
     private readonly record struct ExportError(string Path, string Exception, string Message);
     private readonly record struct WorkResult(bool Wrote, bool HadErrors);
+
+    /// <summary>Raised every few seconds while a run is in progress, and once more when it ends.</summary>
+    public event Action<ExportProgress>? ProgressChanged;
+
+    /// <summary>Every container the provider saw, filled in by <see cref="Mount"/>.</summary>
+    public IReadOnlyList<ContainerInfo> Containers { get; private set; } = [];
+
+    /// <summary>The entries the provider can read, keyed by container path. Valid after <see cref="Mount"/>.</summary>
+    public IEnumerable<GameFile> AllFiles => _provider.Files.Values;
 
     public BulkExporter(Options options)
     {
@@ -65,6 +75,8 @@ public sealed class BulkExporter : IDisposable
         foreach (var vfs in _provider.MountedVfs)
             Log.Info($"  {vfs.Name}: {vfs.FileCount} entries");
 
+        Containers = CollectContainers();
+
         if (_provider.Files.Count == 0)
             throw new UserFacingException(
                 $"No readable entries in {_options.PaksDirectory}.",
@@ -82,14 +94,24 @@ public sealed class BulkExporter : IDisposable
         TryQuietly(() => _provider.LoadVirtualPaths());
     }
 
-    private void ReportLockedContainers()
+    private List<ContainerInfo> CollectContainers()
     {
-        // global.utoc carries shared script and name data rather than assets; the provider folds
-        // it into GlobalData instead of mounting it, so it is expected to look "unloaded".
-        var locked = _provider.UnloadedVfs
-            .Where(vfs => !vfs.Name.StartsWith("global.", StringComparison.OrdinalIgnoreCase))
+        var list = _provider.MountedVfs
+            .Select(vfs => new ContainerInfo(vfs.Name, vfs.FileCount, false, null))
             .ToList();
 
+        // global.utoc carries shared script and name data rather than assets; the provider folds
+        // it into GlobalData instead of mounting it, so it is expected to look "unloaded".
+        list.AddRange(_provider.UnloadedVfs
+            .Where(vfs => !vfs.Name.StartsWith("global.", StringComparison.OrdinalIgnoreCase))
+            .Select(vfs => new ContainerInfo(vfs.Name, 0, true, vfs.EncryptionKeyGuid.ToString())));
+
+        return list;
+    }
+
+    private void ReportLockedContainers()
+    {
+        var locked = Containers.Where(c => c.IsLocked).ToList();
         if (locked.Count == 0) return;
 
         Log.Warn($"{locked.Count} container(s) stayed locked - wrong or missing AES key:");
@@ -107,12 +129,8 @@ public sealed class BulkExporter : IDisposable
 
         foreach (var raw in _options.AesKeys)
         {
-            var separator = raw.LastIndexOf(':');
-
-            if (separator > 0 && !raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                keys.Add(new KeyValuePair<FGuid, FAesKey>(new FGuid(raw[..separator]), new FAesKey(raw[(separator + 1)..])));
-            else
-                keys.Add(new KeyValuePair<FGuid, FAesKey>(new FGuid(), new FAesKey(raw)));
+            var (guid, key) = Cli.SplitAesKey(raw);
+            keys.Add(new KeyValuePair<FGuid, FAesKey>(guid is null ? new FGuid() : new FGuid(guid), new FAesKey(key)));
         }
 
         _provider.SubmitKeys(keys);
@@ -166,10 +184,11 @@ public sealed class BulkExporter : IDisposable
             .DistinctBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
             .Where(f => include is null || include.IsMatch(f.Path))
             .Where(f => exclude is null || !exclude.IsMatch(f.Path))
+            .Where(f => _options.SelectedPaths is null || _options.SelectedPaths.Contains(f.Path))
             .OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (selected.Count == 0 && (include is not null || exclude is not null))
+        if (selected.Count == 0 && (include is not null || exclude is not null || _options.SelectedPaths is not null))
             throw new UserFacingException(
                 "The filters matched nothing.",
                 "Check --include / --exclude, or run with --mode list to see the container paths.");
@@ -181,62 +200,94 @@ public sealed class BulkExporter : IDisposable
         return selected;
     }
 
+    public static ContainerListing GetListing(IReadOnlyCollection<GameFile> files)
+    {
+        var byExtension = files
+            .GroupBy(f => f.Extension.ToLowerInvariant())
+            .Select(g => new ContainerListing.ExtensionGroup("." + g.Key, g.Count(), g.Sum(f => f.Size)))
+            .OrderByDescending(g => g.Bytes)
+            .ToList();
+
+        var folders = files
+            .GroupBy(f => f.Path.Split('/')[0])
+            .Select(g => new ContainerListing.FolderGroup(g.Key, g.Count()))
+            .OrderByDescending(g => g.Count)
+            .ToList();
+
+        return new ContainerListing(byExtension, folders, files.Count, files.Sum(f => f.Size));
+    }
+
     public void PrintListing(IReadOnlyList<GameFile> files)
     {
+        var listing = GetListing(files);
+
         Log.Raw("");
         Log.Raw($"{"extension",-24}{"count",10}{"size, MB",14}");
         Log.Raw(new string('-', 48));
 
-        foreach (var group in files.GroupBy(f => f.Extension.ToLowerInvariant()).OrderByDescending(g => g.Sum(f => f.Size)))
-            Log.Raw($"{"." + group.Key,-24}{group.Count(),10}{group.Sum(f => f.Size) / 1048576.0,14:N1}");
+        foreach (var group in listing.ByExtension)
+            Log.Raw($"{group.Extension,-24}{group.Count,10}{group.Bytes / 1048576.0,14:N1}");
 
         Log.Raw(new string('-', 48));
-        Log.Raw($"{"TOTAL",-24}{files.Count,10}{files.Sum(f => f.Size) / 1048576.0,14:N1}");
+        Log.Raw($"{"TOTAL",-24}{listing.TotalCount,10}{listing.TotalBytes / 1048576.0,14:N1}");
 
         Log.Raw("");
         Log.Raw("top level folders:");
-        foreach (var group in files.GroupBy(f => f.Path.Split('/')[0]).OrderByDescending(g => g.Count()))
-            Log.Raw($"  {group.Key,-32}{group.Count(),8} entries");
+        foreach (var group in listing.TopFolders)
+            Log.Raw($"  {group.Folder,-32}{group.Count,8} entries");
     }
 
-    /// <summary>Shows how each entry would be treated, without touching the disk.</summary>
-    public void PrintPlan(IReadOnlyList<GameFile> files)
+    /// <summary>Works out how each entry would be treated, without touching the disk.</summary>
+    public ExportPlan BuildPlan(IReadOnlyList<GameFile> files)
     {
         LoadIndex();
         var work = files.Where(ShouldProcess).ToList();
 
-        var packages = work.Count(f => f.IsUePackage);
-        var loose = work.Count(f => !f.IsUePackage && !f.IsUePackagePayload);
-        var payloads = work.Count(f => f.IsUePackagePayload);
         var alreadyDone = _options.Resume ? files.Count(f => _alreadyDone.Contains(f.Path)) : 0;
-        var skippedByMode = files.Count - work.Count - alreadyDone;
+
+        return new ExportPlan(
+            _options.Mode,
+            Path.GetFullPath(_options.OutputDirectory),
+            _options.UsmapPath,
+            files.Count,
+            alreadyDone,
+            files.Count - work.Count - alreadyDone,
+            work.Count(f => f.IsUePackage),
+            work.Count(f => !f.IsUePackage && !f.IsUePackagePayload),
+            work.Count(f => f.IsUePackagePayload),
+            work.Count(f => f.IsUePackage && f is FIoStoreEntry));
+    }
+
+    public void PrintPlan(IReadOnlyList<GameFile> files)
+    {
+        var plan = BuildPlan(files);
 
         Log.Raw("");
         Log.Raw("dry run - nothing will be written");
         Log.Raw("");
-        Log.Raw($"  mode                 {_options.Mode.ToString().ToLowerInvariant()}");
-        Log.Raw($"  output               {Path.GetFullPath(_options.OutputDirectory)}");
-        Log.Raw($"  mappings             {_options.UsmapPath ?? "(none)"}");
+        Log.Raw($"  mode                 {plan.Mode.ToString().ToLowerInvariant()}");
+        Log.Raw($"  output               {plan.OutputDirectory}");
+        Log.Raw($"  mappings             {plan.MappingsPath ?? "(none)"}");
         Log.Raw("");
-        Log.Raw($"  entries selected     {files.Count}");
-        Log.Raw($"  already done         {alreadyDone}");
-        Log.Raw($"  skipped by mode      {skippedByMode}");
-        if (_options.Mode == ExportMode.Legacy)
+        Log.Raw($"  entries selected     {plan.Selected}");
+        Log.Raw($"  already done         {plan.AlreadyDone}");
+        Log.Raw($"  skipped by mode      {plan.SkippedByMode}");
+        if (plan.Mode == ExportMode.Legacy)
         {
-            Log.Raw($"  packages to extract  {packages}");
-            Log.Raw($"  loose files to copy  {loose}");
+            Log.Raw($"  packages to extract  {plan.Packages}");
+            Log.Raw($"  loose files to copy  {plan.LooseFiles}");
             Log.Raw("  payloads             included with their packages");
-            Log.Raw($"  IoStore conversion   {work.Count(f => f.IsUePackage && f is FIoStoreEntry)} package(s) via retoc");
+            Log.Raw($"  IoStore conversion   {plan.IoStorePackages} package(s) via retoc");
             Log.Raw("  editor compatibility cooked assets only; supported types may load read-only");
         }
         else
         {
-            Log.Raw($"  packages to {(_options.Mode == ExportMode.Raw ? "copy" : "parse"),-8} {packages}");
-            Log.Raw($"  loose files to copy  {loose}");
-            Log.Raw($"  payload entries      {payloads}");
+            Log.Raw($"  packages to {(plan.Mode == ExportMode.Raw ? "copy" : "parse"),-8} {plan.Packages}");
+            Log.Raw($"  loose files to copy  {plan.LooseFiles}");
+            Log.Raw($"  payload entries      {plan.Payloads}");
         }
 
-        if (_options.Mode is ExportMode.Full)
+        if (plan.Mode is ExportMode.Full)
         {
             Log.Raw("");
             Log.Raw($"  meshes as            {_options.MeshFormat}");
@@ -248,7 +299,7 @@ public sealed class BulkExporter : IDisposable
 
     // ------------------------------------------------------------------ driving
 
-    public async Task<int> RunAsync(IReadOnlyList<GameFile> files, CancellationToken ct = default)
+    public async Task<ExportSummary> RunAsync(IReadOnlyList<GameFile> files, CancellationToken ct = default)
     {
         Directory.CreateDirectory(_options.OutputDirectory);
         OpenIndex();
@@ -261,44 +312,69 @@ public sealed class BulkExporter : IDisposable
         Log.Info($"{work.Count} entries to process ({preSkipped} skipped by mode/resume), {_options.Threads} threads");
 
         var clock = Stopwatch.StartNew();
-        await using var progress = StartProgressReporter(work.Count, clock);
+        var cancelled = false;
 
-        if (_options.Mode == ExportMode.Legacy)
-            await ConvertIoStoreAsync(work, ct);
+        try
+        {
+            await using var progress = StartProgressReporter(work.Count, clock);
 
-        var individualWork = _options.Mode == ExportMode.Legacy
-            ? work.Where(f => !(f.IsUePackage && f is FIoStoreEntry)).ToList()
-            : work;
+            if (_options.Mode == ExportMode.Legacy)
+                await ConvertIoStoreAsync(work, ct);
 
-        await Parallel.ForEachAsync(individualWork,
-            new ParallelOptions { MaxDegreeOfParallelism = _options.Threads, CancellationToken = ct },
-            async (file, token) =>
-            {
-                try
+            var individualWork = _options.Mode == ExportMode.Legacy
+                ? work.Where(f => !(f.IsUePackage && f is FIoStoreEntry)).ToList()
+                : work;
+
+            await Parallel.ForEachAsync(individualWork,
+                new ParallelOptions { MaxDegreeOfParallelism = _options.Threads, CancellationToken = ct },
+                async (file, token) =>
                 {
-                    var result = await ProcessFileAsync(file, token);
-                    if (result.Wrote) Interlocked.Increment(ref _exported);
-                    else Interlocked.Increment(ref _skipped);
+                    try
+                    {
+                        var result = await ProcessFileAsync(file, token);
+                        if (result.Wrote) Interlocked.Increment(ref _exported);
+                        else Interlocked.Increment(ref _skipped);
 
-                    if (!result.HadErrors) MarkDone(file.Path);
-                }
-                catch (Exception e)
-                {
-                    Interlocked.Increment(ref _failed);
-                    RecordError(file.Path, e);
-                }
-                finally
-                {
-                    Interlocked.Increment(ref _processed);
-                }
-            });
+                        if (!result.HadErrors) MarkDone(file.Path);
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception e)
+                    {
+                        Interlocked.Increment(ref _failed);
+                        RecordError(file.Path, e);
+                    }
+                    finally
+                    {
+                        Interlocked.Increment(ref _processed);
+                    }
+                });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Stop cleanly: whatever finished is in the index, so the next run resumes from here.
+            cancelled = true;
+            Log.Warn("cancelled - finished entries are recorded, run the same command again to resume");
+        }
+        finally
+        {
+            clock.Stop();
+            CloseIndex();
+        }
 
-        clock.Stop();
-        CloseIndex();
         WriteErrorReport();
-        PrintSummary(clock.Elapsed, preSkipped);
 
-        return _failed == 0 ? 0 : 2;
+        var summary = new ExportSummary(
+            clock.Elapsed, _processed, _exported, _written, _retocPackages,
+            _skipped + preSkipped, _unsupported, _failed, _failedObjects,
+            Path.GetFullPath(_options.OutputDirectory), cancelled);
+
+        ProgressChanged?.Invoke(Snapshot(work.Count, clock, "done"));
+        PrintSummary(summary);
+
+        return summary;
     }
 
     private async Task ConvertIoStoreAsync(IReadOnlyList<GameFile> work, CancellationToken ct)
@@ -339,35 +415,40 @@ public sealed class BulkExporter : IDisposable
         }
     }
 
-    private void PrintSummary(TimeSpan elapsed, int preSkipped)
+    private void PrintSummary(ExportSummary s)
     {
         Log.Raw("");
-        Log.Info($"done in {elapsed:hh\\:mm\\:ss}");
-        Log.Info($"  entries processed : {_processed}");
-        Log.Info($"  entries exported  : {_exported}");
-        Log.Info($"  files written     : {_written}" +
-                 (_retocPackages > 0 ? " (plus files written by retoc)" : ""));
-        if (_retocPackages > 0)
-            Log.Info($"  IoStore converted : {_retocPackages}");
-        Log.Info($"  nothing to do     : {_skipped + preSkipped}");
+        Log.Info(s.Cancelled ? $"cancelled after {s.Elapsed:hh\\:mm\\:ss}" : $"done in {s.Elapsed:hh\\:mm\\:ss}");
+        Log.Info($"  entries processed : {s.Processed}");
+        Log.Info($"  entries exported  : {s.Exported}");
+        Log.Info($"  files written     : {s.Written}" +
+                 (s.IoStoreConverted > 0 ? " (plus files written by retoc)" : ""));
+        if (s.IoStoreConverted > 0)
+            Log.Info($"  IoStore converted : {s.IoStoreConverted}");
+        Log.Info($"  nothing to do     : {s.NothingToDo}");
         if (_options.Mode is ExportMode.Full)
-            Log.Info($"  no converter      : {_unsupported}  (properties still written as .json)");
+            Log.Info($"  no converter      : {s.NoConverter}  (properties still written as .json)");
 
-        if (_failed > 0)
-            Log.Warn($"  failed            : {_failed}  (see errors.csv)");
+        if (s.FailedEntries > 0)
+            Log.Warn($"  failed entries    : {s.FailedEntries}  (see errors.csv)");
+        if (s.FailedObjects > 0)
+            Log.Warn($"  failed objects    : {s.FailedObjects}  (see errors.csv)");
 
-        Log.Info($"  output            : {Path.GetFullPath(_options.OutputDirectory)}");
+        Log.Info($"  output            : {s.OutputDirectory}");
     }
 
-    private bool ShouldProcess(GameFile file)
+    private bool ShouldProcess(GameFile file) => ShouldProcess(file, _options, _alreadyDone);
+
+    /// <summary>Pure so it can be tested without a container: which entries a mode touches at all.</summary>
+    internal static bool ShouldProcess(GameFile file, Options options, ISet<string> alreadyDone)
     {
-        if (_options.Resume && _alreadyDone.Contains(file.Path)) return false;
-        if (_options.Mode == ExportMode.Raw) return true;
-        if (_options.Mode == ExportMode.Legacy) return !file.IsUePackagePayload;
-        if (file.IsUePackagePayload) return _options.WriteRawPackages;
+        if (options.Resume && alreadyDone.Contains(file.Path)) return false;
+        if (options.Mode == ExportMode.Raw) return true;
+        if (options.Mode == ExportMode.Legacy) return !file.IsUePackagePayload;
+        if (file.IsUePackagePayload) return options.WriteRawPackages;
         if (file.IsUePackage) return true;
 
-        return _options.Mode == ExportMode.Full && _options.WriteRawMisc;
+        return options.Mode == ExportMode.Full && options.WriteRawMisc;
     }
 
     // ------------------------------------------------------------------ per entry
@@ -508,7 +589,7 @@ public sealed class BulkExporter : IDisposable
                     continue;
                 }
 
-                Interlocked.Increment(ref _failed);
+                Interlocked.Increment(ref _failedObjects);
                 hadErrors = true;
                 RecordError($"{containerPath} :: {result.ObjectPath}",
                     result.Error ?? new Exception("exporter reported failure"));
@@ -564,7 +645,7 @@ public sealed class BulkExporter : IDisposable
         Path.Combine(_options.OutputDirectory, containerPath.Replace('/', Path.DirectorySeparatorChar));
 
     /// <summary>Object names come from the asset and can carry characters the filesystem rejects.</summary>
-    private static string SafeName(string name)
+    internal static string SafeName(string name)
     {
         foreach (var c in Path.GetInvalidFileNameChars()) name = name.Replace(c, '_');
         return name;
@@ -622,7 +703,13 @@ public sealed class BulkExporter : IDisposable
         lock (_indexGate)
         {
             _index?.WriteLine(containerPath);
-            if (_processed % 256 == 0) _index?.Flush();
+
+            // Bound what an abrupt exit can lose to a couple of hundred entries.
+            if (++_indexPending >= 256)
+            {
+                _index?.Flush();
+                _indexPending = 0;
+            }
         }
     }
 
@@ -671,19 +758,25 @@ public sealed class BulkExporter : IDisposable
             Log.Warn($"  [{group.Count(),6}] {group.Key}");
     }
 
+    private ExportProgress Snapshot(int total, Stopwatch clock, string phase)
+    {
+        var done = Volatile.Read(ref _processed);
+        var rate = done / Math.Max(1.0, clock.Elapsed.TotalSeconds);
+        TimeSpan? eta = done == 0 || total == 0
+            ? null
+            : TimeSpan.FromSeconds(Math.Min((total - done) / Math.Max(0.001, rate), TimeSpan.MaxValue.TotalSeconds / 2));
+
+        return new ExportProgress(done, total, Volatile.Read(ref _written),
+            Volatile.Read(ref _failed) + Volatile.Read(ref _failedObjects), clock.Elapsed, eta, phase);
+    }
+
     private Timer StartProgressReporter(int total, Stopwatch clock)
     {
         return new Timer(_ =>
         {
-            var done = Volatile.Read(ref _processed);
-            if (done == 0 || total == 0) return;
-
-            var rate = done / Math.Max(1.0, clock.Elapsed.TotalSeconds);
-            var eta = TimeSpan.FromSeconds((total - done) / Math.Max(0.001, rate));
-
-            Log.Raw($"  {done}/{total} ({done * 100.0 / total:F1}%)  {rate:F0}/s  " +
-                    $"written {Volatile.Read(ref _written)}  failed {Volatile.Read(ref _failed)}  eta {eta:hh\\:mm\\:ss}");
-        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+            if (total == 0) return;
+            ProgressChanged?.Invoke(Snapshot(total, clock, "running"));
+        }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
     }
 
     private static void TryQuietly(Action action)

@@ -1,8 +1,8 @@
 # Third-party notices
 
-UEBulkExport is a thin command line front end. Almost all of the work is done by the components
-listed here. This file records what they are, where they come from, how they reach your machine,
-and under what terms.
+UEBulkExport is a thin front end — a command line program and a desktop window over the same
+core. Almost all of the work is done by the components listed here. This file records what they
+are, where they come from, how they reach your machine, and under what terms.
 
 ## Managed dependencies (NuGet, restored at build time)
 
@@ -11,6 +11,13 @@ and under what terms.
 | [CUE4Parse](https://github.com/FabianFG/CUE4Parse) | 1.2.2.202609 | Apache-2.0 | Mounts `.utoc`/`.ucas`/`.pak`, reads IoStore packages, resolves unversioned properties against a `.usmap` |
 | [CUE4Parse-Conversion](https://github.com/FabianFG/CUE4Parse) | 1.2.2.202609 | Apache-2.0 | Decodes textures and audio, writes glTF, ActorX, USD, UEFormat and JSON |
 | [Newtonsoft.Json](https://github.com/JamesNK/Newtonsoft.Json) | 13.0.4 | MIT | JSON serialisation, required by CUE4Parse |
+| [Avalonia](https://github.com/AvaloniaUI/Avalonia) | 11.3.22 | MIT | UI toolkit for the desktop window (`UEBulkExport.exe` only) |
+| [Avalonia.Themes.Fluent](https://github.com/AvaloniaUI/Avalonia) | 11.3.22 | MIT | Fluent control theme for the window |
+| [Avalonia.Fonts.Inter](https://github.com/AvaloniaUI/Avalonia) | 11.3.22 | MIT; the bundled [Inter](https://github.com/rsms/inter) font is OFL-1.1 | Default UI font for the window |
+| [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | 8.4.2 | MIT | Observable properties and commands for the window's view models |
+
+The Avalonia packages and CommunityToolkit.Mvvm are referenced by the GUI project alone; the
+console executable and the core library do not depend on them.
 
 CUE4Parse pulls in further transitive packages of its own — Serilog, SkiaSharp, SharpGLTF,
 AssetRipper.TextureDecoder, ZstdSharp, Blake3, BouncyCastle and others. Run

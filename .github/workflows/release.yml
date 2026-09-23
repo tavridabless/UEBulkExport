@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build, without the leading v (e.g. 1.0.0)'
+        description: 'Version to build, without the leading v (e.g. 1.2.0)'
         required: true
 
 permissions:
@@ -17,7 +17,7 @@ jobs:
     name: Publish ${{ matrix.rid }}
     runs-on: ${{ matrix.os }}
     # Windows only, deliberately. Every piece a real export needs off the managed path -
-    # the Oodle decompressor, the ACL native, vgmstream - is published by its upstream for
+    # the Oodle decompressor, the ACL native, vgmstream, retoc - is published by its upstream for
     # Windows alone, so a Linux binary would only disappoint. Linux still builds from source
     # and is covered by CI; see the README.
     strategy:
@@ -41,9 +41,20 @@ jobs:
           [ -n "$version" ] || version="${GITHUB_REF_NAME#v}"
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Publish
+      # Both front ends land in one folder: UEBulkExport.exe (the window) and
+      # UEBulkExport.Cli.exe (the console), sharing the same Core and native libraries.
+      - name: Publish the GUI
         run: >
           dotnet publish src/UEBulkExport
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained true
+          -p:Version=${{ steps.version.outputs.value }}
+          -o staging/UEBulkExport
+
+      - name: Publish the CLI
+        run: >
+          dotnet publish src/UEBulkExport.Cli
           -c Release
           -r ${{ matrix.rid }}
           --self-contained true
@@ -53,7 +64,7 @@ jobs:
       - name: Add the documentation people will need offline
         shell: bash
         run: |
-          cp README.md README.ru.md LICENSE NOTICE THIRD-PARTY-NOTICES.md staging/UEBulkExport/
+          cp README.md README.ru.md LICENSE NOTICE THIRD-PARTY-NOTICES.md CHANGELOG.md staging/UEBulkExport/
           mkdir -p staging/UEBulkExport/docs
           cp docs/mappings.md staging/UEBulkExport/docs/
           cp -r tools staging/UEBulkExport/

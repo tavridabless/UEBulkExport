@@ -1,0 +1,80 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:UEBulkExport.Gui.ViewModels"
+        xmlns:loc="using:UEBulkExport.Gui.Localization"
+        x:Class="UEBulkExport.Gui.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="UEBulkExport"
+        Icon="avares://UEBulkExport/Assets/app.ico"
+        MinWidth="980" MinHeight="660"
+        Background="{DynamicResource Brush.Bg}"
+        WindowStartupLocation="CenterScreen"
+        DragDrop.AllowDrop="True">
+
+  <Grid ColumnDefinitions="224,*">
+
+    <!-- Navigation rail -->
+    <Border Grid.Column="0" Background="{DynamicResource Brush.Sidebar}"
+            BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,0,1,0">
+      <Grid RowDefinitions="Auto,*,Auto">
+
+        <StackPanel Grid.Row="0" Margin="18,20,18,14" Spacing="4">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Image Source="avares://UEBulkExport/Assets/logo.png" Width="40" Height="40" />
+            <StackPanel VerticalAlignment="Center">
+              <TextBlock Text="{loc:Tr App.Title}" FontSize="16" FontWeight="SemiBold"
+                         Foreground="{DynamicResource Brush.Text}" />
+              <TextBlock Text="{Binding Version}" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" />
+            </StackPanel>
+          </StackPanel>
+        </StackPanel>
+
+        <ListBox Grid.Row="1" Classes="Nav"
+                 ItemsSource="{Binding Pages}"
+                 SelectedItem="{Binding SelectedPage}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:NavItem">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <Path Classes="NavIcon" Data="{Binding Icon}" />
+                <TextBlock Text="{Binding Label}" FontSize="14" VerticalAlignment="Center" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <TextBlock Grid.Row="2" Margin="18,0,18,16" Text="{loc:Tr App.Tagline}" FontSize="11"
+                   TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextMuted}" />
+      </Grid>
+    </Border>
+
+    <!-- Page + status bar -->
+    <Grid Grid.Column="1" RowDefinitions="*,Auto">
+      <ContentControl Grid.Row="0" x:Name="PageHost" />
+
+      <Border Grid.Row="1" Background="{DynamicResource Brush.Sidebar}"
+              BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,1,0,0"
+              Padding="20,8">
+        <Grid ColumnDefinitions="Auto,*,220">
+          <Ellipse Grid.Column="0" Width="8" Height="8" Margin="0,0,10,0" VerticalAlignment="Center"
+                   Fill="{DynamicResource Brush.Success}" IsVisible="{Binding !IsBusy}" />
+          <Ellipse Grid.Column="0" Width="8" Height="8" Margin="0,0,10,0" VerticalAlignment="Center"
+                   Fill="{DynamicResource Brush.Accent}" IsVisible="{Binding IsBusy}" />
+          <TextBlock Grid.Column="1" Text="{Binding StatusText}" VerticalAlignment="Center" FontSize="12"
+                     Foreground="{DynamicResource Brush.TextMuted}" />
+          <ProgressBar Grid.Column="2" Value="{Binding ProgressFraction}" Maximum="1" MinHeight="6"
+                       VerticalAlignment="Center" IsVisible="{Binding ShowProgress}" />
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- Drop overlay -->
+    <Border Grid.ColumnSpan="2" x:Name="DropOverlay" IsVisible="False" IsHitTestVisible="False"
+            Background="#AA15171C" BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="3"
+            CornerRadius="12" Margin="16">
+      <TextBlock Text="{loc:Tr Drop.Hint}" FontSize="20" FontWeight="SemiBold"
+                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                 Foreground="{DynamicResource Brush.Text}" />
+    </Border>
+  </Grid>
+
+</Window>

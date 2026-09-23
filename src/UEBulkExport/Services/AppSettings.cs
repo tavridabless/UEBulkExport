@@ -1,0 +1,89 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+namespace UEBulkExport.Gui.Services;
+
+/// <summary>
+/// Per-user preferences and the list of recent games. Stored as JSON under LocalAppData; nothing
+/// in here ever leaves the machine. Missing or corrupt files fall back to defaults silently.
+/// </summary>
+public sealed class AppSettings
+{
+    public static string FilePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "UEBulkExport", "settings.json");
+
+    public string Language { get; set; } = "";
+    public string Theme { get; set; } = "Light";
+    public bool RememberPaths { get; set; } = true;
+    public bool ConfirmCloseWhileRunning { get; set; } = true;
+    public int DefaultThreads { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
+
+    public string LastPaksPath { get; set; } = "";
+    public string LastOutputPath { get; set; } = "";
+    public string LastGame { get; set; } = "";
+
+    public string RetocPath { get; set; } = "";
+    public string OodlePath { get; set; } = "";
+    public string ZlibPath { get; set; } = "";
+    public string VgmStreamPath { get; set; } = "";
+
+    public double WindowWidth { get; set; } = 1240;
+    public double WindowHeight { get; set; } = 820;
+
+    public List<RecentGame> Recent { get; set; } = [];
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault
+    };
+
+    public static AppSettings Load()
+    {
+        try
+        {
+            if (File.Exists(FilePath))
+                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions) ?? new AppSettings();
+        }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+        {
+            // A broken settings file must never keep the window from opening.
+        }
+
+        return new AppSettings();
+    }
+
+    public void Save()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
+            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, JsonOptions));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Log.Warn($"could not save settings: {e.Message}");
+        }
+    }
+
+    /// <summary>Puts the game at the top of the recent list, replacing an older entry for the same folder.</summary>
+    public void Remember(RecentGame game)
+    {
+        Recent.RemoveAll(r => string.Equals(r.PaksPath, game.PaksPath, StringComparison.OrdinalIgnoreCase));
+        Recent.Insert(0, game);
+        if (Recent.Count > 12) Recent.RemoveRange(12, Recent.Count - 12);
+    }
+}
+
+public sealed class RecentGame
+{
+    public string Name { get; set; } = "";
+    public string PaksPath { get; set; } = "";
+    public string OutputPath { get; set; } = "";
+    public string Game { get; set; } = "";
+    public string Mode { get; set; } = "";
+    public List<string> AesKeys { get; set; } = [];
+    public string UsmapPath { get; set; } = "";
+    public DateTime LastUsed { get; set; } = DateTime.Now;
+}
