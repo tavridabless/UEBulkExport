@@ -2,7 +2,7 @@
 
 # UEBulkExport
 
-**Extract cooked Unreal Engine packages into one folder — in one command.**
+**Browse and export Unreal Engine containers from a desktop interface.**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/download)
@@ -18,32 +18,27 @@
 
 ## What this is
 
-[FModel](https://github.com/4sval/FModel) is excellent for browsing an Unreal container and
-pulling out the handful of assets you need. What it deliberately does not have is a *take
-everything* button.
+UEBulkExport is a Windows desktop application for inspecting and exporting complete cooked
+Unreal Engine containers (`.pak`, `.utoc` and `.ucas`). It can extract cooked packages, convert
+supported assets to common formats, dump serialized properties to JSON, or make a byte-exact copy
+of container entries. The original directory tree is preserved in the output.
 
-UEBulkExport extracts `.uasset`/`.umap` packages and their `.uexp`/`.ubulk`/`.uptnl` payloads,
-preserving the container's directory tree. This is the default behavior; it does not write JSON.
-IoStore packages are converted from Zen to the traditional cooked package layout with
-[retoc](https://github.com/trumank/retoc). The `full` and `json` modes remain available explicitly.
-
-```
-UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export"
-```
-
-Or double-click `UEBulkExport.exe` and do the same thing in a window — see
-[Graphical interface](#graphical-interface).
+The default **Cooked packages** mode extracts `.uasset`/`.umap` packages together with their
+`.uexp`/`.ubulk`/`.uptnl` payloads and does not write JSON. IoStore packages are converted from Zen
+to the traditional cooked package layout with [retoc](https://github.com/trumank/retoc). Choose
+**Asset conversion** or **JSON only** when you need converted files or property data instead.
 
 ### What it is built on
 
-**Container reading and conversion use [CUE4Parse](https://github.com/FabianFG/CUE4Parse)** — the
-same library FModel is built on. IoStore-to-legacy cooked package conversion uses
-[retoc](https://github.com/trumank/retoc). CUE4Parse and CUE4Parse-Conversion are Apache-2.0;
-retoc is MIT licensed.
+**Container reading and asset conversion use
+[CUE4Parse](https://github.com/FabianFG/CUE4Parse) and CUE4Parse-Conversion.** IoStore-to-legacy
+cooked package conversion uses [retoc](https://github.com/trumank/retoc). CUE4Parse and
+CUE4Parse-Conversion are Apache-2.0; retoc is MIT licensed.
 
-The UEBulkExport core is roughly a thousand lines of orchestration on top: path discovery, work
-scheduling, the multi-pass export strategy, resumable runs, and diagnostics. The command line and
-the desktop window are two front ends over that same core, and the
+UEBulkExport provides the desktop workflow and the orchestration around those libraries: path
+discovery, container scanning, selection and filtering, work scheduling, multi-pass export,
+resumable runs, progress reporting, and diagnostics. The desktop application and the optional
+command-line frontend use the same core, and the
 [notices](THIRD-PARTY-NOTICES.md) spell out exactly who did what.
 
 **This is not an uncooker.** Cooking removes editor-only data, so extracted packages are not the
@@ -53,29 +48,32 @@ recovered from cooked packages. The explicit `json` mode still writes serialised
 
 ---
 
-## Graphical interface
+## Desktop interface
 
 `UEBulkExport.exe` is a desktop application built with [Avalonia](https://avaloniaui.net/)
-(MIT). Double-click it and a window opens; every option the command line has is in there as a
-form.
+(MIT). It is the main way to use the tool: unpack the release, double-click the executable, and
+configure the export without writing a command.
 
 ![The Export page of UEBulkExport](docs/screenshot.png)
 
 The pages:
 
-- **Export** — source (game folder, engine version, AES keys) → destination and mode → options
-  → helper binaries. Start, Dry run and Cancel; progress with a rate and an ETA; a result summary at
-  the end. An **equivalent command line** box with a Copy button shows the `UEBulkExport.Cli`
-  invocation for whatever you clicked together, so a configured export can be pasted into a
-  script. Recent games are listed for one-click reuse.
-- **Browser** — the folder tree of the mounted containers, a file list with search, statistics by
-  file type, and the container list with its locked (wrong or missing AES key) status. *Export only
-  this folder* and *Exclude this folder* fill in the include/exclude filters on the Export page.
+- **Export** — choose the game or container, engine version, optional AES keys, destination, mode,
+  filters, formats, and helper binaries. Scan the source first to validate access, use **Dry run**
+  to preview the plan, then start or cancel the export. Live progress includes throughput and ETA,
+  followed by a result summary and shortcuts to the output, log, and `errors.csv`. Recent games are
+  available for quick reuse.
+- **Browser** — inspect the mounted folder tree, search and filter entries by type, view paths and
+  sizes, select individual files or folders, export only the selection, or add it to the exclusion
+  list. Locked containers are identified when an AES key is missing or incorrect.
 - **Log** — everything the exporter reports, filtered by level, with copy, clear and follow.
 - **Settings** — language (English / Russian, switched live), theme (Light / Dark / System),
   remember last paths, confirm closing while an export runs, default worker threads, default
   helper binary paths, reset.
-- **About** — version, what it is built on, licence, links.
+- **About** — version, dependencies, licence, documentation and project links.
+
+The Export page also generates an **equivalent command line** for the current configuration. Copy
+it when you want to repeat the same job in a script with `UEBulkExport.Cli.exe`.
 
 Dropping a game folder or a `.utoc`/`.pak` file onto the window fills in the source. A fresh
 install starts in English with the light theme; both are changed on the Settings page and
@@ -83,10 +81,9 @@ remembered. Settings are stored per user in
 `%LOCALAPPDATA%\UEBulkExport\settings.json`; nothing leaves the machine. Should the window fail
 to start, the exception is written to `%LOCALAPPDATA%\UEBulkExport\crash.log`.
 
-`UEBulkExport.exe` also accepts the same arguments as `UEBulkExport.Cli.exe` and then runs in
-command-line mode attached to the calling terminal. For scripts and CI use `UEBulkExport.Cli.exe`:
-a GUI-subsystem executable does not block the shell or return its exit code reliably from an
-interactive cmd or PowerShell prompt.
+For scripts and CI, use `UEBulkExport.Cli.exe`. The GUI executable also accepts command-line
+arguments for compatibility, but as a Windows GUI-subsystem executable it does not reliably block
+an interactive shell or return its exit code there.
 
 ---
 
@@ -122,10 +119,13 @@ and unpack it. The build is self-contained — no .NET installation required. Th
 executables side by side: `UEBulkExport.exe` (the window) and `UEBulkExport.Cli.exe` (the console
 program).
 
-### 2. Run the package extraction
+### 2. Run an export
 
-Double-click `UEBulkExport.exe`, point it at the game, pick an output folder and press Start — or
-from a terminal:
+Double-click `UEBulkExport.exe`, select the game directory (or its `Content\Paks` directory), choose
+an output folder and mode, then press **Start export**. You can scan the source first to inspect its
+contents on the Browser page, or run a dry run to verify the plan without writing files.
+
+For an automated package extraction, run:
 
 ```bat
 UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export"
@@ -184,8 +184,8 @@ a compatible retoc build with `--retoc` when one becomes available.
 
 ## Options
 
-Run `UEBulkExport.Cli --help` for the authoritative list. Every option below is also a control on
-the Export page of the window.
+The desktop interface exposes the normal export workflow. For scripting and advanced automation,
+run `UEBulkExport.Cli --help` for the authoritative command-line reference.
 
 ### Paths
 
@@ -410,8 +410,8 @@ you extracted it from. Exported assets are the property of their owners. Persona
 modding where the publisher allows it, and working with your own projects are the intended uses.
 Redistributing extracted assets generally is not.
 
-UEBulkExport is not affiliated with Epic Games, the CUE4Parse project, the FModel project, or the
-UE4SS project. "Unreal" and "Unreal Engine" are trademarks of Epic Games, Inc.
+UEBulkExport is not affiliated with Epic Games, the CUE4Parse project, or the UE4SS project.
+"Unreal" and "Unreal Engine" are trademarks of Epic Games, Inc.
 
 ---
 
@@ -419,8 +419,6 @@ UE4SS project. "Unreal" and "Unreal Engine" are trademarks of Epic Games, Inc.
 
 - **[FabianFG and the CUE4Parse contributors](https://github.com/FabianFG/CUE4Parse)** — the
   library that does the actual work.
-- **[4sval and the FModel contributors](https://github.com/4sval/FModel)** — for the reference
-  implementation of how to drive CUE4Parse well.
 - **[The UE4SS contributors](https://github.com/UE4SS-RE/RE-UE4SS)** — for making mappings
   obtainable at all.
 
