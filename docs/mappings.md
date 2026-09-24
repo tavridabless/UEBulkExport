@@ -1,5 +1,7 @@
 # Getting a `.usmap` mappings file
 
+**English** · [Русский](mappings.ru.md)
+
 ## Why it is needed
 
 Unreal Engine can serialise object properties in two ways. Editor and development builds write
@@ -59,11 +61,14 @@ any `.usmap` from any source works.
 
 5. A file named after the game and engine version appears in the `ue4ss` folder. Close the game.
 
-6. Point UEBulkExport at it, or simply drop it next to the executable and let it be found:
+6. Pick it in the **Mappings** field of the Export page, or pass it with `--usmap`:
 
    ```
-   UEBulkExport --paks "D:\Games\MyGame" --out "D:\Export" --usmap "...\ue4ss\MyGame-5.3.2.usmap"
+   UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export" --mode full --usmap "...\ue4ss\MyGame-5.3.2.usmap"
    ```
+
+   A single `.usmap` placed next to the game's containers (in the `Paks` folder or one level
+   above it) or in the output folder is found without being named.
 
 ### No numeric keypad?
 
@@ -78,6 +83,9 @@ bottom:
 ```
 AutoUsmapDumper : 1
 ```
+
+If UEBulkExport was installed with the *UE4SS mappings helper tools* component, the mod is
+already in the installation folder, under `tools\ue4ss-mod\AutoUsmapDumper`.
 
 Launch the game, wait about twenty seconds, close it. The `.usmap` will be in the `ue4ss` folder.
 

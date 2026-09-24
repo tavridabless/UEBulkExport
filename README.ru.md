@@ -13,7 +13,7 @@
 [![CI](https://github.com/tavridabless/UEBulkExport/actions/workflows/ci.yml/badge.svg)](https://github.com/tavridabless/UEBulkExport/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tavridabless/UEBulkExport?include_prereleases)](https://github.com/tavridabless/UEBulkExport/releases)
 
-[English](README.md) · [Про маппинги](docs/mappings.md) · [Сторонние компоненты](THIRD-PARTY-NOTICES.md)
+[English](README.md) · [Про маппинги](docs/mappings.ru.md) · [Сторонние компоненты](THIRD-PARTY-NOTICES.md)
 
 </div>
 
@@ -169,7 +169,7 @@ UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export"
 Режимы `full` и `json` разбирают свойства. Shipping-сборки UE5 обычно хранят их **без имён**,
 поэтому этим режимам нужен файл маппингов. Для извлечения пакетов он не нужен.
 
-**В [docs/mappings.md](docs/mappings.md) написано, как его получить** — с UE4SS это занимает пару
+**В [docs/mappings.ru.md](docs/mappings.ru.md) написано, как его получить** — с UE4SS это занимает пару
 минут. Укажите готовый `.usmap` в поле **«Маппинги»** на странице «Экспорт», передайте через
 `--usmap` или положите рядом с контейнерами игры: там он найдётся автоматически.
 

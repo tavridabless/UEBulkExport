@@ -32,6 +32,8 @@ All notable changes to this project are documented here. The format follows
 - Changing the interface language now takes effect after a restart; the Settings page says so and
   offers to restart right away.
 - The README opens with the new logo.
+- The mappings guide is available in Russian, `docs/mappings.ru.md`; the Russian README and the
+  About page in Russian link to it, and it ships with the offline documentation.
 
 ### Fixed
 

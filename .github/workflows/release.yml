@@ -66,7 +66,7 @@ jobs:
         run: |
           cp README.md README.ru.md LICENSE NOTICE THIRD-PARTY-NOTICES.md CHANGELOG.md staging/UEBulkExport/
           mkdir -p staging/UEBulkExport/docs
-          cp docs/mappings.md docs/screenshot.png staging/UEBulkExport/docs/
+          cp docs/mappings.md docs/mappings.ru.md docs/screenshot.png staging/UEBulkExport/docs/
           cp -r docs/images staging/UEBulkExport/docs/
           cp -r tools staging/UEBulkExport/
 
