@@ -61,7 +61,7 @@
 
         <TextBox Grid.Column="1" Width="200" Text="{Binding Search}" Watermark="{loc:Tr Browser.Search.Placeholder}" />
 
-        <ListBox Grid.Column="2" Classes="Chips" ItemsSource="{Binding Chips}" SelectedItem="{Binding Chip}"
+        <ListBox Grid.Column="2" Classes="Chips" ItemsSource="{Binding Chips}" SelectedItem="{Binding Chip}" AutoScrollToSelectedItem="False"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
           <ListBox.ItemsPanel>
             <ItemsPanelTemplate>
@@ -161,7 +161,9 @@
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
                 <TextBox Text="{Binding DetailPath}" IsReadOnly="True" Classes="Mono" />
                 <Button Grid.Column="1" Padding="8" MinHeight="0" ToolTip.Tip="{loc:Tr Common.Copy}" Click="OnCopyPath">
-                  <PathIcon Width="13" Height="13" Data="M8 8 L8 4 L20 4 L20 16 L16 16 M4 8 L16 8 L16 20 L4 20 Z" />
+                  <Path Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
+                        Stroke="{DynamicResource Brush.Text}"
+                        Data="M9 9 L9 5 A1 1 0 0 1 10 4 L19 4 A1 1 0 0 1 20 5 L20 14 A1 1 0 0 1 19 15 L15 15 M5 9 L14 9 A1 1 0 0 1 15 10 L15 19 A1 1 0 0 1 14 20 L5 20 A1 1 0 0 1 4 19 L4 10 A1 1 0 0 1 5 9 Z" />
                 </Button>
               </Grid>
 

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build, without the leading v (e.g. 1.2.0)'
+        description: 'Version to build, without the leading v (e.g. 2.0.0)'
         required: true
 
 permissions:
@@ -67,7 +67,14 @@ jobs:
           cp README.md README.ru.md LICENSE NOTICE THIRD-PARTY-NOTICES.md CHANGELOG.md staging/UEBulkExport/
           mkdir -p staging/UEBulkExport/docs
           cp docs/mappings.md docs/screenshot.png staging/UEBulkExport/docs/
+          cp -r docs/images staging/UEBulkExport/docs/
           cp -r tools staging/UEBulkExport/
+
+      # The wizard images are derived from the designs in installer/branding; only the sources
+      # are committed. The generator also refreshes the application icon, which the publish above
+      # has already embedded, so running it here changes nothing that ships besides the wizard.
+      - name: Generate installer artwork
+        run: dotnet run --project installer/branding/generator -c Release -- installer/branding src/UEBulkExport/Assets docs/images
 
       - name: Install Inno Setup
         shell: powershell

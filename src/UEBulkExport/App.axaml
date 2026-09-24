@@ -3,68 +3,73 @@
              x:Class="UEBulkExport.Gui.App"
              RequestedThemeVariant="Light">
 
+  <!--
+    "Glass" look: the window itself is translucent (Acrylic or Mica on Windows 11), a soft tinted
+    backdrop with two colour glows sits on top of it, and every panel is frosted glass with a thin
+    light rim and a soft shadow. Colours are cool blue and lavender; the green brand colour lives
+    in the logo only.
+  -->
   <Application.Styles>
     <FluentTheme>
       <FluentTheme.Palettes>
-        <!-- Graphite surfaces with an amber accent: the tool's own look, shared by both variants. -->
-        <ColorPaletteResources x:Key="Dark"
-                               Accent="#8CF23A"
-                               RegionColor="#0D110E"
-                               AltHigh="#131813"
-                               AltMediumHigh="#171D18"
-                               AltMedium="#1C231D"
-                               AltMediumLow="#222B23"
-                               AltLow="#2A352B"
-                               BaseHigh="#F2F6F0"
-                               BaseMediumHigh="#CFD8CC"
-                               BaseMedium="#9AA898"
-                               BaseMediumLow="#6C7A6B"
-                               BaseLow="#33413A"
-                               ChromeHigh="#33413A"
-                               ChromeMedium="#222B23"
-                               ChromeMediumLow="#1C231D"
-                               ChromeLow="#131813"
-                               ChromeAltLow="#9AA898"
-                               ChromeBlackHigh="#000000"
-                               ChromeBlackMedium="#CC000000"
-                               ChromeBlackMediumLow="#66000000"
-                               ChromeBlackLow="#33000000"
-                               ChromeWhite="#FFFFFF"
-                               ChromeDisabledHigh="#33413A"
-                               ChromeDisabledLow="#6C7A6B"
-                               ChromeGray="#9AA898"
-                               ListLow="#1C231D"
-                               ListMedium="#222B23"
-                               ErrorText="#FF7B72" />
         <ColorPaletteResources x:Key="Light"
-                               Accent="#3E9A12"
-                               RegionColor="#F4F5F7"
+                               Accent="#3A6FF7"
+                               RegionColor="#EEF1FA"
                                AltHigh="#FFFFFF"
-                               AltMediumHigh="#FAFBFC"
-                               AltMedium="#F0F2F5"
-                               AltMediumLow="#E6E9EE"
-                               AltLow="#DCE0E6"
-                               BaseHigh="#1B1E24"
-                               BaseMediumHigh="#333945"
-                               BaseMedium="#5B6473"
-                               BaseMediumLow="#8A93A1"
-                               BaseLow="#CBD1DA"
-                               ChromeHigh="#CBD1DA"
-                               ChromeMedium="#E6E9EE"
-                               ChromeMediumLow="#F0F2F5"
-                               ChromeLow="#FAFBFC"
-                               ChromeAltLow="#5B6473"
+                               AltMediumHigh="#F7F8FD"
+                               AltMedium="#EEF1FA"
+                               AltMediumLow="#E4E8F5"
+                               AltLow="#D9DEEE"
+                               BaseHigh="#1A1E2B"
+                               BaseMediumHigh="#323849"
+                               BaseMedium="#5E6579"
+                               BaseMediumLow="#8C92A4"
+                               BaseLow="#C9CEDD"
+                               ChromeHigh="#C9CEDD"
+                               ChromeMedium="#E4E8F5"
+                               ChromeMediumLow="#EEF1FA"
+                               ChromeLow="#F7F8FD"
+                               ChromeAltLow="#5E6579"
                                ChromeBlackHigh="#000000"
                                ChromeBlackMedium="#CC000000"
                                ChromeBlackMediumLow="#66000000"
                                ChromeBlackLow="#33000000"
                                ChromeWhite="#FFFFFF"
-                               ChromeDisabledHigh="#CBD1DA"
-                               ChromeDisabledLow="#8A93A1"
-                               ChromeGray="#5B6473"
-                               ListLow="#F0F2F5"
-                               ListMedium="#E6E9EE"
-                               ErrorText="#B42318" />
+                               ChromeDisabledHigh="#C9CEDD"
+                               ChromeDisabledLow="#8C92A4"
+                               ChromeGray="#5E6579"
+                               ListLow="#EEF1FA"
+                               ListMedium="#E4E8F5"
+                               ErrorText="#C4312B" />
+        <ColorPaletteResources x:Key="Dark"
+                               Accent="#6B96FF"
+                               RegionColor="#0B1020"
+                               AltHigh="#121A2E"
+                               AltMediumHigh="#16203A"
+                               AltMedium="#1B2642"
+                               AltMediumLow="#212D4D"
+                               AltLow="#2A3759"
+                               BaseHigh="#EEF2FB"
+                               BaseMediumHigh="#C8D0E3"
+                               BaseMedium="#98A2BA"
+                               BaseMediumLow="#6A7490"
+                               BaseLow="#2E3A5C"
+                               ChromeHigh="#2E3A5C"
+                               ChromeMedium="#212D4D"
+                               ChromeMediumLow="#1B2642"
+                               ChromeLow="#121A2E"
+                               ChromeAltLow="#98A2BA"
+                               ChromeBlackHigh="#000000"
+                               ChromeBlackMedium="#CC000000"
+                               ChromeBlackMediumLow="#66000000"
+                               ChromeBlackLow="#33000000"
+                               ChromeWhite="#FFFFFF"
+                               ChromeDisabledHigh="#2E3A5C"
+                               ChromeDisabledLow="#6A7490"
+                               ChromeGray="#98A2BA"
+                               ListLow="#1B2642"
+                               ListMedium="#212D4D"
+                               ErrorText="#FF8A80" />
       </FluentTheme.Palettes>
     </FluentTheme>
 
@@ -74,47 +79,102 @@
   <Application.Resources>
     <ResourceDictionary>
       <ResourceDictionary.ThemeDictionaries>
-        <ResourceDictionary x:Key="Dark">
-          <Color x:Key="App.Bg">#0D110E</Color>
-          <Color x:Key="App.Sidebar">#0A0D0B</Color>
-          <Color x:Key="App.Card">#141A15</Color>
-          <Color x:Key="App.CardBorder">#243027</Color>
-          <Color x:Key="App.Field">#0F1410</Color>
-          <Color x:Key="App.Text">#F2F6F0</Color>
-          <Color x:Key="App.TextMuted">#8E9C8C</Color>
-          <Color x:Key="App.Accent">#8CF23A</Color>
-          <Color x:Key="App.AccentText">#0B1604</Color>
-          <Color x:Key="App.AccentSoft">#1B2E14</Color>
-          <Color x:Key="App.Success">#8CF23A</Color>
-          <Color x:Key="App.Warning">#F2C53B</Color>
-          <Color x:Key="App.Error">#FF7B72</Color>
-          <Color x:Key="App.Info">#6CB6FF</Color>
-          <Color x:Key="App.Selection">#1A231B</Color>
-        </ResourceDictionary>
         <ResourceDictionary x:Key="Light">
-          <Color x:Key="App.Bg">#F4F5F7</Color>
-          <Color x:Key="App.Sidebar">#E9ECF0</Color>
-          <Color x:Key="App.Card">#FFFFFF</Color>
-          <Color x:Key="App.CardBorder">#DCE0E6</Color>
-          <Color x:Key="App.Field">#FAFBFC</Color>
-          <Color x:Key="App.Text">#1B1E24</Color>
-          <Color x:Key="App.TextMuted">#5B6473</Color>
-          <Color x:Key="App.Accent">#3E9A12</Color>
+          <!-- Backdrop: laid over the translucent window; opaque twin used when there is no blur -->
+          <Color x:Key="App.Backdrop">#B8EEF1FA</Color>
+          <Color x:Key="App.BackdropTop">#C2E6ECFF</Color>
+          <Color x:Key="App.BackdropBottom">#C2EFE9FF</Color>
+          <Color x:Key="App.BackdropOpaque">#EEF1FA</Color>
+          <Color x:Key="App.GlowA">#A67EA2FF</Color>
+          <Color x:Key="App.GlowB">#99C3B0FF</Color>
+
+          <!-- Glass surfaces -->
+          <Color x:Key="App.Bg">#EEF1FA</Color>
+          <Color x:Key="App.Sidebar">#00FFFFFF</Color>
+          <Color x:Key="App.Surface">#8CFFFFFF</Color>
+          <Color x:Key="App.SurfaceSolid">#F7F8FD</Color>
+          <Color x:Key="App.Card">#B3FFFFFF</Color>
+          <Color x:Key="App.CardBorder">#D9FFFFFF</Color>
+          <Color x:Key="App.Divider">#1F1A2A55</Color>
+          <Color x:Key="App.Field">#CCFFFFFF</Color>
+          <Color x:Key="App.FieldHover">#E6FFFFFF</Color>
+          <Color x:Key="App.FieldBorder">#262A3A66</Color>
+          <Color x:Key="App.Selection">#8CFFFFFF</Color>
+          <Color x:Key="App.Overlay">#CCEEF1FA</Color>
+
+          <!-- Text and accent -->
+          <Color x:Key="App.Text">#1A1E2B</Color>
+          <Color x:Key="App.TextMuted">#5E6579</Color>
+          <Color x:Key="App.Accent">#3A6FF7</Color>
+          <Color x:Key="App.Accent2">#7C5CFA</Color>
           <Color x:Key="App.AccentText">#FFFFFF</Color>
-          <Color x:Key="App.AccentSoft">#E4F7D6</Color>
-          <Color x:Key="App.Success">#3E9A12</Color>
-          <Color x:Key="App.Warning">#A57B0A</Color>
-          <Color x:Key="App.Error">#B42318</Color>
-          <Color x:Key="App.Info">#1F6FD1</Color>
-          <Color x:Key="App.Selection">#E6E9EE</Color>
+          <Color x:Key="App.AccentSoft">#2E3A6FF7</Color>
+          <Color x:Key="App.Success">#1E9E6A</Color>
+          <Color x:Key="App.Warning">#B07A08</Color>
+          <Color x:Key="App.Error">#C4312B</Color>
+          <Color x:Key="App.Info">#3A6FF7</Color>
+
+          <BoxShadows x:Key="Shadow.Card">0 8 28 0 #142A3A78</BoxShadows>
+          <BoxShadows x:Key="Shadow.Surface">0 16 48 0 #1A2A3A78</BoxShadows>
+          <BoxShadows x:Key="Shadow.Accent">0 6 18 0 #553A6FF7</BoxShadows>
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Dark">
+          <Color x:Key="App.Backdrop">#C70B1020</Color>
+          <Color x:Key="App.BackdropTop">#D10B1224</Color>
+          <Color x:Key="App.BackdropBottom">#D1120E26</Color>
+          <Color x:Key="App.BackdropOpaque">#0B1020</Color>
+          <Color x:Key="App.GlowA">#803A5BD9</Color>
+          <Color x:Key="App.GlowB">#667A4BD9</Color>
+
+          <Color x:Key="App.Bg">#0B1020</Color>
+          <Color x:Key="App.Sidebar">#00000000</Color>
+          <Color x:Key="App.Surface">#8C121A2E</Color>
+          <Color x:Key="App.SurfaceSolid">#121A2E</Color>
+          <Color x:Key="App.Card">#8C1B2642</Color>
+          <Color x:Key="App.CardBorder">#24FFFFFF</Color>
+          <Color x:Key="App.Divider">#1FFFFFFF</Color>
+          <Color x:Key="App.Field">#99121A2E</Color>
+          <Color x:Key="App.FieldHover">#B3212D4D</Color>
+          <Color x:Key="App.FieldBorder">#33FFFFFF</Color>
+          <Color x:Key="App.Selection">#26FFFFFF</Color>
+          <Color x:Key="App.Overlay">#CC0B1020</Color>
+
+          <Color x:Key="App.Text">#EEF2FB</Color>
+          <Color x:Key="App.TextMuted">#98A2BA</Color>
+          <Color x:Key="App.Accent">#6B96FF</Color>
+          <Color x:Key="App.Accent2">#9B7BFF</Color>
+          <Color x:Key="App.AccentText">#FFFFFF</Color>
+          <Color x:Key="App.AccentSoft">#3D6B96FF</Color>
+          <Color x:Key="App.Success">#4CD39A</Color>
+          <Color x:Key="App.Warning">#F2C14E</Color>
+          <Color x:Key="App.Error">#FF8A80</Color>
+          <Color x:Key="App.Info">#6B96FF</Color>
+
+          <BoxShadows x:Key="Shadow.Card">0 8 28 0 #40000000</BoxShadows>
+          <BoxShadows x:Key="Shadow.Surface">0 16 48 0 #59000000</BoxShadows>
+          <BoxShadows x:Key="Shadow.Accent">0 6 18 0 #666B96FF</BoxShadows>
         </ResourceDictionary>
       </ResourceDictionary.ThemeDictionaries>
 
+      <!-- A faint blue-to-lavender wash, so the glass keeps its colour over a grey desktop -->
+      <LinearGradientBrush x:Key="Brush.Backdrop" StartPoint="0%,0%" EndPoint="100%,100%">
+        <GradientStop Offset="0" Color="{DynamicResource App.BackdropTop}" />
+        <GradientStop Offset="1" Color="{DynamicResource App.BackdropBottom}" />
+      </LinearGradientBrush>
+      <SolidColorBrush x:Key="Brush.BackdropOpaque" Color="{DynamicResource App.BackdropOpaque}" />
       <SolidColorBrush x:Key="Brush.Bg" Color="{DynamicResource App.Bg}" />
       <SolidColorBrush x:Key="Brush.Sidebar" Color="{DynamicResource App.Sidebar}" />
+      <SolidColorBrush x:Key="Brush.Surface" Color="{DynamicResource App.Surface}" />
+      <SolidColorBrush x:Key="Brush.SurfaceSolid" Color="{DynamicResource App.SurfaceSolid}" />
       <SolidColorBrush x:Key="Brush.Card" Color="{DynamicResource App.Card}" />
       <SolidColorBrush x:Key="Brush.CardBorder" Color="{DynamicResource App.CardBorder}" />
+      <SolidColorBrush x:Key="Brush.Divider" Color="{DynamicResource App.Divider}" />
       <SolidColorBrush x:Key="Brush.Field" Color="{DynamicResource App.Field}" />
+      <SolidColorBrush x:Key="Brush.FieldHover" Color="{DynamicResource App.FieldHover}" />
+      <SolidColorBrush x:Key="Brush.FieldBorder" Color="{DynamicResource App.FieldBorder}" />
+      <SolidColorBrush x:Key="Brush.Selection" Color="{DynamicResource App.Selection}" />
+      <SolidColorBrush x:Key="Brush.Overlay" Color="{DynamicResource App.Overlay}" />
       <SolidColorBrush x:Key="Brush.Text" Color="{DynamicResource App.Text}" />
       <SolidColorBrush x:Key="Brush.TextMuted" Color="{DynamicResource App.TextMuted}" />
       <SolidColorBrush x:Key="Brush.Accent" Color="{DynamicResource App.Accent}" />
@@ -124,7 +184,25 @@
       <SolidColorBrush x:Key="Brush.Warning" Color="{DynamicResource App.Warning}" />
       <SolidColorBrush x:Key="Brush.Error" Color="{DynamicResource App.Error}" />
       <SolidColorBrush x:Key="Brush.Info" Color="{DynamicResource App.Info}" />
-      <SolidColorBrush x:Key="Brush.Selection" Color="{DynamicResource App.Selection}" />
+
+      <!-- Primary buttons: a gentle blue-to-violet sheen instead of a flat fill -->
+      <LinearGradientBrush x:Key="Brush.AccentGradient" StartPoint="0%,0%" EndPoint="100%,100%">
+        <GradientStop Offset="0" Color="{DynamicResource App.Accent}" />
+        <GradientStop Offset="1" Color="{DynamicResource App.Accent2}" />
+      </LinearGradientBrush>
+
+      <!-- The two soft glows behind the glass, like light through frosted panes -->
+      <RadialGradientBrush x:Key="Brush.GlowA" Center="50%,50%" GradientOrigin="50%,50%" RadiusX="50%" RadiusY="50%">
+        <GradientStop Offset="0" Color="{DynamicResource App.GlowA}" />
+        <GradientStop Offset="1" Color="#00FFFFFF" />
+      </RadialGradientBrush>
+      <RadialGradientBrush x:Key="Brush.GlowB" Center="50%,50%" GradientOrigin="50%,50%" RadiusX="50%" RadiusY="50%">
+        <GradientStop Offset="0" Color="{DynamicResource App.GlowB}" />
+        <GradientStop Offset="1" Color="#00FFFFFF" />
+      </RadialGradientBrush>
+
+      <FontFamily x:Key="App.Font">Segoe UI Variable Text, Segoe UI, avares://Avalonia.Fonts.Inter/Assets#Inter</FontFamily>
+      <FontFamily x:Key="App.FontDisplay">Segoe UI Variable Display, Segoe UI, avares://Avalonia.Fonts.Inter/Assets#Inter</FontFamily>
     </ResourceDictionary>
   </Application.Resources>
 

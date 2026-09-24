@@ -31,3 +31,8 @@ errors.csv
 # OS
 Thumbs.db
 .DS_Store
+
+# Installer artwork is generated from installer/branding by the branding generator.
+installer/branding/wizard-*.png
+installer/branding/generator/bin/
+installer/branding/generator/obj/

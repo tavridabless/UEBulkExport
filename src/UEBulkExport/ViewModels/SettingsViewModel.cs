@@ -23,6 +23,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private ThemeOption _theme;
     [ObservableProperty] private bool _rememberPaths;
     [ObservableProperty] private bool _confirmClose;
+    [ObservableProperty] private bool _transparencyEnabled;
     [ObservableProperty] private int _defaultThreads;
     [ObservableProperty] private string _retocPath;
     [ObservableProperty] private string _oodlePath;
@@ -45,6 +46,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _theme = Themes.FirstOrDefault(t => t.Code == settings.Theme) ?? Themes[0];
         _rememberPaths = settings.RememberPaths;
         _confirmClose = settings.ConfirmCloseWhileRunning;
+        _transparencyEnabled = settings.TransparencyEnabled;
         _defaultThreads = settings.DefaultThreads;
         _retocPath = settings.RetocPath;
         _oodlePath = settings.OodlePath;
@@ -68,6 +70,7 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     partial void OnRememberPathsChanged(bool value) { _settings.RememberPaths = value; _settings.Save(); }
     partial void OnConfirmCloseChanged(bool value) { _settings.ConfirmCloseWhileRunning = value; _settings.Save(); }
+    partial void OnTransparencyEnabledChanged(bool value) { _settings.TransparencyEnabled = value; _settings.Save(); }
     partial void OnDefaultThreadsChanged(int value) { _settings.DefaultThreads = Math.Max(1, value); _settings.Save(); }
     partial void OnRetocPathChanged(string value) { _settings.RetocPath = value; _settings.Save(); }
     partial void OnOodlePathChanged(string value) { _settings.OodlePath = value; _settings.Save(); }
@@ -99,6 +102,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _settings.Language = "";
         _settings.Theme = fresh.Theme;
         _settings.RememberPaths = fresh.RememberPaths;
+        _settings.TransparencyEnabled = fresh.TransparencyEnabled;
         _settings.ConfirmCloseWhileRunning = fresh.ConfirmCloseWhileRunning;
         _settings.DefaultThreads = fresh.DefaultThreads;
         _settings.LastPaksPath = "";
@@ -112,6 +116,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         Theme = Themes[0];
         RememberPaths = fresh.RememberPaths;
         ConfirmClose = fresh.ConfirmCloseWhileRunning;
+        TransparencyEnabled = fresh.TransparencyEnabled;
         DefaultThreads = fresh.DefaultThreads;
         RetocPath = OodlePath = ZlibPath = VgmStreamPath = "";
 

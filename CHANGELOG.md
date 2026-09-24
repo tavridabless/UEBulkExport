@@ -6,6 +6,38 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-24
+
+### Added
+
+- A Windows installer. Releases ship as `UEBulkExport-<version>-win-x64-setup.exe` instead of a
+  ZIP archive. The wizard, in English or Russian, lets the user choose the destination folder and
+  the components, creates Start menu shortcuts for the window and the command line program, can add
+  a desktop shortcut, and registers an uninstaller. Full installation is selected by default.
+- Settings gain a **Transparency effects** switch. With it off, or where the system offers no blur,
+  the window uses a solid background.
+
+### Changed
+
+- A new "glass" look for the window, in the style of Windows 11 Fluent: the window is translucent
+  with Acrylic or Mica blur behind it, a soft blue-and-lavender glow sits under frosted panels,
+  cards have light rims and soft shadows, primary buttons carry a blue-to-violet sheen, and the
+  active page is marked with an accent pill. The title bar is part of the window. Both the light and
+  the dark theme follow the same style.
+- A new application icon: the glyph set in frosted glass. It is used for both executables, the
+  window, the About page and `setup.exe`.
+- The installer wizard carries dedicated artwork: an illustrated panel on the Welcome and Finished
+  pages, a light glass background on every page, the icon in the header, and a hero scene while
+  files are copied.
+- Changing the interface language now takes effect after a restart; the Settings page says so and
+  offers to restart right away.
+- The README opens with the new logo.
+
+### Fixed
+
+- The Export page no longer opens scrolled down: the mode picker scrolled its selected tile into
+  view and dragged the whole page with it.
+
 ## [1.2.0] - 2026-09-23
 
 ### Added
@@ -21,15 +53,11 @@ All notable changes to this project are documented here. The format follows
   Browser (folder tree of the mounted containers, file list with search, by-type statistics,
   container list with locked status; "Export only this folder" / "Exclude this folder" generate
   include/exclude filters), Log (filter by level, copy, clear, follow), Settings (language
-  English/Russian with a restart-required notice, theme Light/Dark/System, remember last paths, confirm close
+  English/Russian with live switching, theme Light/Dark/System, remember last paths, confirm close
   while running, default threads, default helper binary paths, reset) and About. A game folder or
   a `.utoc`/`.pak` dropped onto the window fills in the source. A fresh install starts in English
   with the light theme. Settings live in `%LOCALAPPDATA%\UEBulkExport\settings.json`; a startup crash
   is written to `%LOCALAPPDATA%\UEBulkExport\crash.log`. Nothing leaves the machine.
-- Windows releases now ship as a `setup.exe` installer instead of a ZIP archive. The installer
-  lets the user choose the destination directory and optional native export features,
-  documentation, helper tools and shortcuts; the full installation selects every component by
-  default and includes an uninstaller.
 - A unit test project, `tests/UEBulkExport.Tests` (xunit, 119 tests), that needs neither network
   access nor game files.
 - `--verbose` (log every file written) is now listed in the README options tables, together with
@@ -44,8 +72,8 @@ All notable changes to this project are documented here. The format follows
   executable does not block the shell or return its exit code reliably from an interactive
   cmd/PowerShell prompt.
 - The solution is split into `src/UEBulkExport.Core` (library with all export logic),
-  `src/UEBulkExport.Cli` (console front end) and `src/UEBulkExport` (GUI). The release staging
-  layout and the installed application contain both executables side by side.
+  `src/UEBulkExport.Cli` (console front end) and `src/UEBulkExport` (GUI). The release archive
+  contains both executables side by side.
 - The summary separates "failed entries" from "failed objects" instead of one mixed count.
 - `UEBulkExport.log` in the output folder is appended to across runs, each run starting with a
   "run started" separator, instead of being overwritten.
@@ -107,3 +135,4 @@ First release.
 [1.0.0]: https://github.com/tavridabless/UEBulkExport/releases/tag/v1.0.0
 [1.1.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.0.0...v1.1.0
 [1.2.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.1.0...v1.2.0
+[2.0.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.2.0...v2.0.0

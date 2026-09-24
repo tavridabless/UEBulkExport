@@ -6,75 +6,115 @@
         x:DataType="vm:MainViewModel"
         Title="UEBulkExport"
         Icon="avares://UEBulkExport/Assets/app.ico"
-        MinWidth="980" MinHeight="660"
-        Background="{DynamicResource Brush.Bg}"
+        MinWidth="1000" MinHeight="680"
+        Background="Transparent"
+        TransparencyLevelHint="AcrylicBlur, Mica, None"
+        ExtendClientAreaToDecorationsHint="True"
+        ExtendClientAreaTitleBarHeightHint="44"
         WindowStartupLocation="CenterScreen"
         DragDrop.AllowDrop="True">
 
-  <Grid ColumnDefinitions="224,*">
+  <Panel>
+    <!--
+      Layer 1: a tint over the blurred desktop. When the system gives us no blur (or the user
+      turns transparency off) the code-behind swaps in the opaque twin of this brush.
+    -->
+    <Border x:Name="Backdrop" Background="{DynamicResource Brush.Backdrop}" />
 
-    <!-- Navigation rail -->
-    <Border Grid.Column="0" Background="{DynamicResource Brush.Sidebar}"
-            BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,0,1,0">
-      <Grid RowDefinitions="Auto,*,Auto">
+    <!-- Layer 2: two soft glows, the light that makes the glass read as glass -->
+    <Grid IsHitTestVisible="False" ClipToBounds="True">
+      <Ellipse Width="760" Height="760" Fill="{DynamicResource Brush.GlowA}"
+               HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-260,-320,0,0" />
+      <Ellipse Width="680" Height="680" Fill="{DynamicResource Brush.GlowB}"
+               HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-220,-280" />
+      <Ellipse Width="420" Height="420" Fill="{DynamicResource Brush.GlowA}" Opacity="0.55"
+               HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-160,180,0" />
+    </Grid>
 
-        <StackPanel Grid.Row="0" Margin="18,20,18,14" Spacing="4">
-          <StackPanel Orientation="Horizontal" Spacing="10">
+    <!-- Layer 3: chrome and content -->
+    <Grid ColumnDefinitions="236,*" RowDefinitions="44,*">
+
+      <!-- Title bar: drags the window, double-click maximises -->
+      <Border x:Name="TitleBar" Grid.Row="0" Grid.ColumnSpan="2" Background="Transparent"
+              PointerPressed="OnTitleBarPointerPressed" DoubleTapped="OnTitleBarDoubleTapped">
+        <StackPanel Orientation="Horizontal" Spacing="10" Margin="18,0,0,0" VerticalAlignment="Center"
+                    IsHitTestVisible="False">
+          <Image Source="avares://UEBulkExport/Assets/logo.png" Width="20" Height="20" />
+          <TextBlock Text="{loc:Tr App.Title}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"
+                     Foreground="{DynamicResource Brush.Text}" />
+          <TextBlock Text="{Binding Version}" FontSize="12" VerticalAlignment="Center"
+                     Foreground="{DynamicResource Brush.TextMuted}" />
+        </StackPanel>
+      </Border>
+
+      <!-- Navigation rail: no panel of its own, it sits straight on the glass -->
+      <Grid Grid.Row="1" Grid.Column="0" RowDefinitions="Auto,*,Auto">
+        <Border Grid.Row="0" Margin="20,12,20,18" Padding="14" CornerRadius="14"
+                Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.CardBorder}"
+                BorderThickness="1" BoxShadow="{DynamicResource Shadow.Card}">
+          <StackPanel Orientation="Horizontal" Spacing="12">
             <Image Source="avares://UEBulkExport/Assets/logo.png" Width="40" Height="40" />
             <StackPanel VerticalAlignment="Center">
-              <TextBlock Text="{loc:Tr App.Title}" FontSize="16" FontWeight="SemiBold"
+              <TextBlock Text="{loc:Tr App.Title}" FontSize="15" FontWeight="SemiBold"
                          Foreground="{DynamicResource Brush.Text}" />
-              <TextBlock Text="{Binding Version}" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" />
+              <TextBlock Text="{loc:Tr App.Tagline}" FontSize="11" TextWrapping="Wrap" MaxWidth="130"
+                         Foreground="{DynamicResource Brush.TextMuted}" />
             </StackPanel>
           </StackPanel>
-        </StackPanel>
+        </Border>
 
         <ListBox Grid.Row="1" Classes="Nav"
                  ItemsSource="{Binding Pages}"
                  SelectedItem="{Binding SelectedPage}">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:NavItem">
-              <StackPanel Orientation="Horizontal" Spacing="12">
-                <Path Classes="NavIcon" Data="{Binding Icon}" />
-                <TextBlock Text="{Binding Label}" FontSize="14" VerticalAlignment="Center" />
-              </StackPanel>
+              <Grid ColumnDefinitions="Auto,Auto,*">
+                <Border Grid.Column="0" Classes="NavIndicator" Margin="-12,0,9,0" VerticalAlignment="Center" />
+                <Path Grid.Column="1" Classes="NavIcon" Data="{Binding Icon}" />
+                <TextBlock Grid.Column="2" Text="{Binding Label}" FontSize="14" Margin="12,0,0,0"
+                           VerticalAlignment="Center" />
+              </Grid>
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
 
-        <TextBlock Grid.Row="2" Margin="18,0,18,16" Text="{loc:Tr App.Tagline}" FontSize="11"
-                   TextWrapping="Wrap" Foreground="{DynamicResource Brush.TextMuted}" />
+        <!-- Live status, always in view -->
+        <Border Grid.Row="2" Margin="20,0,20,20" Padding="12,10" CornerRadius="10"
+                Background="{DynamicResource Brush.Card}" BorderBrush="{DynamicResource Brush.CardBorder}"
+                BorderThickness="1">
+          <StackPanel Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                       Fill="{DynamicResource Brush.Success}" IsVisible="{Binding !IsBusy}" />
+              <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                       Fill="{DynamicResource Brush.Accent}" IsVisible="{Binding IsBusy}" />
+              <TextBlock Text="{Binding StatusText}" FontSize="12" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" Foreground="{DynamicResource Brush.Text}" />
+            </StackPanel>
+            <ProgressBar Value="{Binding ProgressFraction}" Maximum="1" IsVisible="{Binding ShowProgress}" />
+          </StackPanel>
+        </Border>
       </Grid>
-    </Border>
 
-    <!-- Page + status bar -->
-    <Grid Grid.Column="1" RowDefinitions="*,Auto">
-      <ContentControl Grid.Row="0" x:Name="PageHost" />
-
-      <Border Grid.Row="1" Background="{DynamicResource Brush.Sidebar}"
-              BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,1,0,0"
-              Padding="20,8">
-        <Grid ColumnDefinitions="Auto,*,220">
-          <Ellipse Grid.Column="0" Width="8" Height="8" Margin="0,0,10,0" VerticalAlignment="Center"
-                   Fill="{DynamicResource Brush.Success}" IsVisible="{Binding !IsBusy}" />
-          <Ellipse Grid.Column="0" Width="8" Height="8" Margin="0,0,10,0" VerticalAlignment="Center"
-                   Fill="{DynamicResource Brush.Accent}" IsVisible="{Binding IsBusy}" />
-          <TextBlock Grid.Column="1" Text="{Binding StatusText}" VerticalAlignment="Center" FontSize="12"
-                     Foreground="{DynamicResource Brush.TextMuted}" />
-          <ProgressBar Grid.Column="2" Value="{Binding ProgressFraction}" Maximum="1" MinHeight="6"
-                       VerticalAlignment="Center" IsVisible="{Binding ShowProgress}" />
-        </Grid>
+      <!-- The main glass surface -->
+      <Border Grid.Row="1" Grid.Column="1" Margin="0,4,14,14" CornerRadius="18" ClipToBounds="True"
+              Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.CardBorder}"
+              BorderThickness="1" BoxShadow="{DynamicResource Shadow.Surface}">
+        <ContentControl x:Name="PageHost" />
       </Border>
     </Grid>
 
     <!-- Drop overlay -->
-    <Border Grid.ColumnSpan="2" x:Name="DropOverlay" IsVisible="False" IsHitTestVisible="False"
-            Background="#AA15171C" BorderBrush="{DynamicResource Brush.Accent}" BorderThickness="3"
-            CornerRadius="12" Margin="16">
-      <TextBlock Text="{loc:Tr Drop.Hint}" FontSize="20" FontWeight="SemiBold"
-                 HorizontalAlignment="Center" VerticalAlignment="Center"
-                 Foreground="{DynamicResource Brush.Text}" />
+    <Border x:Name="DropOverlay" IsVisible="False" IsHitTestVisible="False"
+            Background="{DynamicResource Brush.Overlay}" BorderBrush="{DynamicResource Brush.Accent}"
+            BorderThickness="2" CornerRadius="18" Margin="16,52,16,16">
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="14">
+        <PathIcon Width="44" Height="44" Foreground="{DynamicResource Brush.Accent}" HorizontalAlignment="Center"
+                  Data="M12 3 L12 15 M7 10 L12 15 L17 10 M4 16 L4 19 A2 2 0 0 0 6 21 L18 21 A2 2 0 0 0 20 19 L20 16" />
+        <TextBlock Text="{loc:Tr Drop.Hint}" FontSize="20" FontWeight="SemiBold"
+                   Foreground="{DynamicResource Brush.Text}" />
+      </StackPanel>
     </Border>
-  </Grid>
+  </Panel>
 
 </Window>

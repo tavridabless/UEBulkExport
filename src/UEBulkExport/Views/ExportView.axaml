@@ -124,7 +124,7 @@
             <TextBlock Classes="Hint" Text="{loc:Tr Export.Out.Hint}" />
 
             <TextBlock Classes="Label" Text="{loc:Tr Export.Mode.Label}" Margin="0,14,0,6" />
-            <ListBox Classes="Modes" ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
+            <ListBox Classes="Modes" ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}" AutoScrollToSelectedItem="False"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      ScrollViewer.VerticalScrollBarVisibility="Disabled">
               <ListBox.ItemsPanel>

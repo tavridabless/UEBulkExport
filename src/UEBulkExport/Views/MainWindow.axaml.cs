@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -20,6 +21,10 @@ public sealed partial class MainWindow : Window
 
         DataContextChanged += (_, _) => Bind();
         Opened += (_, _) => DialogService.Owner = this;
+        PropertyChanged += (_, e) =>
+        {
+            if (e.Property == ActualTransparencyLevelProperty) UpdateBackdrop();
+        };
 
         AddHandler(DragDrop.DragEnterEvent, OnDragEnter);
         AddHandler(DragDrop.DragLeaveEvent, OnDragLeave);
@@ -46,6 +51,11 @@ public sealed partial class MainWindow : Window
             if (Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
         };
         shell.Settings.RestartRequested += OnRestartRequested;
+        shell.Settings.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SettingsViewModel.TransparencyEnabled)) ApplyTransparency();
+        };
+        ApplyTransparency();
 
         shell.PropertyChanged += (_, e) =>
         {
@@ -53,6 +63,40 @@ public sealed partial class MainWindow : Window
         };
         ShowPage(shell.SelectedPage.Key);
     }
+
+    // ------------------------------------------------------------------ glass
+
+    /// <summary>Asks the system for blur behind the window, or for none when the user turned it off.</summary>
+    private void ApplyTransparency()
+    {
+        TransparencyLevelHint = App.Settings.TransparencyEnabled
+            ? [WindowTransparencyLevel.AcrylicBlur, WindowTransparencyLevel.Mica, WindowTransparencyLevel.None]
+            : [WindowTransparencyLevel.None];
+        UpdateBackdrop();
+    }
+
+    /// <summary>
+    /// The tint is translucent only while the system actually blurs what is behind the window:
+    /// without blur (Windows without composition, remote sessions, transparency off) the desktop
+    /// would show through unblurred, so the opaque twin is used instead.
+    /// </summary>
+    private void UpdateBackdrop()
+    {
+        var blurred = ActualTransparencyLevel != WindowTransparencyLevel.None
+                      && ActualTransparencyLevel != WindowTransparencyLevel.Transparent;
+        Backdrop[!Border.BackgroundProperty] = this.GetResourceObservable(
+            blurred ? "Brush.Backdrop" : "Brush.BackdropOpaque").ToBinding();
+    }
+
+    // ------------------------------------------------------------------ title bar
+
+    private void OnTitleBarPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed && e.ClickCount == 1) BeginMoveDrag(e);
+    }
+
+    private void OnTitleBarDoubleTapped(object? sender, TappedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
 
     private void ShowPage(string key)
     {
@@ -154,7 +198,8 @@ public sealed partial class MainWindow : Window
             SizeToContent = SizeToContent.Height,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = Background
+            // The main window is see-through; a dialog needs a solid surface to stay readable.
+            [!BackgroundProperty] = this.GetResourceObservable("Brush.SurfaceSolid").ToBinding()
         };
 
         var yes = new Button { Content = loc[yesKey], Classes = { "Primary" } };

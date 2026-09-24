@@ -3,7 +3,7 @@
 #define AppUrl "https://github.com/tavridabless/UEBulkExport"
 
 #ifndef AppVersion
-  #define AppVersion "1.2.0"
+  #define AppVersion "2.0.0"
 #endif
 
 #ifndef SourceDir
@@ -25,10 +25,17 @@ AppSupportURL={#AppUrl}/issues
 AppUpdatesURL={#AppUrl}/releases
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
+DisableWelcomePage=no
 DisableDirPage=no
 DisableProgramGroupPage=yes
 LicenseFile=..\LICENSE
 SetupIconFile=..\src\UEBulkExport\Assets\app.ico
+; Installer artwork, generated from installer/branding by installer/branding/generator (run it
+; before compiling; the release workflow does). Each wildcard lists one image per display scale;
+; Setup picks the best fit, so the artwork stays sharp from 100 % to 250 %.
+WizardImageFile=branding\wizard-image-*.png
+WizardSmallImageFile=branding\wizard-small-*.png
+WizardBackImageFile=branding\wizard-back-*.png
 UninstallDisplayIcon={app}\UEBulkExport.exe
 OutputDir={#OutputDir}
 OutputBaseFilename=UEBulkExport-{#AppVersion}-win-x64-setup
@@ -68,6 +75,11 @@ Name: "tools"; Description: "{cm:ComponentTools}"; Types: full custom
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
+; Artwork used by Setup itself: extracted to a temporary folder, never installed. Listed first
+; because solid compression makes later entries slower to extract.
+Source: "branding\wizard-install-*.png"; Flags: dontcopy noencryption
+Source: "branding\wizard-back-*.png"; Flags: dontcopy noencryption
+
 ; The GUI, CLI, managed runtime and all libraries required to start the application.
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "CUE4Parse-Natives.dll,Detex.dll,oodle-data-shared.dll,zlib-ng2.dll,README.md,README.ru.md,LICENSE,NOTICE,THIRD-PARTY-NOTICES.md,CHANGELOG.md,docs\*,tools\*"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
 
@@ -117,3 +129,59 @@ russian.ComponentTextures=Дополнительное декодировани�
 russian.ComponentCompression=Распаковка контейнеров Oodle и zlib-ng
 russian.ComponentDocumentation=Офлайн-документация и лицензии
 russian.ComponentTools=Инструменты UE4SS для получения mappings
+
+[Code]
+// While files are copied the wizard shows the hero artwork; every other page keeps the regular
+// background. WizardSetBackImage swaps the image at runtime and picks the best size for the DPI.
+var
+  InstallArt: TArrayOfGraphic;
+  PageArt: TArrayOfGraphic;
+
+procedure LoadArt(const Pattern: String; var Images: TArrayOfGraphic);
+var
+  FindRec: TFindRec;
+  Count: Integer;
+begin
+  ExtractTemporaryFiles('{tmp}\' + Pattern);
+  Count := 0;
+  if FindFirst(ExpandConstant('{tmp}\' + Pattern), FindRec) then
+  try
+    repeat
+      SetLength(Images, Count + 1);
+      Images[Count] := TPngImage.Create;
+      Images[Count].LoadFromFile(ExpandConstant('{tmp}\') + FindRec.Name);
+      Count := Count + 1;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
+procedure FreeArt(var Images: TArrayOfGraphic);
+var
+  I: Integer;
+begin
+  for I := 0 to GetArrayLength(Images) - 1 do
+    Images[I].Free;
+  SetLength(Images, 0);
+end;
+
+procedure InitializeWizard;
+begin
+  LoadArt('wizard-install-*.png', InstallArt);
+  LoadArt('wizard-back-*.png', PageArt);
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = wpInstalling then
+    WizardSetBackImage(InstallArt, True, True, 255)
+  else if CurPageID = wpFinished then
+    WizardSetBackImage(PageArt, True, True, 255);
+end;
+
+procedure DeinitializeSetup;
+begin
+  FreeArt(InstallArt);
+  FreeArt(PageArt);
+end;

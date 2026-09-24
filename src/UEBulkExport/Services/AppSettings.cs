@@ -17,6 +17,7 @@ public sealed class AppSettings
     public string Theme { get; set; } = "Light";
     public bool RememberPaths { get; set; } = true;
     public bool ConfirmCloseWhileRunning { get; set; } = true;
+    public bool TransparencyEnabled { get; set; } = true;
     public int DefaultThreads { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
 
     public string LastPaksPath { get; set; } = "";

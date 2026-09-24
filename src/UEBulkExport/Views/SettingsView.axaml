@@ -33,6 +33,15 @@
               </ComboBox>
             </StackPanel>
           </Grid>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16" Margin="0,16,0,0">
+            <StackPanel Grid.Column="0">
+              <TextBlock Text="{loc:Tr Settings.Transparency}" FontWeight="Medium" />
+              <TextBlock Classes="Hint" Text="{loc:Tr Settings.Transparency.Hint}" Margin="0,2,0,0" />
+            </StackPanel>
+            <ToggleSwitch Grid.Column="1" AutomationProperties.AutomationId="TransparencyToggle"
+                          IsChecked="{Binding TransparencyEnabled}" OnContent="" OffContent=""
+                          VerticalAlignment="Center" />
+          </Grid>
           <Border AutomationProperties.AutomationId="LanguageRestartBanner"
                   IsVisible="{Binding RestartRequired}"
                   Margin="0,12,0,0" Padding="12,10"

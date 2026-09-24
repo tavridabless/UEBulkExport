@@ -67,6 +67,22 @@ libraries. The default Full installation must include every export dependency an
 choose the destination directory. Whenever installation or release behaviour changes, update
 `README.md` and `README.ru.md` together.
 
+To build the installer locally, publish both executables into one folder, generate the wizard
+artwork and compile with Inno Setup 6.6 or later (the release workflow uses 6.7.3):
+
+```bat
+dotnet publish src/UEBulkExport     -c Release -r win-x64 --self-contained -o artifacts/publish
+dotnet publish src/UEBulkExport.Cli -c Release -r win-x64 --self-contained -o artifacts/publish
+dotnet run --project installer/branding/generator -- installer/branding src/UEBulkExport/Assets docs/images
+ISCC.exe /DAppVersion=2.0.0 /DSourceDir="artifacts\publish" /DOutputDir="artifacts\installer" installer\UEBulkExport.iss
+```
+
+The artwork sources live in `installer/branding`: `icon-source.webp` for the application icon and
+`design/*.webp` for the wizard and the README logo. The generated `wizard-*.png` files are not
+committed; `app.ico`, `logo.png` and `docs/images/logo*.png` are. After replacing a source image,
+run the generator and commit the regenerated icon and logo files. The README describes installing from
+`setup.exe` only; build instructions for the installer belong here.
+
 ### GUI code
 
 The window lives under `src/UEBulkExport` and is built with Avalonia, MVVM style, using

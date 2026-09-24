@@ -240,6 +240,8 @@
   "Theme.Dark": "Dark",
   "Theme.Light": "Light",
   "Theme.System": "Follow system",
+  "Settings.Transparency": "Transparency effects",
+  "Settings.Transparency.Hint": "Frosted glass that lets the desktop glow through. Turn off for a solid window on slower machines or in remote sessions.",
   "Settings.Behaviour": "Behaviour",
   "Settings.RememberPaths": "Remember the last game and output folder",
   "Settings.ConfirmClose": "Ask before closing while an export is running",

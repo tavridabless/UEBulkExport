@@ -1,6 +1,9 @@
 <div align="center">
 
-# UEBulkExport
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.png">
+  <img src="docs/images/logo.png" alt="UEBulkExport" width="560">
+</picture>
 
 **Browse and export Unreal Engine containers from a desktop interface.**
 
@@ -112,21 +115,36 @@ With `--mode full`, the tool instead writes converted files:
 
 ## Quick start
 
-### 1. Get the tool
+### 1. Install
 
-Download the latest `UEBulkExport-*-win-x64-setup.exe` from
-[Releases](https://github.com/tavridabless/UEBulkExport/releases) and run it. The wizard lets you
-choose the installation directory and components; the recommended Full installation selects all
-native export features, offline documentation, helper tools and shortcuts by default. The build
-is self-contained — no separate .NET installation is required. It installs `UEBulkExport.exe`
-(the window) and `UEBulkExport.Cli.exe` (the console program) side by side and registers an
-uninstaller.
+1. Download the latest `UEBulkExport-<version>-win-x64-setup.exe` from
+   [Releases](https://github.com/tavridabless/UEBulkExport/releases).
+2. Run it. Windows asks for administrator rights, because the tool installs into Program Files.
+   The installer is not code-signed, so SmartScreen may say *Windows protected your PC*; choose
+   **More info**, then **Run anyway**.
+3. Pick the installer language (English or Russian) and accept the Apache-2.0 licence.
+4. Choose the folder, `C:\Program Files\UEBulkExport` by default, and the components. **Full
+   installation** is recommended: besides the application it adds the native export helpers, the
+   offline documentation and the UE4SS mappings helper. **Core application only** installs just the
+   window and the command line program.
+5. Optionally create a desktop shortcut, then finish; the wizard can start UEBulkExport right away.
+
+The build is self-contained, so no separate .NET installation is needed. The Start menu gets two
+shortcuts: **UEBulkExport** opens the window, **UEBulkExport CLI** is the command line program. The
+command line program is not added to `PATH`; call it by its full path, for example
+`"C:\Program Files\UEBulkExport\UEBulkExport.Cli.exe" --help`, or from the installation folder.
+
+**Updating:** run the setup of the newer version; it replaces the installed one in place and keeps
+your settings. **Uninstalling:** Windows Settings → Apps → Installed apps → UEBulkExport →
+Uninstall. Settings and downloaded helper libraries stay in `%LOCALAPPDATA%\UEBulkExport`; delete
+that folder to remove them as well.
 
 ### 2. Run an export
 
-Double-click `UEBulkExport.exe`, select the game directory (or its `Content\Paks` directory), choose
-an output folder and mode, then press **Start export**. You can scan the source first to inspect its
-contents on the Browser page, or run a dry run to verify the plan without writing files.
+Start **UEBulkExport** from the Start menu, select the game directory (or its `Content\Paks`
+directory), choose an output folder and mode, then press **Start export**. You can scan the
+source first to inspect its contents on the Browser page, or run a dry run to verify the plan
+without writing files.
 
 For an automated package extraction, run:
 
@@ -146,7 +164,8 @@ The `full` and `json` modes deserialize properties, and shipping UE5 builds usua
 properties **unversioned**. Those modes need a mappings file; package extraction does not.
 
 **[docs/mappings.md](docs/mappings.md) explains how to produce one**, which takes about two
-minutes with UE4SS. Drop the resulting `.usmap` next to the executables and it is picked up
+minutes with UE4SS. Pick the resulting `.usmap` in the **Mappings** field of the Export page,
+pass it with `--usmap`, or drop it next to the game's containers, where it is found
 automatically.
 
 Run `--mode full` for converted files or `--mode json` for property dumps.
@@ -376,17 +395,12 @@ dotnet publish src/UEBulkExport     -c Release -r win-x64 --self-contained -o ar
 dotnet publish src/UEBulkExport.Cli -c Release -r win-x64 --self-contained -o artifacts/publish
 ```
 
-`artifacts/publish/` then holds `UEBulkExport.exe` and `UEBulkExport.Cli.exe` side by side. This is
-the application layout consumed by `installer/UEBulkExport.iss`; it also runs directly without an
-installed runtime. With Inno Setup 6 installed, build the same installer used for releases with:
+`artifacts/publish/` then holds `UEBulkExport.exe` and `UEBulkExport.Cli.exe` side by side; they
+run directly, without an installed runtime.
 
-```bat
-ISCC.exe /DAppVersion=1.2.0 /DSourceDir="artifacts\publish" /DOutputDir="artifacts\installer" installer\UEBulkExport.iss
-```
-
-FOR DEVELOPMENT, `dotnet build UEBulkExport.slnx -c Release` is enough; that build needs .NET 10
-present. `dotnet test tests/UEBulkExport.Tests -c Release` runs the unit tests; they need neither
-network access nor game files.
+For development, `dotnet build UEBulkExport.slnx -c Release` is enough; it needs .NET 10.
+`dotnet test tests/UEBulkExport.Tests -c Release` runs the unit tests, which need neither network
+access nor game files.
 
 The solution is laid out as:
 
@@ -435,3 +449,9 @@ UEBulkExport is not affiliated with Epic Games, the CUE4Parse project, or the UE
 
 [Apache-2.0](LICENSE). See [NOTICE](NOTICE) for the attribution this licence requires you to
 carry.
+
+---
+
+<p align="center">
+  <img src="docs/images/banner.webp" alt="UEBulkExport: game files flowing out of a container" width="820">
+</p>
