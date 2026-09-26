@@ -113,13 +113,24 @@ public sealed class DumpConversionTests
     [Fact]
     public void DefaultWorkingDirectory_separates_dumps_that_share_a_folder_name()
     {
-        var a = DumpConversionService.DefaultWorkingDirectory(@"C:\P", @"D:\Dumps\A\Content", "4.27");
-        var b = DumpConversionService.DefaultWorkingDirectory(@"C:\P", @"D:\Dumps\B\Content", "4.27");
-        var again = DumpConversionService.DefaultWorkingDirectory(@"C:\P", @"d:\dumps\a\content\", "4.27");
+        // Built from the platform's own separators: a Windows path is just a file name on Linux.
+        var root = Path.GetTempPath();
+        var project = Path.Combine(root, "P");
+        var dumpA = Path.Combine(root, "Dumps", "A", "Content");
+        var dumpB = Path.Combine(root, "Dumps", "B", "Content");
+
+        var a = DumpConversionService.DefaultWorkingDirectory(project, dumpA, "4.27");
+        var b = DumpConversionService.DefaultWorkingDirectory(project, dumpB, "4.27");
+        var again = DumpConversionService.DefaultWorkingDirectory(project, dumpA + Path.DirectorySeparatorChar, "4.27");
 
         Assert.NotEqual(a, b);
-        Assert.Equal(a, again, ignoreCase: true);
-        Assert.StartsWith(Path.Combine(@"C:\P", "Saved", "UEBulkExport", "DumpConversion", "Content_4_27_"), a);
+        Assert.Equal(a, again);
+        Assert.StartsWith(Path.Combine(project, "Saved", "UEBulkExport", "DumpConversion", "Content_4_27_"), a);
+
+        // Windows paths are case-insensitive, so a differently cased path is the same dump there.
+        if (OperatingSystem.IsWindows())
+            Assert.Equal(a, DumpConversionService.DefaultWorkingDirectory(project, dumpA.ToLowerInvariant(), "4.27"),
+                ignoreCase: true);
     }
 
     [Fact]

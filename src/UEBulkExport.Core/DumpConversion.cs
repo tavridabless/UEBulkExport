@@ -322,8 +322,10 @@ public sealed class DumpConversionService
         var sourceName = SanitizePathComponent(new DirectoryInfo(source).Name);
         var version = SanitizePathComponent(sourceVersion);
 
-        // Two dumps may share a folder name; their exports must not mix.
-        var identity = Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant();
+        // Two dumps may share a folder name; their exports must not mix. Case only tells folders
+        // apart where the file system does.
+        var identity = Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (OperatingSystem.IsWindows()) identity = identity.ToUpperInvariant();
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))[..8].ToLowerInvariant();
 
         return Path.Combine(projectDirectory, "Saved", "UEBulkExport", "DumpConversion",
