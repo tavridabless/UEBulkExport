@@ -13,9 +13,11 @@ public static class ConversionPathDiscovery
     public static ConversionPathDiscoveryResult Find(
         string? currentUModel,
         string? currentProject,
-        string? currentEditor)
+        string? currentEditor,
+        bool searchProjects = true)
     {
-        var project = ExistingFile(currentProject, ".uproject") ?? FindProject();
+        // Searching for projects is opt-in: the chosen project is where imported assets are saved.
+        var project = ExistingFile(currentProject, ".uproject") ?? (searchProjects ? FindProject() : null);
         var engineAssociation = ReadEngineAssociation(project);
 
         return new ConversionPathDiscoveryResult(

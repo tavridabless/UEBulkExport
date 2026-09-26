@@ -70,7 +70,7 @@ public sealed class DumpConversionTests
     }
 
     [Fact]
-    public async Task Cancel_after_UE_Viewer_error_restores_temporarily_hidden_source_package()
+    public async Task Cancel_after_UE_Viewer_error_leaves_the_source_dump_untouched()
     {
         if (!OperatingSystem.IsWindows()) return;
 
@@ -93,5 +93,80 @@ public sealed class DumpConversionTests
 
         Assert.True(File.Exists(package));
         Assert.False(File.Exists(package + ".uebskip"));
+        Assert.Equal(2, Directory.EnumerateFiles(source).Count());
+        Assert.False(Directory.Exists(Path.Combine(temp.Path, "Work", "Source")));
+    }
+
+    [Fact]
+    public void BuildUnrealCommandLine_passes_the_script_with_forward_slashes_and_value_quoting()
+    {
+        var line = DumpConversionService.BuildUnrealCommandLine(
+            @"C:\Unreal Projects\My Game\MyGame.uproject",
+            @"C:\Unreal Projects\My Game\Saved\UEBulkExport\import-assets.py");
+
+        Assert.StartsWith("\"C:\\Unreal Projects\\My Game\\MyGame.uproject\" ", line);
+        Assert.EndsWith(
+            "-ExecutePythonScript=\"C:/Unreal Projects/My Game/Saved/UEBulkExport/import-assets.py\"", line);
+        Assert.DoesNotContain("\"-ExecutePythonScript", line);
+    }
+
+    [Fact]
+    public void DefaultWorkingDirectory_separates_dumps_that_share_a_folder_name()
+    {
+        var a = DumpConversionService.DefaultWorkingDirectory(@"C:\P", @"D:\Dumps\A\Content", "4.27");
+        var b = DumpConversionService.DefaultWorkingDirectory(@"C:\P", @"D:\Dumps\B\Content", "4.27");
+        var again = DumpConversionService.DefaultWorkingDirectory(@"C:\P", @"d:\dumps\a\content\", "4.27");
+
+        Assert.NotEqual(a, b);
+        Assert.Equal(a, again, ignoreCase: true);
+        Assert.StartsWith(Path.Combine(@"C:\P", "Saved", "UEBulkExport", "DumpConversion", "Content_4_27_"), a);
+    }
+
+    [Fact]
+    public async Task FindFailedPackage_reads_only_the_current_attempt()
+    {
+        using var temp = new TempDir();
+        var log = Path.Combine(temp.Path, "umodel.log");
+        await File.WriteAllTextAsync(log, "******** Game/Old.uasset ********\nboom\n");
+        var offset = new FileInfo(log).Length;
+        await File.AppendAllTextAsync(log, "----- attempt -----\ncrashed before any banner\n");
+
+        Assert.Equal("Game/Old.uasset", DumpConversionService.FindFailedPackage(log));
+        Assert.Null(DumpConversionService.FindFailedPackage(log, offset));
+    }
+
+    [Fact]
+    public void SourceMirror_leaves_the_dump_untouched_and_skips_excluded_packages()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var temp = new TempDir();
+        var source = temp.Dir("Dump");
+        Directory.CreateDirectory(Path.Combine(source, "Maps"));
+        File.WriteAllText(Path.Combine(source, "Good.uasset"), "good");
+        File.WriteAllText(Path.Combine(source, "Bad.uasset"), "bad");
+        var readOnly = Path.Combine(source, "Maps", "Level.umap");
+        File.WriteAllText(readOnly, "map");
+        File.SetAttributes(readOnly, FileAttributes.ReadOnly);
+        var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Bad.uasset" };
+
+        string root;
+        using (var mirror = DumpConversionService.SourceMirror.Create(source, temp.Dir("Work"), excluded, default))
+        {
+            root = mirror.Root;
+            Assert.True(File.Exists(Path.Combine(root, "Good.uasset")));
+            Assert.True(File.Exists(Path.Combine(root, "Maps", "Level.umap")));
+            Assert.False(File.Exists(Path.Combine(root, "Bad.uasset")));
+
+            mirror.Exclude("Good.uasset");
+            Assert.False(File.Exists(Path.Combine(root, "Good.uasset")));
+        }
+
+        Assert.False(Directory.Exists(root));
+        Assert.Equal("good", File.ReadAllText(Path.Combine(source, "Good.uasset")));
+        Assert.Equal("bad", File.ReadAllText(Path.Combine(source, "Bad.uasset")));
+        Assert.True(File.GetAttributes(readOnly).HasFlag(FileAttributes.ReadOnly));
+        Assert.Equal(3, Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories).Count());
+        File.SetAttributes(readOnly, FileAttributes.Normal);
     }
 }

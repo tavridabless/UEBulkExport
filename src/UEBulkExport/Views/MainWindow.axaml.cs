@@ -50,6 +50,8 @@ public sealed partial class MainWindow : Window
         {
             if (Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
         };
+        shell.Export.ConfirmConversion = (title, message) =>
+            ConfirmTextAsync(title, message, Loc.Instance["Convert.Confirm.Yes"], Loc.Instance["Common.Cancel"]);
         shell.Settings.RestartRequested += OnRestartRequested;
         shell.Settings.PropertyChanged += (_, e) =>
         {
@@ -186,15 +188,21 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>A two-button question. Small enough not to deserve its own XAML file.</summary>
-    private async Task<bool> ConfirmAsync(string titleKey, string messageKey, string yesKey, string noKey)
+    private Task<bool> ConfirmAsync(string titleKey, string messageKey, string yesKey, string noKey)
     {
         var loc = Loc.Instance;
+        return ConfirmTextAsync(loc[titleKey], loc[messageKey], loc[yesKey], loc[noKey]);
+    }
+
+    /// <summary>The same question with ready-made texts, for messages that carry paths or numbers.</summary>
+    private async Task<bool> ConfirmTextAsync(string title, string message, string yesText, string noText)
+    {
         var result = false;
 
         var dialog = new Window
         {
-            Title = loc[titleKey],
-            Width = 440,
+            Title = title,
+            Width = 520,
             SizeToContent = SizeToContent.Height,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -202,8 +210,8 @@ public sealed partial class MainWindow : Window
             [!BackgroundProperty] = this.GetResourceObservable("Brush.SurfaceSolid").ToBinding()
         };
 
-        var yes = new Button { Content = loc[yesKey], Classes = { "Primary" } };
-        var no = new Button { Content = loc[noKey] };
+        var yes = new Button { Content = yesText, Classes = { "Primary" } };
+        var no = new Button { Content = noText };
         yes.Click += (_, _) => { result = true; dialog.Close(); };
         no.Click += (_, _) => dialog.Close();
 
@@ -213,7 +221,7 @@ public sealed partial class MainWindow : Window
             Spacing = 18,
             Children =
             {
-                new TextBlock { Text = loc[messageKey], TextWrapping = Avalonia.Media.TextWrapping.Wrap },
+                new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap },
                 new StackPanel
                 {
                     Orientation = Orientation.Horizontal,

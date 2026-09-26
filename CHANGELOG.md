@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [2.1.0] - 2026-09-25
+## [2.1.0] - 2026-09-27
 
 ### Added
 
@@ -15,16 +15,27 @@ All notable changes to this project are documented here. The format follows
   the selected target `UnrealEditor-Cmd` to create new assets inside a target project. The source
   version, target project, editor, content destination, overwrite policy and progress are available
   in the English and Russian interfaces and remembered between runs.
-- UE Viewer, the most recently modified project in common Unreal project folders, and the matching
-  `UnrealEditor-Cmd` are detected automatically on startup and on demand. Every detected path can
-  still be overridden manually.
+- UE Viewer and the matching `UnrealEditor-Cmd` are detected automatically. A target project is
+  suggested only when **Find automatically** is pressed with the project field empty, and a path
+  typed by the user is never replaced. Before anything is imported, a confirmation window shows
+  the target project and content folder.
 - A UE Viewer failure no longer has to abort the whole conversion. The window displays the failing
   package and a **Continue** button; continuing skips that package, resumes the export, and writes
   every skipped or failed file to `conversion-errors.csv` at the end. Packages with empty `.ubulk`
-  or `.uexp` payloads are detected and skipped up front, while their source files are preserved.
+  or `.uexp` payloads are detected and skipped up front.
+- The source dump is only read. Packages that UE Viewer must skip are left out of a temporary
+  hard-linked working copy (plain copies across drives), which is removed when the run ends.
 - Conversion reports and the UE Viewer/Unreal Editor logs are retained under
-  `Saved/UEBulkExport/DumpConversion` in the target project. Interchange files that are already in a
-  dump can be imported without exporting them again, and interrupted runs can be resumed.
+  `Saved/UEBulkExport/DumpConversion` in the target project, in a separate folder for each dump.
+  Interchange files that are already in a dump can be imported without exporting them again. An
+  import ledger lets a repeated run without **Replace existing target assets** leave already
+  imported assets untouched and report them as already present rather than as failures, so
+  interrupted runs can be resumed.
+- UE Viewer and the editor are closed after a long period without output (15 and 30 minutes), and
+  a failing editor Python script is reported with the error from `unreal-import.log` even though
+  the editor exits successfully.
+- The editor receives the import script path in the form Unreal expects, so projects in folders
+  with spaces or names that begin with digits import correctly.
 
 ### Known limitations
 
@@ -164,3 +175,4 @@ First release.
 [1.1.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.0.0...v1.1.0
 [1.2.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.1.0...v1.2.0
 [2.0.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.2.0...v2.0.0
+[2.1.0]: https://github.com/tavridabless/UEBulkExport/compare/v2.0.0...v2.1.0

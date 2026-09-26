@@ -3,7 +3,7 @@
 #define AppUrl "https://github.com/tavridabless/UEBulkExport"
 
 #ifndef AppVersion
-  #define AppVersion "2.0.0"
+  #define AppVersion "2.1.0"
 #endif
 
 #ifndef SourceDir

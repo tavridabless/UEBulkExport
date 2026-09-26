@@ -258,6 +258,9 @@ public sealed partial class ExportViewModel : ObservableObject
     /// <summary>Set by the view: copies text to the clipboard.</summary>
     public Func<string, Task>? CopyToClipboard { get; set; }
 
+    /// <summary>Set by the view: asks a yes/no question (title, message) and returns the answer.</summary>
+    public Func<string, string, Task<bool>>? ConfirmConversion { get; set; }
+
     public ExportViewModel(AppSettings settings)
     {
         _settings = settings;
@@ -284,7 +287,9 @@ public sealed partial class ExportViewModel : ObservableObject
         };
 
         RefreshCommandLine();
-        Dispatcher.UIThread.Post(() => _ = DetectConversionPathsCore());
+        // At startup only the tools are looked up. The target project decides where assets are saved,
+        // so it is never picked silently: the user chooses it or asks for a suggestion.
+        Dispatcher.UIThread.Post(() => _ = DetectConversionPathsCore(searchProjects: false));
     }
 
     public void LoadFromSettings()
@@ -535,9 +540,9 @@ public sealed partial class ExportViewModel : ObservableObject
         UnrealEditorPath = await DialogService.PickExecutableAsync(UnrealEditorPath) ?? UnrealEditorPath;
 
     [RelayCommand(CanExecute = nameof(CanDetectConversionPaths))]
-    private Task DetectConversionPaths() => DetectConversionPathsCore();
+    private Task DetectConversionPaths() => DetectConversionPathsCore(searchProjects: true);
 
-    private async Task DetectConversionPathsCore()
+    private async Task DetectConversionPathsCore(bool searchProjects)
     {
         if (ConversionAutoDetectBusy || IsBusy) return;
 
@@ -545,12 +550,15 @@ public sealed partial class ExportViewModel : ObservableObject
         ConversionStatus = L["Convert.AutoDetect.Searching"];
         try
         {
+            // A field the user edits while the search runs keeps what they typed.
+            var (umodelBefore, projectBefore, editorBefore) = (UModelPath, TargetProjectPath, UnrealEditorPath);
             var result = await Task.Run(() => ConversionPathDiscovery.Find(
-                UModelPath, TargetProjectPath, UnrealEditorPath));
+                umodelBefore, projectBefore, editorBefore, searchProjects));
 
-            if (result.UModelPath is not null) UModelPath = result.UModelPath;
-            if (result.ProjectPath is not null) TargetProjectPath = result.ProjectPath;
-            if (result.UnrealEditorPath is not null) UnrealEditorPath = result.UnrealEditorPath;
+            if (result.UModelPath is not null && UModelPath == umodelBefore) UModelPath = result.UModelPath;
+            if (result.ProjectPath is not null && TargetProjectPath == projectBefore) TargetProjectPath = result.ProjectPath;
+            if (result.UnrealEditorPath is not null && UnrealEditorPath == editorBefore)
+                UnrealEditorPath = result.UnrealEditorPath;
 
             ConversionStatus = L.Format("Convert.AutoDetect.Result",
                 result.UModelPath is not null ? L["Common.Yes"] : L["Common.No"],
@@ -710,6 +718,12 @@ public sealed partial class ExportViewModel : ObservableObject
     {
         if (!RequireConversion()) return;
 
+        // Imported assets are saved into the project; make sure it is the one the user means.
+        if (ConfirmConversion is not null &&
+            !await ConfirmConversion(L["Convert.Confirm.Title"],
+                L.Format("Convert.Confirm.Message", TargetProjectPath.Trim(), ConversionDestinationPath.Trim())))
+            return;
+
         ClearOutcome();
         State = RunState.Idle;
         ConversionIsBusy = true;
@@ -725,15 +739,19 @@ public sealed partial class ExportViewModel : ObservableObject
                 ConversionProgress = p.Fraction;
                 ConversionStatus = L[$"Convert.Stage.{p.Stage}"];
             });
-            var summary = await _conversionService.RunAsync(new DumpConversionOptions(
+            // The service scans and links large dumps; keep that work off the UI thread. Progress
+            // and the Continue prompt marshal back on their own.
+            var options = new DumpConversionOptions(
                 ConversionSourcePath.Trim(),
                 ConversionSourceVersion.Version,
                 UModelPath.Trim(),
                 TargetProjectPath.Trim(),
                 UnrealEditorPath.Trim(),
                 ConversionDestinationPath.Trim(),
-                Overwrite: ConversionOverwrite), progress, WaitForConversionDecision,
-                _conversionCancellation.Token);
+                Overwrite: ConversionOverwrite);
+            var token = _conversionCancellation.Token;
+            var summary = await Task.Run(
+                () => _conversionService.RunAsync(options, progress, WaitForConversionDecision, token), token);
 
             ShowConversionSummary(summary);
             LastOutputDirectory = Path.Combine(Path.GetDirectoryName(TargetProjectPath)!, "Content");
@@ -936,6 +954,8 @@ public sealed partial class ExportViewModel : ObservableObject
         Summary.Add(new SummaryLine(L["Convert.Summary.Failed"], s.FailedFiles.ToString("N0")));
         if (s.UnsupportedActorXFiles > 0)
             Summary.Add(new SummaryLine(L["Convert.Summary.ActorX"], s.UnsupportedActorXFiles.ToString("N0")));
+        if (s.AlreadyPresent > 0)
+            Summary.Add(new SummaryLine(L["Convert.Summary.AlreadyPresent"], s.AlreadyPresent.ToString("N0")));
         if (s.SkippedFiles > 0)
             Summary.Add(new SummaryLine(L["Convert.Summary.Skipped"], s.SkippedFiles.ToString("N0")));
         if (s.ErrorReportPath is not null)
