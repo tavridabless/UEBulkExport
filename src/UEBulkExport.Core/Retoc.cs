@@ -11,6 +11,12 @@ namespace UEBulkExport;
 /// </summary>
 public static class Retoc
 {
+    /// <summary>The engine versions retoc 0.1.5 accepts for <c>--version</c>.</summary>
+    internal static readonly HashSet<string> KnownEngineVersions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "UE4_25", "UE4_26", "UE4_27", "UE5_0", "UE5_1", "UE5_2", "UE5_3", "UE5_4", "UE5_5", "UE5_6", "UE5_7"
+    };
+
     private const string DownloadUrl =
         "https://github.com/trumank/retoc/releases/download/v0.1.5/retoc_cli-x86_64-pc-windows-msvc.zip";
     private const string DownloadSha256 =
@@ -106,8 +112,12 @@ public static class Retoc
         // retoc can usually infer this from the container header, but some games use a header
         // version shared by several engine releases. Honour UEBulkExport's --game option so the
         // conversion is deterministic instead of silently relying on that inference.
+        // A newer engine than retoc knows is left to that inference rather than rejected outright.
         var engineVersion = ToRetocEngineVersion(options.Game.ToString());
-        if (engineVersion is not null)
+        var unknownVersion = engineVersion is not null && !KnownEngineVersions.Contains(engineVersion);
+        if (unknownVersion)
+            Log.Warn($"retoc 0.1.5 does not know {engineVersion}; it reads the version from the containers instead.");
+        else if (engineVersion is not null)
         {
             start.ArgumentList.Add("--version");
             start.ArgumentList.Add(engineVersion);
@@ -140,7 +150,11 @@ public static class Retoc
             if (process.ExitCode != 0)
                 throw new UserFacingException(
                     $"retoc conversion failed (exit {process.ExitCode}).",
-                    LastLines(string.IsNullOrWhiteSpace(errors) ? output : errors));
+                    LastLines(string.IsNullOrWhiteSpace(errors) ? output : errors) + (unknownVersion
+                        ? Environment.NewLine + Environment.NewLine +
+                          $"This retoc does not support {engineVersion} yet. Choose the raw mode (an exact copy) " +
+                          "or converted files, or pass a newer retoc build with --retoc."
+                        : ""));
 
             foreach (var line in output.Split('\n').Where(l => l.Contains("Extracted", StringComparison.OrdinalIgnoreCase)))
                 Log.Info($"retoc: {line.Trim()}");
@@ -154,6 +168,13 @@ public static class Retoc
 
     private static string LastLines(string output) =>
         string.Join(Environment.NewLine, output.Split('\n').TakeLast(8)).Trim();
+
+    /// <summary>
+    /// False when the bundled retoc is known not to handle this engine version. Game-specific
+    /// profiles cannot be judged and count as supported.
+    /// </summary>
+    public static bool SupportsEngine(string cue4ParseGame) =>
+        ToRetocEngineVersion(cue4ParseGame) is not { } version || KnownEngineVersions.Contains(version);
 
     internal static string? ToRetocEngineVersion(string cue4ParseGame)
     {

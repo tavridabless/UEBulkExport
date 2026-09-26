@@ -115,6 +115,85 @@
   <Style Selector="TextBlock.Muted">
     <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
   </Style>
+  <Style Selector="TextBlock.Success">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Success}" />
+  </Style>
+
+  <!-- Status lines under a field: what the program found, in one short sentence -->
+  <Style Selector="TextBlock.Status">
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+  </Style>
+  <Style Selector="TextBlock.Status.Warning">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="FontSize" Value="13" />
+  </Style>
+  <Style Selector="TextBlock.Status.Error">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Error}" />
+  </Style>
+  <Style Selector="Ellipse.Dot">
+    <Setter Property="Width" Value="7" />
+    <Setter Property="Height" Value="7" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Fill" Value="{DynamicResource Brush.Success}" />
+  </Style>
+  <Style Selector="Ellipse.Dot.Warning">
+    <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
+  </Style>
+  <Style Selector="Ellipse.Dot.Error">
+    <Setter Property="Fill" Value="{DynamicResource Brush.Error}" />
+  </Style>
+  <Style Selector="Ellipse.Dot.Idle">
+    <Setter Property="Fill" Value="{DynamicResource Brush.TextMuted}" />
+  </Style>
+
+  <!-- A quiet "?" for background detail; never for something the user must read to proceed -->
+  <Style Selector="Border.Help">
+    <Setter Property="Width" Value="18" />
+    <Setter Property="Height" Value="18" />
+    <Setter Property="CornerRadius" Value="9" />
+    <Setter Property="Background" Value="{DynamicResource Brush.Field}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.FieldBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Cursor" Value="Help" />
+    <Setter Property="ToolTip.ShowDelay" Value="150" />
+  </Style>
+  <Style Selector="Border.Help > TextBlock">
+    <Setter Property="Text" Value="?" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="ToolTip">
+    <Setter Property="MaxWidth" Value="420" />
+  </Style>
+
+  <!-- Collapsed section headers: a name on the left, its state on the right -->
+  <Style Selector="TextBlock.SectionState">
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <Style Selector="TextBlock.SectionState.Changed">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+  </Style>
+  <Style Selector="TextBlock.SectionState.Attention">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+  </Style>
+
+  <!-- Small caption on a mode tile: the matching command line switch -->
+  <Style Selector="TextBlock.Caption">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, monospace" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+  </Style>
   <Style Selector="TextBlock.Mono">
     <Setter Property="FontFamily" Value="Cascadia Mono, Consolas, Menlo, monospace" />
     <Setter Property="FontSize" Value="12" />

@@ -41,6 +41,7 @@ public sealed partial class MainWindow : Window
         Height = Math.Max(MinHeight, shell.AppSettings.WindowHeight);
 
         _pages["export"] = new ExportView { DataContext = shell.Export };
+        _pages["migrate"] = new MigrateView { DataContext = shell.Migrate };
         _pages["browser"] = new BrowserView { DataContext = shell.Browser };
         _pages["log"] = new LogView { DataContext = shell.Log };
         _pages["settings"] = new SettingsView { DataContext = shell.Settings };
@@ -50,8 +51,8 @@ public sealed partial class MainWindow : Window
         {
             if (Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
         };
-        shell.Export.ConfirmConversion = (title, message) =>
-            ConfirmTextAsync(title, message, Loc.Instance["Convert.Confirm.Yes"], Loc.Instance["Common.Cancel"]);
+        shell.Migrate.Confirm = (title, message) =>
+            ConfirmTextAsync(title, message, Loc.Instance["Migrate.Confirm.Yes"], Loc.Instance["Common.Cancel"]);
         shell.Settings.RestartRequested += OnRestartRequested;
         shell.Settings.PropertyChanged += (_, e) =>
         {
@@ -109,7 +110,7 @@ public sealed partial class MainWindow : Window
     {
         if (Shell is not { } shell) return;
 
-        if (shell.Export.IsBusy && shell.AppSettings.ConfirmCloseWhileRunning)
+        if (shell.IsBusy && shell.AppSettings.ConfirmCloseWhileRunning)
         {
             var confirmed = await ConfirmAsync(
                 "Restart.Running.Title",
@@ -126,7 +127,7 @@ public sealed partial class MainWindow : Window
         if (!ShellHelper.TryRestartApplication()) return;
 
         _closeConfirmed = true;
-        if (shell.Export.IsBusy) shell.Export.CancelCommand.Execute(null);
+        shell.CancelAll();
         Close();
     }
 
@@ -154,8 +155,21 @@ public sealed partial class MainWindow : Window
         var path = e.DataTransfer.TryGetFiles()?.Select(f => f.TryGetLocalPath()).FirstOrDefault(p => p is not null);
         if (path is null) return;
 
-        shell.Export.SetPaksPath(path);
-        shell.Navigate("export");
+        // A project or a dump belongs to the migration; anything else is a game to export.
+        if (Path.GetExtension(path).Equals(".uproject", StringComparison.OrdinalIgnoreCase))
+        {
+            shell.Migrate.TargetProjectPath = path;
+            shell.Navigate("migrate");
+        }
+        else if (shell.SelectedPage.Key == "migrate" && Directory.Exists(path))
+        {
+            shell.Migrate.SourcePath = path;
+        }
+        else
+        {
+            shell.Export.SetPaksPath(path);
+            shell.Navigate("export");
+        }
     }
 
     // ------------------------------------------------------------------ closing
@@ -167,20 +181,20 @@ public sealed partial class MainWindow : Window
             shell.AppSettings.WindowWidth = Width;
             shell.AppSettings.WindowHeight = Height;
 
-            if (!_closeConfirmed && shell.Export.IsBusy && shell.AppSettings.ConfirmCloseWhileRunning)
+            if (!_closeConfirmed && shell.IsBusy && shell.AppSettings.ConfirmCloseWhileRunning)
             {
                 e.Cancel = true;
                 if (await ConfirmAsync("Close.Running.Title", "Close.Running.Message", "Close.Running.Confirm", "Close.Running.Stay"))
                 {
                     _closeConfirmed = true;
-                    shell.Export.CancelCommand.Execute(null);
+                    shell.CancelAll();
                     Close();
                 }
 
                 return;
             }
 
-            if (shell.Export.IsBusy) shell.Export.CancelCommand.Execute(null);
+            shell.CancelAll();
             shell.AppSettings.Save();
         }
 

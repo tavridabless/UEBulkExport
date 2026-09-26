@@ -10,13 +10,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- A fifth Export-page function, **Migrate assets between Unreal Engine versions**. It uses a user-selected
-  UE Viewer executable to export recoverable assets from loose UE4.0–4.27 cooked dumps, then starts
-  the selected target `UnrealEditor-Cmd` to create new assets inside a target project. The source
-  version, target project, editor, content destination, overwrite policy and progress are available
-  in the English and Russian interfaces and remembered between runs.
+- A **Migrate to UE** page that migrates assets between Unreal Engine versions. It uses a
+  user-selected UE Viewer executable to export recoverable assets from loose UE4.0–4.27 cooked
+  dumps, then starts the selected target `UnrealEditor-Cmd` to create new assets inside a target
+  project. The source version, target project, editor, content destination, overwrite policy and
+  progress are available in the English and Russian interfaces and remembered between runs.
 - UE Viewer and the matching `UnrealEditor-Cmd` are detected automatically. A target project is
-  suggested only when **Find automatically** is pressed with the project field empty, and a path
+  suggested only when **Suggest** is pressed with the project field empty, and a path
   typed by the user is never replaced. Before anything is imported, a confirmation window shows
   the target project and content folder.
 - A UE Viewer failure no longer has to abort the whole conversion. The window displays the failing
@@ -36,6 +36,33 @@ All notable changes to this project are documented here. The format follows
   the editor exits successfully.
 - The editor receives the import script path in the form Unreal expects, so projects in folders
   with spaces or names that begin with digits import correctly.
+
+### Changed
+
+- The Export page was reorganised around the three decisions a user has to make: the game, the
+  result and where to save it. Numbered steps are gone, and migration has a page and an action of
+  its own, so two different Start buttons are never on screen together.
+- The game is read as soon as it is chosen; the separate **Scan container** button is replaced by
+  a one-line finding (containers, entries, encryption) with **Read again**. The engine version is
+  read from the game executable, and the selector appears only when that fails or on request.
+  The AES key field appears only for an encrypted game or on request.
+- Results are named after what the user gets (**Game packages**, **Converted files**, **Data for
+  comparison**, **Exact copy**), each with one line of description, the full explanation in a
+  tooltip and the matching `--mode` switch.
+- Mappings, filters, formats and tool paths explain themselves through `?` tooltips instead of
+  permanent text. Collapsed sections show their state (*Recommended defaults*, *2 settings
+  changed*, *Found automatically*), and the equivalent command line moved into a collapsed
+  section.
+- The bar at the bottom of each page says whether the operation is ready and, when it is not,
+  why; the Start button stays disabled until the required fields are filled. Warnings about
+  overwriting or lost editor data stay visible next to the setting they concern.
+
+### Fixed
+
+- Game packages export of a game built with an engine newer than the bundled retoc knows (UE 5.8
+  and later) no longer fails with an unexplained `invalid value` error. The version is left for
+  retoc to read from the containers; if retoc still cannot convert them, the error names the
+  cause and the alternatives, and the Export page warns about it before the run starts.
 
 ### Known limitations
 

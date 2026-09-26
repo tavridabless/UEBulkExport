@@ -11,10 +11,11 @@ public sealed record NavItem(string Key, string LabelKey, string IconData)
     public Geometry Icon => Geometry.Parse(IconData);
 }
 
-/// <summary>The shell: navigation rail, the five pages, and the status bar.</summary>
+/// <summary>The shell: navigation rail, the pages, and the status bar.</summary>
 public sealed partial class MainViewModel : ObservableObject
 {
     public ExportViewModel Export { get; }
+    public MigrateViewModel Migrate { get; }
     public BrowserViewModel Browser { get; } = new();
     public LogViewModel Log { get; }
     public SettingsViewModel Settings { get; }
@@ -25,6 +26,7 @@ public sealed partial class MainViewModel : ObservableObject
     public IReadOnlyList<NavItem> Pages { get; } =
     [
         new("export", "Nav.Export", Icons.Export),
+        new("migrate", "Nav.Migrate", Icons.Migrate),
         new("browser", "Nav.Browser", Icons.Browser),
         new("log", "Nav.Log", Icons.Log),
         new("settings", "Nav.Settings", Icons.Settings),
@@ -34,15 +36,24 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private NavItem _selectedPage;
 
     public string Version => $"v{Cli.Version}";
-    public string StatusText => Export.StatusText;
-    public bool IsBusy => Export.IsBusy;
-    public double ProgressFraction => Export.ProgressFraction;
-    public bool ShowProgress => Export.ShowProgress;
+    // Export and migration run independently; the status line follows whichever is working.
+    public string StatusText => Migrate.IsBusy && !Export.IsRunning ? Migrate.StatusText : Export.StatusText;
+    public bool IsBusy => Export.IsBusy || Migrate.IsBusy;
+    public double ProgressFraction => Export.IsRunning || !Migrate.IsBusy ? Export.ProgressFraction : Migrate.Progress;
+    public bool ShowProgress => Export.ShowProgress || Migrate.IsBusy;
+
+    /// <summary>Stops whatever is running, before the window closes or restarts.</summary>
+    public void CancelAll()
+    {
+        if (Export.CancelCommand.CanExecute(null)) Export.CancelCommand.Execute(null);
+        if (Migrate.CancelCommand.CanExecute(null)) Migrate.CancelCommand.Execute(null);
+    }
 
     public MainViewModel(AppSettings settings)
     {
         AppSettings = settings;
         Export = new ExportViewModel(settings);
+        Migrate = new MigrateViewModel(settings);
         Log = new LogViewModel(App.LogSink);
         Settings = new SettingsViewModel(settings);
         _selectedPage = Pages[0];
@@ -56,6 +67,7 @@ public sealed partial class MainViewModel : ObservableObject
             if (Export.StartCommand.CanExecute(null)) Export.StartCommand.Execute(null);
         };
         Settings.SettingsReset += Export.LoadFromSettings;
+        Settings.SettingsReset += Migrate.LoadFromSettings;
 
         Export.PropertyChanged += (_, e) =>
         {
@@ -76,6 +88,23 @@ public sealed partial class MainViewModel : ObservableObject
             }
         };
 
+        Migrate.PropertyChanged += (_, e) =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(MigrateViewModel.StatusText):
+                case nameof(MigrateViewModel.IsBusy):
+                    OnPropertyChanged(nameof(StatusText));
+                    OnPropertyChanged(nameof(IsBusy));
+                    OnPropertyChanged(nameof(ShowProgress));
+                    OnPropertyChanged(nameof(ProgressFraction));
+                    break;
+                case nameof(MigrateViewModel.Progress):
+                    OnPropertyChanged(nameof(ProgressFraction));
+                    break;
+            }
+        };
+
         Loc.Instance.LanguageChanged += () =>
         {
             OnPropertyChanged(nameof(Pages));
@@ -91,6 +120,9 @@ internal static class Icons
 {
     public const string Export =
         "M12 3 L12 14 M7 9 L12 14 L17 9 M4 15 L4 19 A2 2 0 0 0 6 21 L18 21 A2 2 0 0 0 20 19 L20 15";
+
+    public const string Migrate =
+        "M4 7 L10 4 L16 7 L16 13 L10 16 L4 13 Z M16 10 L21 10 M18 7 L21 10 L18 13 M4 7 L10 10 L16 7 M10 10 L10 16";
 
     public const string Browser =
         "M3 6 A2 2 0 0 1 5 4 L9 4 L11 6 L19 6 A2 2 0 0 1 21 8 L21 18 A2 2 0 0 1 19 20 L5 20 A2 2 0 0 1 3 18 Z M3 10 L21 10";

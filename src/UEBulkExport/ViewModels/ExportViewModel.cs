@@ -14,15 +14,24 @@ namespace UEBulkExport.Gui.ViewModels;
 
 public enum RunState { Idle, Scanning, Preparing, Running, Cancelling, Done, DoneWithErrors, Failed, Cancelled }
 
+/// <summary>Where the engine version on the form came from.</summary>
+public enum EngineSource { None, Detecting, Detected, Unsupported, Manual, NotDetected }
+
+/// <summary>What the automatic look at the source has found so far.</summary>
+public enum ScanPhase { None, Missing, Pending, Ready, Failed }
+
 public sealed record GameOption(EGame Value, string Label)
 {
     public override string ToString() => Label;
 }
 
-public sealed record ModeOption(ExportMode Mode, string TitleKey, string DescriptionKey)
+/// <summary>An export mode, named after what the user gets rather than how it is produced.</summary>
+public sealed record ModeOption(ExportMode Mode, string Key)
 {
-    public string Title => Loc.Instance[TitleKey];
-    public string Description => Loc.Instance[DescriptionKey];
+    public string Title => Loc.Instance[$"Mode.{Key}.Title"];
+    public string Description => Loc.Instance[$"Mode.{Key}.Desc"];
+    public string Details => Loc.Instance[$"Mode.{Key}.Details"];
+    public string CliName => "--mode " + Mode.ToString().ToLowerInvariant();
 }
 
 public sealed record EnumOption<T>(T Value, string Label) where T : struct, Enum
@@ -37,14 +46,16 @@ public sealed record EngineVersionOption(string Version)
     public override string ToString() => $"Unreal Engine {Version}";
 }
 
-/// <summary>The Export page: everything the CLI can do, as a form, plus the run itself.</summary>
+/// <summary>
+/// The Export page. Only the decisions a user must make are on the surface: the source, the
+/// result, the destination. The engine version, encryption and mappings are worked out from the
+/// source, and everything else waits in collapsed sections that say what state they are in.
+/// </summary>
 public sealed partial class ExportViewModel : ObservableObject
 {
     private readonly AppSettings _settings;
     private readonly ExportService _service = new();
-    private readonly DumpConversionService _conversionService = new();
-    private CancellationTokenSource? _conversionCancellation;
-    private TaskCompletionSource<bool>? _conversionDecision;
+    private readonly DispatcherTimer _scanTimer = new();
     private static Loc L => Loc.Instance;
 
     // ---------------------------------------------------------------- source
@@ -52,8 +63,29 @@ public sealed partial class ExportViewModel : ObservableObject
     [ObservableProperty] private string _paksPath = "";
     [ObservableProperty] private GameOption _selectedGame;
     [ObservableProperty] private string _aesText = "";
-    [ObservableProperty] private string _scanSummary = "";
-    [ObservableProperty] private bool _scanHasLocked;
+
+    [ObservableProperty] private ScanPhase _scanPhase;
+    [ObservableProperty] private string _scanError = "";
+    [ObservableProperty] private int _containerCount;
+    [ObservableProperty] private int _entryCount;
+    [ObservableProperty] private int _lockedCount;
+
+    [ObservableProperty] private EngineSource _engineSource;
+    [ObservableProperty] private string _detectedEngine = "";
+    [ObservableProperty] private bool _engineEditorOpen;
+    [ObservableProperty] private bool _aesRequested;
+
+    /// <summary>Bumped by every change that makes a running scan's answer stale.</summary>
+    private int _scanGeneration;
+    private bool _scanQueued;
+    /// <summary>The container folder the engine version was last detected for.</summary>
+    private string? _detectedFor;
+    /// <summary>The source the user picked the engine version for by hand; detection leaves it alone.</summary>
+    private string? _gameChosenFor;
+    private bool _settingGame;
+    private string? _autoMappings;
+    private bool _mappingsAmbiguous;
+    private bool _hasIoStore;
 
     public IReadOnlyList<GameOption> Games { get; } = BuildGames();
 
@@ -65,10 +97,10 @@ public sealed partial class ExportViewModel : ObservableObject
 
     public IReadOnlyList<ModeOption> Modes { get; } =
     [
-        new(ExportMode.Legacy, "Mode.Legacy.Title", "Mode.Legacy.Desc"),
-        new(ExportMode.Full, "Mode.Full.Title", "Mode.Full.Desc"),
-        new(ExportMode.Json, "Mode.Json.Title", "Mode.Json.Desc"),
-        new(ExportMode.Raw, "Mode.Raw.Title", "Mode.Raw.Desc")
+        new(ExportMode.Legacy, "Legacy"),
+        new(ExportMode.Full, "Full"),
+        new(ExportMode.Json, "Json"),
+        new(ExportMode.Raw, "Raw")
     ];
 
     public int MaxThreads => Math.Max(2, Environment.ProcessorCount * 2);
@@ -162,38 +194,6 @@ public sealed partial class ExportViewModel : ObservableObject
     [ObservableProperty] private string _zlibPath = "";
     [ObservableProperty] private string _vgmStreamPath = "";
 
-    // ------------------------------------------------------- dump conversion
-
-    [ObservableProperty] private string _conversionSourcePath = "";
-    [ObservableProperty] private EngineVersionOption _conversionSourceVersion;
-    [ObservableProperty] private string _uModelPath = "";
-    [ObservableProperty] private string _targetProjectPath = "";
-    [ObservableProperty] private string _unrealEditorPath = "";
-    [ObservableProperty] private string _conversionDestinationPath = "/Game/ConvertedDump";
-    [ObservableProperty] private bool _conversionOverwrite;
-    [ObservableProperty] private bool _conversionIsBusy;
-    [ObservableProperty] private bool _conversionAutoDetectBusy;
-    [ObservableProperty] private bool _hasPendingConversionIssue;
-    [ObservableProperty] private double _conversionProgress;
-    [ObservableProperty] private string _conversionStatus = "";
-
-    public IReadOnlyList<EngineVersionOption> ConversionSourceVersions { get; } =
-        Enumerable.Range(0, 28).Reverse().Select(minor => new EngineVersionOption($"4.{minor}")).ToArray();
-
-    public bool CanStartConversion => !IsBusy && !ConversionAutoDetectBusy;
-    public bool CanCancelConversion => ConversionIsBusy;
-    public bool CanDetectConversionPaths => !IsBusy && !ConversionAutoDetectBusy;
-    public string ConversionTargetVersion
-    {
-        get
-        {
-            if (string.IsNullOrWhiteSpace(TargetProjectPath) && string.IsNullOrWhiteSpace(UnrealEditorPath))
-                return L["Convert.Target.Unknown"];
-            var detected = DumpConversionService.DetectTargetVersion(TargetProjectPath, UnrealEditorPath);
-            return detected == "unknown" ? L["Convert.Target.Unknown"] : detected;
-        }
-    }
-
     // ---------------------------------------------------------------- run state
 
     [ObservableProperty] private RunState _state = RunState.Idle;
@@ -210,7 +210,6 @@ public sealed partial class ExportViewModel : ObservableObject
     [ObservableProperty] private string _summaryTitle = "";
     [ObservableProperty] private string _commandLine = "";
     [ObservableProperty] private string _lastOutputDirectory = "";
-    [ObservableProperty] private string _lastLogPath = "";
 
     /// <summary>Paths ticked in the Browser, or null to export the whole container.</summary>
     [ObservableProperty] private IReadOnlySet<string>? _selectedPaths;
@@ -221,45 +220,40 @@ public sealed partial class ExportViewModel : ObservableObject
     public ObservableCollection<SummaryLine> Summary { get; } = [];
     public ObservableCollection<RecentGame> Recent { get; } = [];
 
-    public bool IsBusy => ConversionIsBusy ||
-        State is RunState.Scanning or RunState.Preparing or RunState.Running or RunState.Cancelling;
+    public bool IsBusy => State is RunState.Scanning or RunState.Preparing or RunState.Running or RunState.Cancelling;
+    /// <summary>A scan runs by itself and is quick; only a real run shows progress and blocks the form.</summary>
+    public bool IsRunning => State is RunState.Preparing or RunState.Running or RunState.Cancelling;
     public bool CanRun => !IsBusy;
-    public bool CanCancel => ConversionIsBusy ||
-        State is RunState.Running or RunState.Preparing or RunState.Scanning;
+    public bool CanStart => !IsBusy && ReadinessState.Level != Readiness.Blocked;
+    public bool CanCancel => State is RunState.Running or RunState.Preparing;
     public bool HasError => !string.IsNullOrEmpty(ErrorHeadline);
     public bool HasSummary => Summary.Count > 0;
-    public bool ShowProgress => State is RunState.Running or RunState.Preparing or RunState.Cancelling;
+    public bool ShowProgress => IsRunning;
+    public bool ShowReadiness => !IsRunning;
     public bool HasRecent => Recent.Count > 0;
     public bool CanOpenOutput => !string.IsNullOrEmpty(LastOutputDirectory) && Directory.Exists(LastOutputDirectory);
     public bool HasErrorsFile => CanOpenOutput && File.Exists(Path.Combine(LastOutputDirectory, "errors.csv"));
-    public bool CanOpenLog => File.Exists(EffectiveLogPath);
-    private string EffectiveLogPath => !string.IsNullOrWhiteSpace(LastLogPath)
-        ? LastLogPath
-        : Path.Combine(LastOutputDirectory, "UEBulkExport.log");
+    public bool CanOpenLog => File.Exists(LogPath);
+    private string LogPath => Path.Combine(LastOutputDirectory, "UEBulkExport.log");
 
-    public string StatusText => ConversionIsBusy
-        ? (string.IsNullOrEmpty(ConversionStatus) ? L["Convert.Stage.Preparing"] : ConversionStatus)
-        : State switch
-        {
-            RunState.Scanning => L["Status.Scanning"],
-            RunState.Preparing => L["Status.Preparing"],
-            RunState.Running => L["Status.Running"],
-            RunState.Cancelling => L["Status.Cancelling"],
-            RunState.Done => L["Status.Done"],
-            RunState.DoneWithErrors => L["Status.DoneWithErrors"],
-            RunState.Failed => L["Status.Failed"],
-            RunState.Cancelled => L["Status.Cancelled"],
-            _ => L["Status.Idle"]
-        };
+    public string StatusText => State switch
+    {
+        RunState.Scanning => L["Status.Scanning"],
+        RunState.Preparing => L["Status.Preparing"],
+        RunState.Running => L["Status.Running"],
+        RunState.Cancelling => L["Status.Cancelling"],
+        RunState.Done => L["Status.Done"],
+        RunState.DoneWithErrors => L["Status.DoneWithErrors"],
+        RunState.Failed => L["Status.Failed"],
+        RunState.Cancelled => L["Status.Cancelled"],
+        _ => L["Status.Idle"]
+    };
 
     /// <summary>Raised after a successful scan; the shell hands the result to the Browser tab.</summary>
     public event Action<ScanResult>? Scanned;
 
     /// <summary>Set by the view: copies text to the clipboard.</summary>
     public Func<string, Task>? CopyToClipboard { get; set; }
-
-    /// <summary>Set by the view: asks a yes/no question (title, message) and returns the answer.</summary>
-    public Func<string, string, Task<bool>>? ConfirmConversion { get; set; }
 
     public ExportViewModel(AppSettings settings)
     {
@@ -274,8 +268,13 @@ public sealed partial class ExportViewModel : ObservableObject
         _naniteFormat = NaniteFormats[0];
         _socketFormat = SocketFormats[0];
         _platform = Platforms[0];
-        _conversionSourceVersion = ConversionSourceVersions[0];
         _threads = Math.Max(1, settings.DefaultThreads);
+
+        _scanTimer.Tick += (_, _) =>
+        {
+            _scanTimer.Stop();
+            _ = AutoScanAsync();
+        };
 
         LoadFromSettings();
 
@@ -284,22 +283,21 @@ public sealed partial class ExportViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(StatusText));
             OnPropertyChanged(nameof(Modes));
+            RefreshSourceStatus();
+            RefreshSummaries();
         };
 
         RefreshCommandLine();
-        // At startup only the tools are looked up. The target project decides where assets are saved,
-        // so it is never picked silently: the user chooses it or asks for a suggestion.
-        Dispatcher.UIThread.Post(() => _ = DetectConversionPathsCore(searchProjects: false));
     }
 
     public void LoadFromSettings()
     {
         if (_settings.RememberPaths)
         {
-            PaksPath = _settings.LastPaksPath;
-            OutputPath = _settings.LastOutputPath;
             if (Enum.TryParse<EGame>(_settings.LastGame, out var game))
-                SelectedGame = Games.FirstOrDefault(g => g.Value == game) ?? SelectedGame;
+                SetGame(Games.FirstOrDefault(g => g.Value == game));
+            OutputPath = _settings.LastOutputPath;
+            PaksPath = _settings.LastPaksPath;
         }
 
         Threads = Math.Max(1, _settings.DefaultThreads);
@@ -307,75 +305,82 @@ public sealed partial class ExportViewModel : ObservableObject
         OodlePath = _settings.OodlePath;
         ZlibPath = _settings.ZlibPath;
         VgmStreamPath = _settings.VgmStreamPath;
-        ConversionSourcePath = _settings.ConversionSourcePath;
-        ConversionSourceVersion = ConversionSourceVersions.FirstOrDefault(v =>
-            v.Version == _settings.ConversionSourceVersion) ?? ConversionSourceVersions[0];
-        UModelPath = _settings.UModelPath;
-        TargetProjectPath = _settings.TargetProjectPath;
-        UnrealEditorPath = _settings.UnrealEditorPath;
-        ConversionDestinationPath = string.IsNullOrWhiteSpace(_settings.ConversionDestinationPath)
-            ? "/Game/ConvertedDump"
-            : _settings.ConversionDestinationPath;
 
         Recent.Clear();
         foreach (var r in _settings.Recent) Recent.Add(r);
         OnPropertyChanged(nameof(HasRecent));
     }
 
+    // ---------------------------------------------------------------- change tracking
+
+    private static readonly HashSet<string> OptionProperties =
+    [
+        nameof(Threads), nameof(IncludeRegex), nameof(ExcludeRegex), nameof(SkipWorlds), nameof(ExportMaterials),
+        nameof(RawPackages), nameof(SkipJson), nameof(SkipAssets), nameof(SkipRawMisc), nameof(SkipAudioConvert),
+        nameof(AllMips), nameof(SkipMorphs), nameof(Overwrite), nameof(Verbose), nameof(MeshFormat),
+        nameof(AnimFormat), nameof(TextureFormat), nameof(MeshQuality), nameof(NaniteFormat), nameof(SocketFormat),
+        nameof(Platform)
+    ];
+
+    private static readonly HashSet<string> ToolProperties =
+        [nameof(RetocPath), nameof(OodlePath), nameof(ZlibPath), nameof(VgmStreamPath)];
+
+    /// <summary>Changes that only report on the form and never alter the command it describes.</summary>
+    private static readonly HashSet<string> PresentationProperties =
+    [
+        nameof(CommandLine), nameof(State), nameof(ScanPhase), nameof(ScanError), nameof(ContainerCount),
+        nameof(EntryCount), nameof(LockedCount), nameof(EngineSource), nameof(DetectedEngine),
+        nameof(EngineEditorOpen), nameof(AesRequested), nameof(ProgressFraction), nameof(ProgressIndeterminate),
+        nameof(ProgressProcessed), nameof(ProgressWritten), nameof(ProgressFailed), nameof(ProgressRate),
+        nameof(ProgressEta), nameof(ProgressElapsed), nameof(ErrorHeadline), nameof(ErrorHint),
+        nameof(SummaryTitle), nameof(LastOutputDirectory)
+    ];
+
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
     {
         base.OnPropertyChanged(e);
+        var name = e.PropertyName ?? "";
 
-        switch (e.PropertyName)
+        switch (name)
         {
             case nameof(State):
                 OnPropertyChanged(nameof(IsBusy));
+                OnPropertyChanged(nameof(IsRunning));
                 OnPropertyChanged(nameof(CanRun));
                 OnPropertyChanged(nameof(CanCancel));
                 OnPropertyChanged(nameof(ShowProgress));
+                OnPropertyChanged(nameof(ShowReadiness));
                 OnPropertyChanged(nameof(StatusText));
-                StartCommand.NotifyCanExecuteChanged();
-                DryRunCommand.NotifyCanExecuteChanged();
-                ScanCommand.NotifyCanExecuteChanged();
+                RefreshReadiness();
                 CancelCommand.NotifyCanExecuteChanged();
-                StartConversionCommand.NotifyCanExecuteChanged();
+                RescanCommand.NotifyCanExecuteChanged();
                 break;
 
-            case nameof(ConversionIsBusy):
-                OnPropertyChanged(nameof(IsBusy));
-                OnPropertyChanged(nameof(CanRun));
-                OnPropertyChanged(nameof(CanCancel));
-                OnPropertyChanged(nameof(StatusText));
-                OnPropertyChanged(nameof(CanStartConversion));
-                OnPropertyChanged(nameof(CanCancelConversion));
-                StartConversionCommand.NotifyCanExecuteChanged();
-                CancelConversionCommand.NotifyCanExecuteChanged();
-                StartCommand.NotifyCanExecuteChanged();
-                DryRunCommand.NotifyCanExecuteChanged();
-                ScanCommand.NotifyCanExecuteChanged();
-                CancelCommand.NotifyCanExecuteChanged();
-                break;
-
-            case nameof(ConversionAutoDetectBusy):
-                OnPropertyChanged(nameof(CanStartConversion));
-                OnPropertyChanged(nameof(CanDetectConversionPaths));
-                StartConversionCommand.NotifyCanExecuteChanged();
-                DetectConversionPathsCommand.NotifyCanExecuteChanged();
-                break;
-
-            case nameof(ConversionStatus):
-                OnPropertyChanged(nameof(StatusText));
-                break;
-
-            case nameof(TargetProjectPath):
-            case nameof(UnrealEditorPath):
-                OnPropertyChanged(nameof(ConversionTargetVersion));
+            case nameof(PaksPath):
+            case nameof(OutputPath):
+            case nameof(UsmapPath):
+            case nameof(ScanPhase):
+            case nameof(ScanError):
+            case nameof(LockedCount):
+            case nameof(ContainerCount):
+            case nameof(EntryCount):
+            case nameof(SelectedGame):
+            case nameof(AesText):
+            case nameof(AesRequested):
+            case nameof(EngineSource):
+            case nameof(DetectedEngine):
+            case nameof(EngineEditorOpen):
+            case nameof(SelectedPaths):
+                RefreshSourceStatus();
+                RefreshReadiness();
                 break;
 
             case nameof(SelectedMode):
                 OnPropertyChanged(nameof(NeedsMappings));
                 OnPropertyChanged(nameof(IsFullMode));
                 OnPropertyChanged(nameof(IsLegacyMode));
+                RefreshSourceStatus();
+                RefreshReadiness();
                 break;
 
             case nameof(ErrorHeadline):
@@ -387,23 +392,393 @@ public sealed partial class ExportViewModel : ObservableObject
                 OnPropertyChanged(nameof(HasErrorsFile));
                 OnPropertyChanged(nameof(CanOpenLog));
                 break;
-
-            case nameof(LastLogPath):
-                OnPropertyChanged(nameof(CanOpenLog));
-                break;
-
-            case nameof(SelectedPaths):
-                OnPropertyChanged(nameof(HasSelection));
-                OnPropertyChanged(nameof(SelectionText));
-                break;
         }
 
-        if (e.PropertyName is not (nameof(CommandLine) or nameof(State) or nameof(ScanSummary)
-            or nameof(ProgressFraction) or nameof(ProgressProcessed) or nameof(ProgressWritten)
-            or nameof(ProgressFailed) or nameof(ProgressRate) or nameof(ProgressEta) or nameof(ProgressElapsed)
-            or nameof(ErrorHeadline) or nameof(ErrorHint) or nameof(SummaryTitle) or nameof(LastOutputDirectory)
-            or nameof(LastLogPath)))
-            RefreshCommandLine();
+        if (name == nameof(SelectedPaths))
+        {
+            OnPropertyChanged(nameof(HasSelection));
+            OnPropertyChanged(nameof(SelectionText));
+        }
+
+        if (OptionProperties.Contains(name) || ToolProperties.Contains(name)) RefreshSummaries();
+        if (name == nameof(Overwrite)) RefreshReadiness();
+        if (!PresentationProperties.Contains(name)) RefreshCommandLine();
+    }
+
+    // ---------------------------------------------------------------- automatic source check
+
+    private bool SourceExists
+    {
+        get
+        {
+            var path = PaksPath.Trim().Trim('"');
+            return path.Length > 0 && (Directory.Exists(path) || File.Exists(path));
+        }
+    }
+
+    partial void OnPaksPathChanged(string value)
+    {
+        _detectedFor = null;
+        _autoMappings = null;
+        _mappingsAmbiguous = false;
+        _hasIoStore = false;
+        ContainerCount = EntryCount = LockedCount = 0;
+        ScanError = "";
+        AesRequested = false;
+        EngineEditorOpen = false;
+        if (!string.Equals(_gameChosenFor, value.Trim(), StringComparison.OrdinalIgnoreCase)) _gameChosenFor = null;
+        EngineSource = _gameChosenFor is not null ? EngineSource.Manual : EngineSource.None;
+        ScheduleScan(TimeSpan.FromMilliseconds(500));
+    }
+
+    partial void OnSelectedGameChanged(GameOption value)
+    {
+        if (_settingGame) return;
+
+        // The user chose the version: it stands for this source until the source changes.
+        _gameChosenFor = PaksPath.Trim();
+        if (EngineSource != EngineSource.None) EngineSource = EngineSource.Manual;
+        ScheduleScan(TimeSpan.FromMilliseconds(300));
+    }
+
+    partial void OnAesTextChanged(string value) => ScheduleScan(TimeSpan.FromMilliseconds(1200));
+
+    private void SetGame(GameOption? game)
+    {
+        if (game is null) return;
+        _settingGame = true;
+        try { SelectedGame = game; }
+        finally { _settingGame = false; }
+    }
+
+    private void ScheduleScan(TimeSpan delay)
+    {
+        _scanGeneration++;
+        _scanTimer.Stop();
+
+        if (string.IsNullOrWhiteSpace(PaksPath))
+        {
+            ScanPhase = ScanPhase.None;
+            return;
+        }
+
+        if (!SourceExists)
+        {
+            ScanPhase = ScanPhase.Missing;
+            return;
+        }
+
+        ScanPhase = ScanPhase.Pending;
+        _scanTimer.Interval = delay;
+        _scanTimer.Start();
+    }
+
+    /// <summary>
+    /// Resolves the container folder, reads the engine version from the game, looks for mappings and
+    /// mounts the containers, so the user sees what they pointed at before deciding anything.
+    /// </summary>
+    private async Task AutoScanAsync()
+    {
+        if (!SourceExists) return;
+        if (IsBusy)
+        {
+            _scanQueued = true;
+            return;
+        }
+
+        var generation = _scanGeneration;
+        var paks = PaksPath.Trim().Trim('"');
+        var output = NullIfEmpty(OutputPath);
+        ScanPhase = ScanPhase.Pending;
+
+        string resolved;
+        try
+        {
+            resolved = await Task.Run(() => Discovery.ResolvePaksDirectory(paks));
+        }
+        catch (UserFacingException e)
+        {
+            if (generation == _scanGeneration) FailScan(e.Headline);
+            return;
+        }
+
+        if (generation != _scanGeneration) return;
+
+        if (!string.Equals(_detectedFor, resolved, StringComparison.OrdinalIgnoreCase))
+        {
+            _detectedFor = resolved;
+            if (_gameChosenFor is null)
+            {
+                EngineSource = EngineSource.Detecting;
+                var version = await Task.Run(() => EngineDetection.DetectFromContainers(resolved));
+                if (generation != _scanGeneration) return;
+                ApplyDetectedEngine(version);
+            }
+        }
+
+        try
+        {
+            _hasIoStore = await Task.Run(() => Discovery.HasIoStoreContainers(resolved));
+        }
+        catch (UserFacingException)
+        {
+            _hasIoStore = false;
+        }
+
+        try
+        {
+            _autoMappings = await Task.Run(() => Discovery.FindMappings(resolved, output));
+            _mappingsAmbiguous = false;
+        }
+        catch (UserFacingException)
+        {
+            _autoMappings = null;
+            _mappingsAmbiguous = true;
+        }
+
+        if (generation != _scanGeneration) return;
+        if (IsBusy)
+        {
+            _scanQueued = true;
+            return;
+        }
+
+        var previous = State;
+        State = RunState.Scanning;
+        try
+        {
+            var result = await _service.ScanAsync(ToOptions());
+            if (generation == _scanGeneration)
+            {
+                ContainerCount = result.Containers.Count(c => !c.IsLocked);
+                LockedCount = result.Containers.Count(c => c.IsLocked);
+                EntryCount = result.Files.Count;
+                ScanError = "";
+                ScanPhase = ScanPhase.Ready;
+                Scanned?.Invoke(result);
+            }
+        }
+        catch (Exception e)
+        {
+            if (generation == _scanGeneration)
+            {
+                FailScan(e is UserFacingException u ? u.Headline : e.Message);
+                if (e is not UserFacingException) Log.Error(e.ToString());
+            }
+        }
+        finally
+        {
+            // A finished run keeps its outcome on the status line; a scan is not news.
+            State = previous is RunState.Done or RunState.DoneWithErrors or RunState.Failed or RunState.Cancelled
+                ? previous
+                : RunState.Idle;
+            if (generation != _scanGeneration) ScheduleScan(TimeSpan.FromMilliseconds(100));
+        }
+    }
+
+    private void FailScan(string message)
+    {
+        ScanError = message;
+        ScanPhase = ScanPhase.Failed;
+    }
+
+    private void ApplyDetectedEngine(string? version)
+    {
+        DetectedEngine = version ?? "";
+        if (version is null)
+        {
+            EngineSource = EngineSource.NotDetected;
+            return;
+        }
+
+        var match = Games.FirstOrDefault(g => g.Label == $"Unreal Engine {version}");
+        if (match is null)
+        {
+            EngineSource = EngineSource.Unsupported;
+            return;
+        }
+
+        SetGame(match);
+        EngineSource = EngineSource.Detected;
+    }
+
+    /// <summary>A run that had to wait for the form to settle; checked once it is over.</summary>
+    private void RunQueuedScan()
+    {
+        if (!_scanQueued) return;
+        _scanQueued = false;
+        ScheduleScan(TimeSpan.FromMilliseconds(100));
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRun))]
+    private void Rescan()
+    {
+        _detectedFor = null;
+        ScheduleScan(TimeSpan.Zero);
+    }
+
+    [RelayCommand]
+    private void ToggleEngineEditor() => EngineEditorOpen = !EngineEditorOpen;
+
+    [RelayCommand]
+    private void AddAesKey() => AesRequested = true;
+
+    [RelayCommand]
+    private void OpenMappingsGuide() =>
+        ShellHelper.OpenUrl(Loc.Instance.Language == "ru" ? AboutViewModel.MappingsUrlRu : AboutViewModel.MappingsUrl);
+
+    // ---------------------------------------------------------------- what the form shows about the source
+
+    public bool HasSource => !string.IsNullOrWhiteSpace(PaksPath);
+
+    public string EngineText => EngineSource switch
+    {
+        EngineSource.Detecting => L["Export.Engine.Detecting"],
+        EngineSource.Detected => L.Format("Export.Engine.Detected", SelectedGame.Label),
+        EngineSource.Unsupported => L.Format("Export.Engine.Unsupported", DetectedEngine),
+        EngineSource.Manual => L.Format("Export.Engine.Manual", SelectedGame.Label),
+        EngineSource.NotDetected => L["Export.Engine.NotDetected"],
+        _ => L.Format("Export.Engine.Manual", SelectedGame.Label)
+    };
+
+    public bool ShowEngineLine => HasSource && ScanPhase != ScanPhase.Missing;
+    public bool EngineNeedsAttention => EngineSource is EngineSource.Unsupported or EngineSource.NotDetected;
+    public bool ShowEngineSelector => EngineEditorOpen || EngineNeedsAttention;
+
+    public string ScanText => ScanPhase switch
+    {
+        ScanPhase.Missing => L["Export.Scan.Missing"],
+        ScanPhase.Pending => L["Export.Scan.Running"],
+        ScanPhase.Failed => ScanError,
+        ScanPhase.Ready => L.Format("Export.Scan.Result", ContainerCount + LockedCount, EntryCount,
+            LockedCount > 0 ? L.Format("Export.Scan.Locked", LockedCount) : L["Export.Scan.NoneLocked"]),
+        _ => ""
+    };
+
+    public bool ShowScanLine => ScanPhase != ScanPhase.None;
+    public bool ScanIsProblem => ScanPhase is ScanPhase.Missing or ScanPhase.Failed;
+    public bool ScanIsWarning => ScanPhase == ScanPhase.Ready && LockedCount > 0;
+    public bool ScanIsNormal => !ScanIsProblem && !ScanIsWarning;
+    public bool CanRescan => ScanPhase is ScanPhase.Ready or ScanPhase.Failed;
+
+    /// <summary>AES keys are asked for only when the source turned out to be encrypted, or on request.</summary>
+    public bool ShowAes => LockedCount > 0 || AesRequested || !string.IsNullOrWhiteSpace(AesText);
+    /// <summary>Offered while encryption is unknown; a read that found none needs no key.</summary>
+    public bool CanAddAesKey => !ShowAes && HasSource && ScanPhase != ScanPhase.Ready;
+    public string AesPrompt => LockedCount > 0 ? L.Format("Export.Aes.Required", LockedCount) : "";
+    public bool HasAesPrompt => LockedCount > 0;
+
+    private bool IsUE5 => SelectedGame.Value >= EGame.GAME_UE5_0;
+
+    public string MappingsText
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(UsmapPath))
+                return File.Exists(UsmapPath.Trim())
+                    ? L.Format("Export.Usmap.Using", Path.GetFileName(UsmapPath.Trim()))
+                    : L["Export.Usmap.NotFound"];
+            if (_autoMappings is not null) return L.Format("Export.Usmap.Found", Path.GetFileName(_autoMappings));
+            if (_mappingsAmbiguous) return L["Export.Usmap.Ambiguous"];
+            return IsUE5 ? L["Export.Usmap.Missing"] : L["Export.Usmap.Optional"];
+        }
+    }
+
+    private bool MappingsProblem =>
+        NeedsMappings && (
+            (!string.IsNullOrWhiteSpace(UsmapPath) && !File.Exists(UsmapPath.Trim())) ||
+            (string.IsNullOrWhiteSpace(UsmapPath) && _autoMappings is null && (_mappingsAmbiguous || IsUE5)));
+
+    public bool MappingsIsWarning => MappingsProblem;
+    public bool MappingsIsNormal => !MappingsProblem;
+
+    public string OverwriteWarning => L["Export.Out.OverwriteWarning"];
+
+    private void RefreshSourceStatus()
+    {
+        foreach (var property in new[]
+                 {
+                     nameof(HasSource), nameof(EngineText), nameof(ShowEngineLine), nameof(EngineNeedsAttention),
+                     nameof(ShowEngineSelector), nameof(ScanText), nameof(ShowScanLine), nameof(ScanIsProblem),
+                     nameof(ScanIsWarning), nameof(ScanIsNormal), nameof(CanRescan), nameof(ShowAes),
+                     nameof(CanAddAesKey), nameof(AesPrompt), nameof(HasAesPrompt), nameof(MappingsText),
+                     nameof(MappingsIsWarning), nameof(MappingsIsNormal)
+                 })
+            OnPropertyChanged(property);
+    }
+
+    // ---------------------------------------------------------------- collapsed sections
+
+    /// <summary>How many export options differ from their defaults.</summary>
+    private int ChangedOptionCount =>
+        new[]
+        {
+            Threads != Math.Max(1, _settings.DefaultThreads),
+            !string.IsNullOrWhiteSpace(IncludeRegex), !string.IsNullOrWhiteSpace(ExcludeRegex),
+            SkipWorlds, ExportMaterials, RawPackages, SkipJson, SkipAssets, SkipRawMisc, SkipAudioConvert,
+            AllMips, SkipMorphs, Overwrite, Verbose,
+            MeshFormat != MeshFormats[0], AnimFormat != AnimFormats[0], TextureFormat != TextureFormats[0],
+            MeshQuality != MeshQualities[0], NaniteFormat != NaniteFormats[0], SocketFormat != SocketFormats[0],
+            Platform != Platforms[0]
+        }.Count(changed => changed);
+
+    public string OptionsSummary => ChangedOptionCount is var n and > 0
+        ? L.Format("Export.Options.Changed", n)
+        : L["Export.Options.Defaults"];
+
+    public bool OptionsChanged => ChangedOptionCount > 0;
+
+    public string ToolsSummary =>
+        new[] { RetocPath, OodlePath, ZlibPath, VgmStreamPath }.Count(p => !string.IsNullOrWhiteSpace(p)) is var n and > 0
+            ? L.Format("Export.Tools.Custom", n)
+            : L["Export.Tools.Automatic"];
+
+    private void RefreshSummaries()
+    {
+        OnPropertyChanged(nameof(OptionsSummary));
+        OnPropertyChanged(nameof(OptionsChanged));
+        OnPropertyChanged(nameof(ToolsSummary));
+    }
+
+    // ---------------------------------------------------------------- readiness
+
+    /// <summary>What stands between the form and a run, most important first.</summary>
+    public (Readiness Level, string Text) ReadinessState
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(PaksPath)) return (Readiness.Blocked, L["Export.Ready.NoSource"]);
+            if (ScanPhase == ScanPhase.Missing) return (Readiness.Blocked, L["Export.Scan.Missing"]);
+            if (string.IsNullOrWhiteSpace(OutputPath)) return (Readiness.Blocked, L["Export.Ready.NoOutput"]);
+            if (ScanPhase == ScanPhase.Pending) return (Readiness.Warning, L["Export.Scan.Running"]);
+            if (ScanPhase == ScanPhase.Failed) return (Readiness.Warning, L.Format("Export.Ready.ScanFailed", ScanError));
+            if (LockedCount > 0) return (Readiness.Warning, L.Format("Export.Ready.Locked", LockedCount));
+            if (EngineNeedsAttention) return (Readiness.Warning, L["Export.Ready.Engine"]);
+            if (IsLegacyMode && _hasIoStore && !Retoc.SupportsEngine(SelectedGame.Value.ToString()))
+                return (Readiness.Warning, L.Format("Export.Ready.RetocUnsupported", SelectedGame.Label));
+            if (MappingsProblem) return (Readiness.Warning, L["Export.Ready.Mappings"]);
+            if (Overwrite) return (Readiness.Warning, OverwriteWarning);
+            if (SelectedPaths is { } selected) return (Readiness.Ready, L.Format("Export.Ready.Selection", selected.Count));
+            return ScanPhase == ScanPhase.Ready
+                ? (Readiness.Ready, L.Format("Export.Ready.Entries", EntryCount))
+                : (Readiness.Ready, L["Export.Ready.Ok"]);
+        }
+    }
+
+    public string ReadinessText => ReadinessState.Text;
+    public bool IsReadinessBlocked => ReadinessState.Level == Readiness.Blocked;
+    public bool IsReadinessWarning => ReadinessState.Level == Readiness.Warning;
+    public bool IsReadinessOk => ReadinessState.Level == Readiness.Ready;
+
+    private void RefreshReadiness()
+    {
+        OnPropertyChanged(nameof(ReadinessText));
+        OnPropertyChanged(nameof(IsReadinessBlocked));
+        OnPropertyChanged(nameof(IsReadinessWarning));
+        OnPropertyChanged(nameof(IsReadinessOk));
+        OnPropertyChanged(nameof(CanStart));
+        StartCommand.NotifyCanExecuteChanged();
+        DryRunCommand.NotifyCanExecuteChanged();
     }
 
     // ---------------------------------------------------------------- options <-> form
@@ -519,65 +894,6 @@ public sealed partial class ExportViewModel : ObservableObject
     private async Task BrowseVgmStream() => VgmStreamPath = await DialogService.PickExecutableAsync(VgmStreamPath) ?? VgmStreamPath;
 
     [RelayCommand]
-    private async Task BrowseConversionSource()
-    {
-        var path = await DialogService.PickFolderAsync("Dialog.PickDump", ConversionSourcePath);
-        if (path is not null) ConversionSourcePath = path;
-    }
-
-    [RelayCommand]
-    private async Task BrowseUModel() => UModelPath = await DialogService.PickExecutableAsync(UModelPath) ?? UModelPath;
-
-    [RelayCommand]
-    private async Task BrowseTargetProject()
-    {
-        var path = await DialogService.PickUnrealProjectAsync(TargetProjectPath);
-        if (path is not null) TargetProjectPath = path;
-    }
-
-    [RelayCommand]
-    private async Task BrowseUnrealEditor() =>
-        UnrealEditorPath = await DialogService.PickExecutableAsync(UnrealEditorPath) ?? UnrealEditorPath;
-
-    [RelayCommand(CanExecute = nameof(CanDetectConversionPaths))]
-    private Task DetectConversionPaths() => DetectConversionPathsCore(searchProjects: true);
-
-    private async Task DetectConversionPathsCore(bool searchProjects)
-    {
-        if (ConversionAutoDetectBusy || IsBusy) return;
-
-        ConversionAutoDetectBusy = true;
-        ConversionStatus = L["Convert.AutoDetect.Searching"];
-        try
-        {
-            // A field the user edits while the search runs keeps what they typed.
-            var (umodelBefore, projectBefore, editorBefore) = (UModelPath, TargetProjectPath, UnrealEditorPath);
-            var result = await Task.Run(() => ConversionPathDiscovery.Find(
-                umodelBefore, projectBefore, editorBefore, searchProjects));
-
-            if (result.UModelPath is not null && UModelPath == umodelBefore) UModelPath = result.UModelPath;
-            if (result.ProjectPath is not null && TargetProjectPath == projectBefore) TargetProjectPath = result.ProjectPath;
-            if (result.UnrealEditorPath is not null && UnrealEditorPath == editorBefore)
-                UnrealEditorPath = result.UnrealEditorPath;
-
-            ConversionStatus = L.Format("Convert.AutoDetect.Result",
-                result.UModelPath is not null ? L["Common.Yes"] : L["Common.No"],
-                result.ProjectPath is not null ? L["Common.Yes"] : L["Common.No"],
-                result.UnrealEditorPath is not null ? L["Common.Yes"] : L["Common.No"]);
-            if (result.UModelPath is not null || result.ProjectPath is not null || result.UnrealEditorPath is not null)
-                RememberConversionSettings();
-        }
-        catch (Exception e)
-        {
-            ConversionStatus = L.Format("Convert.AutoDetect.Error", e.Message);
-        }
-        finally
-        {
-            ConversionAutoDetectBusy = false;
-        }
-    }
-
-    [RelayCommand]
     private async Task CopyCommand()
     {
         if (CopyToClipboard is not null && !string.IsNullOrEmpty(CommandLine)) await CopyToClipboard(CommandLine);
@@ -590,21 +906,31 @@ public sealed partial class ExportViewModel : ObservableObject
     private void OpenErrors() => ShellHelper.OpenFile(Path.Combine(LastOutputDirectory, "errors.csv"));
 
     [RelayCommand]
-    private void OpenLog() => ShellHelper.OpenFile(EffectiveLogPath);
+    private void OpenLog() => ShellHelper.OpenFile(LogPath);
 
     [RelayCommand]
     private void ApplyRecent(RecentGame? game)
     {
         if (game is null) return;
 
-        PaksPath = game.PaksPath;
         OutputPath = game.OutputPath;
         AesText = string.Join(Environment.NewLine, game.AesKeys);
         UsmapPath = game.UsmapPath;
-        if (Enum.TryParse<EGame>(game.Game, out var g))
-            SelectedGame = Games.FirstOrDefault(x => x.Value == g) ?? SelectedGame;
         if (Enum.TryParse<ExportMode>(game.Mode, out var m))
             SelectedMode = Modes.FirstOrDefault(x => x.Mode == m) ?? SelectedMode;
+        PaksPath = game.PaksPath;
+
+        // A game-specific profile cannot be detected, only remembered; a plain engine version is
+        // detected again, which also corrects an old wrong guess.
+        if (Enum.TryParse<EGame>(game.Game, out var g) && Games.FirstOrDefault(x => x.Value == g) is { } remembered)
+        {
+            SetGame(remembered);
+            if (!remembered.Label.StartsWith("Unreal Engine ", StringComparison.Ordinal))
+            {
+                _gameChosenFor = PaksPath.Trim();
+                EngineSource = EngineSource.Manual;
+            }
+        }
     }
 
     [RelayCommand]
@@ -619,35 +945,9 @@ public sealed partial class ExportViewModel : ObservableObject
 
     // ---------------------------------------------------------------- run commands
 
-    [RelayCommand(CanExecute = nameof(CanRun))]
-    private async Task Scan()
-    {
-        if (!Require(paks: true, output: false)) return;
-
-        ClearOutcome();
-        State = RunState.Scanning;
-        try
-        {
-            var result = await _service.ScanAsync(ToOptions());
-            var locked = result.Containers.Count(c => c.IsLocked);
-            ScanHasLocked = locked > 0;
-            ScanSummary = L.Format("Export.Scan.Result",
-                result.Containers.Count(c => !c.IsLocked), result.Files.Count,
-                locked > 0 ? L.Format("Export.Scan.Locked", locked) : L["Export.Scan.NoneLocked"]);
-            Scanned?.Invoke(result);
-            State = RunState.Idle;
-        }
-        catch (Exception e)
-        {
-            Fail(e);
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanRun))]
+    [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task DryRun()
     {
-        if (!Require(paks: true, output: true)) return;
-
         ClearOutcome();
         State = RunState.Preparing;
         ProgressIndeterminate = true;
@@ -665,20 +965,18 @@ public sealed partial class ExportViewModel : ObservableObject
         finally
         {
             ProgressIndeterminate = false;
+            RunQueuedScan();
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanRun))]
+    [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task Start()
     {
-        if (!Require(paks: true, output: true)) return;
-
         ClearOutcome();
         RememberRun();
         State = RunState.Preparing;
         ProgressIndeterminate = true;
         LastOutputDirectory = "";
-        LastLogPath = "";
 
         try
         {
@@ -698,168 +996,18 @@ public sealed partial class ExportViewModel : ObservableObject
         {
             ProgressIndeterminate = false;
             OnPropertyChanged(nameof(HasErrorsFile));
+            RunQueuedScan();
         }
     }
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel()
     {
-        if (ConversionIsBusy)
-        {
-            CancelConversion();
-            return;
-        }
         State = RunState.Cancelling;
         _service.Cancel();
     }
 
-    [RelayCommand(CanExecute = nameof(CanStartConversion))]
-    private async Task StartConversion()
-    {
-        if (!RequireConversion()) return;
-
-        // Imported assets are saved into the project; make sure it is the one the user means.
-        if (ConfirmConversion is not null &&
-            !await ConfirmConversion(L["Convert.Confirm.Title"],
-                L.Format("Convert.Confirm.Message", TargetProjectPath.Trim(), ConversionDestinationPath.Trim())))
-            return;
-
-        ClearOutcome();
-        State = RunState.Idle;
-        ConversionIsBusy = true;
-        ConversionProgress = 0;
-        ConversionStatus = L["Convert.Stage.Preparing"];
-        _conversionCancellation = new CancellationTokenSource();
-        RememberConversionSettings();
-
-        try
-        {
-            var progress = new Progress<DumpConversionProgress>(p =>
-            {
-                ConversionProgress = p.Fraction;
-                ConversionStatus = L[$"Convert.Stage.{p.Stage}"];
-            });
-            // The service scans and links large dumps; keep that work off the UI thread. Progress
-            // and the Continue prompt marshal back on their own.
-            var options = new DumpConversionOptions(
-                ConversionSourcePath.Trim(),
-                ConversionSourceVersion.Version,
-                UModelPath.Trim(),
-                TargetProjectPath.Trim(),
-                UnrealEditorPath.Trim(),
-                ConversionDestinationPath.Trim(),
-                Overwrite: ConversionOverwrite);
-            var token = _conversionCancellation.Token;
-            var summary = await Task.Run(
-                () => _conversionService.RunAsync(options, progress, WaitForConversionDecision, token), token);
-
-            ShowConversionSummary(summary);
-            LastOutputDirectory = Path.Combine(Path.GetDirectoryName(TargetProjectPath)!, "Content");
-            LastLogPath = Path.Combine(summary.WorkingDirectory, "unreal-import.log");
-            ConversionStatus = L["Convert.Stage.Done"];
-            State = summary.FailedFiles == 0 && summary.SkippedFiles == 0
-                ? RunState.Done
-                : RunState.DoneWithErrors;
-        }
-        catch (OperationCanceledException)
-        {
-            ConversionStatus = L["Convert.Stage.Cancelled"];
-            State = RunState.Cancelled;
-        }
-        catch (Exception e)
-        {
-            ConversionStatus = L["Convert.Stage.Failed"];
-            Fail(e);
-        }
-        finally
-        {
-            _conversionCancellation?.Dispose();
-            _conversionCancellation = null;
-            _conversionDecision?.TrySetResult(false);
-            _conversionDecision = null;
-            HasPendingConversionIssue = false;
-            ConversionIsBusy = false;
-        }
-    }
-
-    private async Task<bool> WaitForConversionDecision(DumpConversionIssue issue, CancellationToken ct)
-    {
-        var decision = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            _conversionDecision = decision;
-            ErrorHeadline = issue.Headline;
-            ErrorHint = $"{issue.SourceFile}{Environment.NewLine}{issue.Details}";
-            HasPendingConversionIssue = true;
-            ConversionStatus = L["Convert.Error.Waiting"];
-        });
-
-        using var registration = ct.Register(() => decision.TrySetCanceled(ct));
-        return await decision.Task;
-    }
-
-    [RelayCommand]
-    private void ContinueConversion()
-    {
-        var decision = _conversionDecision;
-        _conversionDecision = null;
-        HasPendingConversionIssue = false;
-        ErrorHeadline = "";
-        ErrorHint = "";
-        ConversionStatus = L["Convert.Error.Continuing"];
-        decision?.TrySetResult(true);
-    }
-
-    [RelayCommand(CanExecute = nameof(CanCancelConversion))]
-    private void CancelConversion()
-    {
-        ConversionStatus = L["Convert.Stage.Cancelling"];
-        _conversionDecision?.TrySetResult(false);
-        _conversionCancellation?.Cancel();
-        _conversionService.Cancel();
-    }
-
     // ---------------------------------------------------------------- outcome presentation
-
-    private bool Require(bool paks, bool output)
-    {
-        if (paks && string.IsNullOrWhiteSpace(PaksPath))
-        {
-            ErrorHeadline = L["Validate.PaksMissing"];
-            ErrorHint = "";
-            return false;
-        }
-
-        if (output && string.IsNullOrWhiteSpace(OutputPath))
-        {
-            ErrorHeadline = L["Validate.OutMissing"];
-            ErrorHint = "";
-            return false;
-        }
-
-        return true;
-    }
-
-    private bool RequireConversion()
-    {
-        (string Value, string Key)[] required =
-        [
-            (ConversionSourcePath, "Validate.DumpMissing"),
-            (UModelPath, "Validate.UModelMissing"),
-            (TargetProjectPath, "Validate.ProjectMissing"),
-            (UnrealEditorPath, "Validate.EditorMissing")
-        ];
-        foreach (var item in required)
-        {
-            if (string.IsNullOrWhiteSpace(item.Value))
-            {
-                ErrorHeadline = L[item.Key];
-                ErrorHint = "";
-                return false;
-            }
-        }
-        return true;
-    }
 
     private void ClearOutcome()
     {
@@ -944,39 +1092,6 @@ public sealed partial class ExportViewModel : ObservableObject
         OnPropertyChanged(nameof(HasSummary));
     }
 
-    private void ShowConversionSummary(DumpConversionSummary s)
-    {
-        SummaryTitle = L.Format("Convert.Summary.Title", Format.Duration(s.Elapsed));
-        Summary.Clear();
-        Summary.Add(new SummaryLine(L["Convert.Summary.SourcePackages"], s.CookedPackages.ToString("N0")));
-        Summary.Add(new SummaryLine(L["Convert.Summary.Importable"], s.ImportableFiles.ToString("N0")));
-        Summary.Add(new SummaryLine(L["Convert.Summary.Imported"], s.ImportedFiles.ToString("N0")));
-        Summary.Add(new SummaryLine(L["Convert.Summary.Failed"], s.FailedFiles.ToString("N0")));
-        if (s.UnsupportedActorXFiles > 0)
-            Summary.Add(new SummaryLine(L["Convert.Summary.ActorX"], s.UnsupportedActorXFiles.ToString("N0")));
-        if (s.AlreadyPresent > 0)
-            Summary.Add(new SummaryLine(L["Convert.Summary.AlreadyPresent"], s.AlreadyPresent.ToString("N0")));
-        if (s.SkippedFiles > 0)
-            Summary.Add(new SummaryLine(L["Convert.Summary.Skipped"], s.SkippedFiles.ToString("N0")));
-        if (s.ErrorReportPath is not null)
-            Summary.Add(new SummaryLine(L["Convert.Summary.Report"], s.ErrorReportPath));
-        Summary.Add(new SummaryLine(L["Convert.Summary.TargetVersion"], s.TargetVersion));
-        Summary.Add(new SummaryLine(L["Convert.Summary.Destination"], s.DestinationPath));
-        Summary.Add(new SummaryLine(L["Convert.Summary.Working"], s.WorkingDirectory));
-        OnPropertyChanged(nameof(HasSummary));
-    }
-
-    private void RememberConversionSettings()
-    {
-        _settings.ConversionSourcePath = ConversionSourcePath;
-        _settings.ConversionSourceVersion = ConversionSourceVersion.Version;
-        _settings.UModelPath = UModelPath;
-        _settings.TargetProjectPath = TargetProjectPath;
-        _settings.UnrealEditorPath = UnrealEditorPath;
-        _settings.ConversionDestinationPath = ConversionDestinationPath;
-        _settings.Save();
-    }
-
     private void RememberRun()
     {
         if (_settings.RememberPaths)
@@ -989,7 +1104,8 @@ public sealed partial class ExportViewModel : ObservableObject
         var options = ToOptions();
         _settings.Remember(new RecentGame
         {
-            Name = GuessGameName(PaksPath),
+            // The resolved container folder names the game even when the user picked its root.
+            Name = GuessGameName(_detectedFor ?? PaksPath),
             PaksPath = PaksPath,
             OutputPath = OutputPath,
             Game = options.Game.ToString(),

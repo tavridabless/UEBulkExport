@@ -26,10 +26,11 @@ Unreal Engine containers (`.pak`, `.utoc` and `.ucas`). It can extract cooked pa
 supported assets to common formats, dump serialized properties to JSON, or make a byte-exact copy
 of container entries. The original directory tree is preserved in the output.
 
-The default **Cooked packages** mode extracts `.uasset`/`.umap` packages together with their
-`.uexp`/`.ubulk`/`.uptnl` payloads and does not write JSON. IoStore packages are converted from Zen
-to the traditional cooked package layout with [retoc](https://github.com/trumank/retoc). Choose
-**Asset conversion** or **JSON only** when you need converted files or property data instead.
+The default **Game packages** result (`legacy` mode) extracts `.uasset`/`.umap` packages together
+with their `.uexp`/`.ubulk`/`.uptnl` payloads and does not write JSON. IoStore packages are
+converted from Zen to the traditional cooked package layout with
+[retoc](https://github.com/trumank/retoc). Choose **Converted files** (`full`) or **Data for
+comparison** (`json`) when you need converted files or property data instead.
 
 ### What it is built on
 
@@ -61,12 +62,15 @@ configure the export without writing a command.
 
 The pages:
 
-- **Export** — choose the game or container, engine version, optional AES keys, destination, mode,
-  filters, formats, and helper binaries. Scan the source first to validate access, use **Dry run**
-  to preview the plan, then start or cancel the export. Live progress includes throughput and ETA,
-  followed by a result summary and shortcuts to the output, log, and `errors.csv`. Recent games are
-  available for quick reuse. The fifth section of the page migrates assets from a UE4 cooked dump
-  into an Unreal project of another engine version; see
+- **Export** — point it at a game and the window reads it by itself: it finds the containers,
+  reads the engine version from the game executable, reports encrypted containers (and asks for an
+  AES key only then) and looks for a mappings file. You choose what you want to get and where to
+  save it. Filters, formats, worker threads, helper tools and the equivalent command line wait in
+  collapsed sections that show their state, such as *Recommended defaults*. The bar at the bottom
+  says whether the export is ready and, if not, why; **Dry run** previews the plan. Live progress
+  includes throughput and ETA, followed by a result summary and shortcuts to the output, log and
+  `errors.csv`. Recent games are one click away.
+- **Migrate to UE** — rebuilds assets from a UE4 cooked dump inside your own Unreal project; see
   [Migrating assets to another engine version](#migrating-assets-to-another-engine-version).
 - **Browser** — inspect the mounted folder tree, search and filter entries by type, view paths and
   sizes, select individual files or folders, export only the selection, or add it to the exclusion
@@ -77,10 +81,11 @@ The pages:
   worker threads, default helper binary paths, reset.
 - **About** — version, dependencies, licence, documentation and project links.
 
-The Export page also generates an **equivalent command line** for the current configuration. Copy
-it when you want to repeat the same job in a script with `UEBulkExport.Cli.exe`.
+The **Command line** section of the Export page shows the equivalent command for the current
+configuration. Copy it when you want to repeat the same job in a script with `UEBulkExport.Cli.exe`.
 
-Dropping a game folder or a `.utoc`/`.pak` file onto the window fills in the source. A fresh
+Dropping a game folder or a `.utoc`/`.pak` file onto the window fills in the source; dropping a
+`.uproject` opens **Migrate to UE** with it as the target project. A fresh
 install starts in English with the light theme; both are changed on the Settings page and
 remembered. Settings are stored per user in
 `%LOCALAPPDATA%\UEBulkExport\settings.json`; nothing leaves the machine. Should the window fail
@@ -143,10 +148,11 @@ that folder to remove them as well.
 
 ### 2. Run an export
 
-Start **UEBulkExport** from the Start menu, select the game directory (or its `Content\Paks`
-directory), choose an output folder and mode, then press **Start export**. You can scan the
-source first to inspect its contents on the Browser page, or run a dry run to verify the plan
-without writing files.
+Start **UEBulkExport** from the Start menu and select the game directory (or its `Content\Paks`
+directory). The window reads it right away and shows what it found: the number of containers and
+entries, the engine version and whether anything is encrypted. Choose what you want to get and
+where to save it, then press **Start export**. The contents are listed on the Browser page, and
+**Dry run** checks the plan without writing files.
 
 For an automated package extraction, run:
 
@@ -166,8 +172,8 @@ The `full` and `json` modes deserialize properties, and shipping UE5 builds usua
 properties **unversioned**. Those modes need a mappings file; package extraction does not.
 
 **[docs/mappings.md](docs/mappings.md) explains how to produce one**, which takes about two
-minutes with UE4SS. Pick the resulting `.usmap` in the **Mappings** field of the Export page,
-pass it with `--usmap`, or drop it next to the game's containers, where it is found
+minutes with UE4SS. Pick the resulting `.usmap` in the **Mappings** field of the Export page (it
+appears when you choose **Converted files** or **Data for comparison**), pass it with `--usmap`, or drop it next to the game's containers, where it is found
 automatically.
 
 Run `--mode full` for converted files or `--mode json` for property dumps.
@@ -176,8 +182,7 @@ Run `--mode full` for converted files or `--mode json` for property dumps.
 
 ## Migrating assets to another engine version
 
-The fifth section of the Export page, **Migrate assets between Unreal Engine versions**, turns a
-loose cooked dump from an older game into ordinary assets of your own Unreal project. It runs
+The **Migrate to UE** page turns a loose cooked dump from an older game into ordinary assets of your own Unreal project. It runs
 in two stages:
 
 1. [UE Viewer](https://www.gildor.org/en/projects/umodel) exports the recoverable assets of the
@@ -193,7 +198,7 @@ OGG or MP3 are imported directly, without the first stage.
 - Windows. The feature is available in the desktop application only; the command line program
   does not have it.
 - A loose cooked dump from **UE 4.0–4.27**: a folder of `.uasset` files with their payloads, for
-  example the output of the **Cooked packages** mode.
+  example the result of a **Game packages** export.
 - UE Viewer (`umodel_64.exe`) and an installed Unreal Editor. UEBulkExport downloads neither of
   them.
 - A target `.uproject` with the **Python Editor Script Plugin** enabled (*Edit → Plugins*). The
@@ -201,17 +206,18 @@ OGG or MP3 are imported directly, without the first stage.
 
 **How to run it**
 
-1. Select the dump folder and its engine version.
-2. Press **Find automatically** to locate UE Viewer and the `UnrealEditor-Cmd.exe` that matches
-   the project. The search never replaces a path you have typed. It picks a target project only
-   when the field is empty and you press the button; nothing is chosen for you at startup.
-3. Check the target project and the content destination (a path under `/Game`, for example
-   `/Game/Migrated`).
-4. Press **Start conversion**. Before anything is written into the project, a confirmation
-   window shows the project and the content folder.
+1. Select the dump folder and the engine version it was built with.
+2. Choose the target `.uproject`, or press **Suggest** to offer a recently used project when the
+   field is empty. UE Viewer and the matching `UnrealEditor-Cmd.exe` are found automatically; the
+   **Tools** section shows what was found and opens by itself when something is missing. A path
+   you typed is never replaced, and no project is chosen for you at startup.
+3. Check the content folder, a path under `/Game` such as `/Game/Migrated`. The bar at the bottom
+   of the page says what is still missing.
+4. Press **Start migration**. Before anything is written into the project, a confirmation window
+   shows the project and the content folder.
 
-If UE Viewer fails on a package, the window shows the error and a **Continue** button.
-Continuing skips that package and carries on; every skipped or failed file is listed in
+If UE Viewer fails on a package, the window shows the error and a **Skip this file and continue**
+button. Continuing skips that package and carries on; every skipped or failed file is listed in
 `conversion-errors.csv` at the end. Packages with an empty `.uexp` or `.ubulk` payload are
 skipped before the export starts. A tool that stops producing output is closed after a long
 period of silence (15 minutes for UE Viewer, 30 minutes for the editor), so a hung process does
@@ -222,7 +228,7 @@ not block the run.
 - The source dump is only read. Packages that must be skipped are left out of a temporary
   working copy made of hard links (or plain copies on another drive); the dump itself is never
   renamed, moved or changed. The working copy is removed when the run ends.
-- With **Replace existing target assets** off (the default), a repeated run leaves assets that
+- With **Replace existing assets** off (the default), a repeated run leaves assets that
   are already in the project untouched and reports them as *Already in the project*, not as
   failures. This also lets you resume an interrupted migration. Turn the option on only when
   you want to import everything again.
@@ -249,13 +255,13 @@ the right to use.
 
 ## Modes
 
-| Mode | Mappings | What it does |
-|---|---|---|
-| `legacy` *(default)* | not needed | Extracts cooked `.uasset`/`.umap` with payloads; converts IoStore to legacy cooked layout using retoc |
-| `full` | required | Parses every package and converts it to usable formats |
-| `json` | required | Property dumps only — fast, small, great for diffing two builds |
-| `raw` | not needed | Byte-exact dump of every container entry |
-| `list` | not needed | Prints the container's contents and exits |
+| Mode | In the window | Mappings | What it does |
+|---|---|---|---|
+| `legacy` *(default)* | Game packages | not needed | Extracts cooked `.uasset`/`.umap` with payloads; converts IoStore to legacy cooked layout using retoc |
+| `full` | Converted files | required | Parses every package and converts it to usable formats |
+| `json` | Data for comparison | required | Property dumps only — fast, small, great for diffing two builds |
+| `raw` | Exact copy | not needed | Byte-exact dump of every container entry |
+| `list` | Browser page | not needed | Prints the container's contents and exits |
 
 > **Editor limitation:** `legacy` converts the *package layout*, not cooked assets back to their
 > uncooked originals. Unreal Editor opens only supported cooked types, generally read-only, when
