@@ -34,6 +34,10 @@ public static class DialogService
         PickFileAsync("Dialog.PickUsmap", startPath,
             new FilePickerFileType(L["Dialog.Filter.Usmap"]) { Patterns = ["*.usmap"] });
 
+    public static Task<string?> PickUnrealProjectAsync(string? startPath = null) =>
+        PickFileAsync("Dialog.PickProject", startPath,
+            new FilePickerFileType(L["Dialog.Filter.Projects"]) { Patterns = ["*.uproject"] });
+
     public static Task<string?> PickExecutableAsync(string? startPath = null) =>
         PickFileAsync("Dialog.PickExe", startPath,
             new FilePickerFileType(L["Dialog.Filter.Executables"]) { Patterns = OperatingSystem.IsWindows() ? ["*.exe"] : ["*"] });

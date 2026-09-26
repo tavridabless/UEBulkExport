@@ -32,11 +32,19 @@ public sealed record EnumOption<T>(T Value, string Label) where T : struct, Enum
 
 public sealed record SummaryLine(string Label, string Value);
 
+public sealed record EngineVersionOption(string Version)
+{
+    public override string ToString() => $"Unreal Engine {Version}";
+}
+
 /// <summary>The Export page: everything the CLI can do, as a form, plus the run itself.</summary>
 public sealed partial class ExportViewModel : ObservableObject
 {
     private readonly AppSettings _settings;
     private readonly ExportService _service = new();
+    private readonly DumpConversionService _conversionService = new();
+    private CancellationTokenSource? _conversionCancellation;
+    private TaskCompletionSource<bool>? _conversionDecision;
     private static Loc L => Loc.Instance;
 
     // ---------------------------------------------------------------- source
@@ -154,6 +162,38 @@ public sealed partial class ExportViewModel : ObservableObject
     [ObservableProperty] private string _zlibPath = "";
     [ObservableProperty] private string _vgmStreamPath = "";
 
+    // ------------------------------------------------------- dump conversion
+
+    [ObservableProperty] private string _conversionSourcePath = "";
+    [ObservableProperty] private EngineVersionOption _conversionSourceVersion;
+    [ObservableProperty] private string _uModelPath = "";
+    [ObservableProperty] private string _targetProjectPath = "";
+    [ObservableProperty] private string _unrealEditorPath = "";
+    [ObservableProperty] private string _conversionDestinationPath = "/Game/ConvertedDump";
+    [ObservableProperty] private bool _conversionOverwrite;
+    [ObservableProperty] private bool _conversionIsBusy;
+    [ObservableProperty] private bool _conversionAutoDetectBusy;
+    [ObservableProperty] private bool _hasPendingConversionIssue;
+    [ObservableProperty] private double _conversionProgress;
+    [ObservableProperty] private string _conversionStatus = "";
+
+    public IReadOnlyList<EngineVersionOption> ConversionSourceVersions { get; } =
+        Enumerable.Range(0, 28).Reverse().Select(minor => new EngineVersionOption($"4.{minor}")).ToArray();
+
+    public bool CanStartConversion => !IsBusy && !ConversionAutoDetectBusy;
+    public bool CanCancelConversion => ConversionIsBusy;
+    public bool CanDetectConversionPaths => !IsBusy && !ConversionAutoDetectBusy;
+    public string ConversionTargetVersion
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(TargetProjectPath) && string.IsNullOrWhiteSpace(UnrealEditorPath))
+                return L["Convert.Target.Unknown"];
+            var detected = DumpConversionService.DetectTargetVersion(TargetProjectPath, UnrealEditorPath);
+            return detected == "unknown" ? L["Convert.Target.Unknown"] : detected;
+        }
+    }
+
     // ---------------------------------------------------------------- run state
 
     [ObservableProperty] private RunState _state = RunState.Idle;
@@ -170,6 +210,7 @@ public sealed partial class ExportViewModel : ObservableObject
     [ObservableProperty] private string _summaryTitle = "";
     [ObservableProperty] private string _commandLine = "";
     [ObservableProperty] private string _lastOutputDirectory = "";
+    [ObservableProperty] private string _lastLogPath = "";
 
     /// <summary>Paths ticked in the Browser, or null to export the whole container.</summary>
     [ObservableProperty] private IReadOnlySet<string>? _selectedPaths;
@@ -180,28 +221,36 @@ public sealed partial class ExportViewModel : ObservableObject
     public ObservableCollection<SummaryLine> Summary { get; } = [];
     public ObservableCollection<RecentGame> Recent { get; } = [];
 
-    public bool IsBusy => State is RunState.Scanning or RunState.Preparing or RunState.Running or RunState.Cancelling;
+    public bool IsBusy => ConversionIsBusy ||
+        State is RunState.Scanning or RunState.Preparing or RunState.Running or RunState.Cancelling;
     public bool CanRun => !IsBusy;
-    public bool CanCancel => State is RunState.Running or RunState.Preparing or RunState.Scanning;
+    public bool CanCancel => ConversionIsBusy ||
+        State is RunState.Running or RunState.Preparing or RunState.Scanning;
     public bool HasError => !string.IsNullOrEmpty(ErrorHeadline);
     public bool HasSummary => Summary.Count > 0;
     public bool ShowProgress => State is RunState.Running or RunState.Preparing or RunState.Cancelling;
     public bool HasRecent => Recent.Count > 0;
     public bool CanOpenOutput => !string.IsNullOrEmpty(LastOutputDirectory) && Directory.Exists(LastOutputDirectory);
     public bool HasErrorsFile => CanOpenOutput && File.Exists(Path.Combine(LastOutputDirectory, "errors.csv"));
+    public bool CanOpenLog => File.Exists(EffectiveLogPath);
+    private string EffectiveLogPath => !string.IsNullOrWhiteSpace(LastLogPath)
+        ? LastLogPath
+        : Path.Combine(LastOutputDirectory, "UEBulkExport.log");
 
-    public string StatusText => State switch
-    {
-        RunState.Scanning => L["Status.Scanning"],
-        RunState.Preparing => L["Status.Preparing"],
-        RunState.Running => L["Status.Running"],
-        RunState.Cancelling => L["Status.Cancelling"],
-        RunState.Done => L["Status.Done"],
-        RunState.DoneWithErrors => L["Status.DoneWithErrors"],
-        RunState.Failed => L["Status.Failed"],
-        RunState.Cancelled => L["Status.Cancelled"],
-        _ => L["Status.Idle"]
-    };
+    public string StatusText => ConversionIsBusy
+        ? (string.IsNullOrEmpty(ConversionStatus) ? L["Convert.Stage.Preparing"] : ConversionStatus)
+        : State switch
+        {
+            RunState.Scanning => L["Status.Scanning"],
+            RunState.Preparing => L["Status.Preparing"],
+            RunState.Running => L["Status.Running"],
+            RunState.Cancelling => L["Status.Cancelling"],
+            RunState.Done => L["Status.Done"],
+            RunState.DoneWithErrors => L["Status.DoneWithErrors"],
+            RunState.Failed => L["Status.Failed"],
+            RunState.Cancelled => L["Status.Cancelled"],
+            _ => L["Status.Idle"]
+        };
 
     /// <summary>Raised after a successful scan; the shell hands the result to the Browser tab.</summary>
     public event Action<ScanResult>? Scanned;
@@ -222,6 +271,7 @@ public sealed partial class ExportViewModel : ObservableObject
         _naniteFormat = NaniteFormats[0];
         _socketFormat = SocketFormats[0];
         _platform = Platforms[0];
+        _conversionSourceVersion = ConversionSourceVersions[0];
         _threads = Math.Max(1, settings.DefaultThreads);
 
         LoadFromSettings();
@@ -234,6 +284,7 @@ public sealed partial class ExportViewModel : ObservableObject
         };
 
         RefreshCommandLine();
+        Dispatcher.UIThread.Post(() => _ = DetectConversionPathsCore());
     }
 
     public void LoadFromSettings()
@@ -251,6 +302,15 @@ public sealed partial class ExportViewModel : ObservableObject
         OodlePath = _settings.OodlePath;
         ZlibPath = _settings.ZlibPath;
         VgmStreamPath = _settings.VgmStreamPath;
+        ConversionSourcePath = _settings.ConversionSourcePath;
+        ConversionSourceVersion = ConversionSourceVersions.FirstOrDefault(v =>
+            v.Version == _settings.ConversionSourceVersion) ?? ConversionSourceVersions[0];
+        UModelPath = _settings.UModelPath;
+        TargetProjectPath = _settings.TargetProjectPath;
+        UnrealEditorPath = _settings.UnrealEditorPath;
+        ConversionDestinationPath = string.IsNullOrWhiteSpace(_settings.ConversionDestinationPath)
+            ? "/Game/ConvertedDump"
+            : _settings.ConversionDestinationPath;
 
         Recent.Clear();
         foreach (var r in _settings.Recent) Recent.Add(r);
@@ -273,6 +333,38 @@ public sealed partial class ExportViewModel : ObservableObject
                 DryRunCommand.NotifyCanExecuteChanged();
                 ScanCommand.NotifyCanExecuteChanged();
                 CancelCommand.NotifyCanExecuteChanged();
+                StartConversionCommand.NotifyCanExecuteChanged();
+                break;
+
+            case nameof(ConversionIsBusy):
+                OnPropertyChanged(nameof(IsBusy));
+                OnPropertyChanged(nameof(CanRun));
+                OnPropertyChanged(nameof(CanCancel));
+                OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(CanStartConversion));
+                OnPropertyChanged(nameof(CanCancelConversion));
+                StartConversionCommand.NotifyCanExecuteChanged();
+                CancelConversionCommand.NotifyCanExecuteChanged();
+                StartCommand.NotifyCanExecuteChanged();
+                DryRunCommand.NotifyCanExecuteChanged();
+                ScanCommand.NotifyCanExecuteChanged();
+                CancelCommand.NotifyCanExecuteChanged();
+                break;
+
+            case nameof(ConversionAutoDetectBusy):
+                OnPropertyChanged(nameof(CanStartConversion));
+                OnPropertyChanged(nameof(CanDetectConversionPaths));
+                StartConversionCommand.NotifyCanExecuteChanged();
+                DetectConversionPathsCommand.NotifyCanExecuteChanged();
+                break;
+
+            case nameof(ConversionStatus):
+                OnPropertyChanged(nameof(StatusText));
+                break;
+
+            case nameof(TargetProjectPath):
+            case nameof(UnrealEditorPath):
+                OnPropertyChanged(nameof(ConversionTargetVersion));
                 break;
 
             case nameof(SelectedMode):
@@ -288,6 +380,11 @@ public sealed partial class ExportViewModel : ObservableObject
             case nameof(LastOutputDirectory):
                 OnPropertyChanged(nameof(CanOpenOutput));
                 OnPropertyChanged(nameof(HasErrorsFile));
+                OnPropertyChanged(nameof(CanOpenLog));
+                break;
+
+            case nameof(LastLogPath):
+                OnPropertyChanged(nameof(CanOpenLog));
                 break;
 
             case nameof(SelectedPaths):
@@ -299,7 +396,8 @@ public sealed partial class ExportViewModel : ObservableObject
         if (e.PropertyName is not (nameof(CommandLine) or nameof(State) or nameof(ScanSummary)
             or nameof(ProgressFraction) or nameof(ProgressProcessed) or nameof(ProgressWritten)
             or nameof(ProgressFailed) or nameof(ProgressRate) or nameof(ProgressEta) or nameof(ProgressElapsed)
-            or nameof(ErrorHeadline) or nameof(ErrorHint) or nameof(SummaryTitle) or nameof(LastOutputDirectory)))
+            or nameof(ErrorHeadline) or nameof(ErrorHint) or nameof(SummaryTitle) or nameof(LastOutputDirectory)
+            or nameof(LastLogPath)))
             RefreshCommandLine();
     }
 
@@ -416,6 +514,62 @@ public sealed partial class ExportViewModel : ObservableObject
     private async Task BrowseVgmStream() => VgmStreamPath = await DialogService.PickExecutableAsync(VgmStreamPath) ?? VgmStreamPath;
 
     [RelayCommand]
+    private async Task BrowseConversionSource()
+    {
+        var path = await DialogService.PickFolderAsync("Dialog.PickDump", ConversionSourcePath);
+        if (path is not null) ConversionSourcePath = path;
+    }
+
+    [RelayCommand]
+    private async Task BrowseUModel() => UModelPath = await DialogService.PickExecutableAsync(UModelPath) ?? UModelPath;
+
+    [RelayCommand]
+    private async Task BrowseTargetProject()
+    {
+        var path = await DialogService.PickUnrealProjectAsync(TargetProjectPath);
+        if (path is not null) TargetProjectPath = path;
+    }
+
+    [RelayCommand]
+    private async Task BrowseUnrealEditor() =>
+        UnrealEditorPath = await DialogService.PickExecutableAsync(UnrealEditorPath) ?? UnrealEditorPath;
+
+    [RelayCommand(CanExecute = nameof(CanDetectConversionPaths))]
+    private Task DetectConversionPaths() => DetectConversionPathsCore();
+
+    private async Task DetectConversionPathsCore()
+    {
+        if (ConversionAutoDetectBusy || IsBusy) return;
+
+        ConversionAutoDetectBusy = true;
+        ConversionStatus = L["Convert.AutoDetect.Searching"];
+        try
+        {
+            var result = await Task.Run(() => ConversionPathDiscovery.Find(
+                UModelPath, TargetProjectPath, UnrealEditorPath));
+
+            if (result.UModelPath is not null) UModelPath = result.UModelPath;
+            if (result.ProjectPath is not null) TargetProjectPath = result.ProjectPath;
+            if (result.UnrealEditorPath is not null) UnrealEditorPath = result.UnrealEditorPath;
+
+            ConversionStatus = L.Format("Convert.AutoDetect.Result",
+                result.UModelPath is not null ? L["Common.Yes"] : L["Common.No"],
+                result.ProjectPath is not null ? L["Common.Yes"] : L["Common.No"],
+                result.UnrealEditorPath is not null ? L["Common.Yes"] : L["Common.No"]);
+            if (result.UModelPath is not null || result.ProjectPath is not null || result.UnrealEditorPath is not null)
+                RememberConversionSettings();
+        }
+        catch (Exception e)
+        {
+            ConversionStatus = L.Format("Convert.AutoDetect.Error", e.Message);
+        }
+        finally
+        {
+            ConversionAutoDetectBusy = false;
+        }
+    }
+
+    [RelayCommand]
     private async Task CopyCommand()
     {
         if (CopyToClipboard is not null && !string.IsNullOrEmpty(CommandLine)) await CopyToClipboard(CommandLine);
@@ -428,7 +582,7 @@ public sealed partial class ExportViewModel : ObservableObject
     private void OpenErrors() => ShellHelper.OpenFile(Path.Combine(LastOutputDirectory, "errors.csv"));
 
     [RelayCommand]
-    private void OpenLog() => ShellHelper.OpenFile(Path.Combine(LastOutputDirectory, "UEBulkExport.log"));
+    private void OpenLog() => ShellHelper.OpenFile(EffectiveLogPath);
 
     [RelayCommand]
     private void ApplyRecent(RecentGame? game)
@@ -516,6 +670,7 @@ public sealed partial class ExportViewModel : ObservableObject
         State = RunState.Preparing;
         ProgressIndeterminate = true;
         LastOutputDirectory = "";
+        LastLogPath = "";
 
         try
         {
@@ -541,8 +696,109 @@ public sealed partial class ExportViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel()
     {
+        if (ConversionIsBusy)
+        {
+            CancelConversion();
+            return;
+        }
         State = RunState.Cancelling;
         _service.Cancel();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanStartConversion))]
+    private async Task StartConversion()
+    {
+        if (!RequireConversion()) return;
+
+        ClearOutcome();
+        State = RunState.Idle;
+        ConversionIsBusy = true;
+        ConversionProgress = 0;
+        ConversionStatus = L["Convert.Stage.Preparing"];
+        _conversionCancellation = new CancellationTokenSource();
+        RememberConversionSettings();
+
+        try
+        {
+            var progress = new Progress<DumpConversionProgress>(p =>
+            {
+                ConversionProgress = p.Fraction;
+                ConversionStatus = L[$"Convert.Stage.{p.Stage}"];
+            });
+            var summary = await _conversionService.RunAsync(new DumpConversionOptions(
+                ConversionSourcePath.Trim(),
+                ConversionSourceVersion.Version,
+                UModelPath.Trim(),
+                TargetProjectPath.Trim(),
+                UnrealEditorPath.Trim(),
+                ConversionDestinationPath.Trim(),
+                Overwrite: ConversionOverwrite), progress, WaitForConversionDecision,
+                _conversionCancellation.Token);
+
+            ShowConversionSummary(summary);
+            LastOutputDirectory = Path.Combine(Path.GetDirectoryName(TargetProjectPath)!, "Content");
+            LastLogPath = Path.Combine(summary.WorkingDirectory, "unreal-import.log");
+            ConversionStatus = L["Convert.Stage.Done"];
+            State = summary.FailedFiles == 0 && summary.SkippedFiles == 0
+                ? RunState.Done
+                : RunState.DoneWithErrors;
+        }
+        catch (OperationCanceledException)
+        {
+            ConversionStatus = L["Convert.Stage.Cancelled"];
+            State = RunState.Cancelled;
+        }
+        catch (Exception e)
+        {
+            ConversionStatus = L["Convert.Stage.Failed"];
+            Fail(e);
+        }
+        finally
+        {
+            _conversionCancellation?.Dispose();
+            _conversionCancellation = null;
+            _conversionDecision?.TrySetResult(false);
+            _conversionDecision = null;
+            HasPendingConversionIssue = false;
+            ConversionIsBusy = false;
+        }
+    }
+
+    private async Task<bool> WaitForConversionDecision(DumpConversionIssue issue, CancellationToken ct)
+    {
+        var decision = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            _conversionDecision = decision;
+            ErrorHeadline = issue.Headline;
+            ErrorHint = $"{issue.SourceFile}{Environment.NewLine}{issue.Details}";
+            HasPendingConversionIssue = true;
+            ConversionStatus = L["Convert.Error.Waiting"];
+        });
+
+        using var registration = ct.Register(() => decision.TrySetCanceled(ct));
+        return await decision.Task;
+    }
+
+    [RelayCommand]
+    private void ContinueConversion()
+    {
+        var decision = _conversionDecision;
+        _conversionDecision = null;
+        HasPendingConversionIssue = false;
+        ErrorHeadline = "";
+        ErrorHint = "";
+        ConversionStatus = L["Convert.Error.Continuing"];
+        decision?.TrySetResult(true);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCancelConversion))]
+    private void CancelConversion()
+    {
+        ConversionStatus = L["Convert.Stage.Cancelling"];
+        _conversionDecision?.TrySetResult(false);
+        _conversionCancellation?.Cancel();
+        _conversionService.Cancel();
     }
 
     // ---------------------------------------------------------------- outcome presentation
@@ -563,6 +819,27 @@ public sealed partial class ExportViewModel : ObservableObject
             return false;
         }
 
+        return true;
+    }
+
+    private bool RequireConversion()
+    {
+        (string Value, string Key)[] required =
+        [
+            (ConversionSourcePath, "Validate.DumpMissing"),
+            (UModelPath, "Validate.UModelMissing"),
+            (TargetProjectPath, "Validate.ProjectMissing"),
+            (UnrealEditorPath, "Validate.EditorMissing")
+        ];
+        foreach (var item in required)
+        {
+            if (string.IsNullOrWhiteSpace(item.Value))
+            {
+                ErrorHeadline = L[item.Key];
+                ErrorHint = "";
+                return false;
+            }
+        }
         return true;
     }
 
@@ -647,6 +924,37 @@ public sealed partial class ExportViewModel : ObservableObject
         Summary.Add(new SummaryLine(L["Plan.Mappings"], p.MappingsPath ?? L["Common.None"]));
         Summary.Add(new SummaryLine(L["Summary.Output"], p.OutputDirectory));
         OnPropertyChanged(nameof(HasSummary));
+    }
+
+    private void ShowConversionSummary(DumpConversionSummary s)
+    {
+        SummaryTitle = L.Format("Convert.Summary.Title", Format.Duration(s.Elapsed));
+        Summary.Clear();
+        Summary.Add(new SummaryLine(L["Convert.Summary.SourcePackages"], s.CookedPackages.ToString("N0")));
+        Summary.Add(new SummaryLine(L["Convert.Summary.Importable"], s.ImportableFiles.ToString("N0")));
+        Summary.Add(new SummaryLine(L["Convert.Summary.Imported"], s.ImportedFiles.ToString("N0")));
+        Summary.Add(new SummaryLine(L["Convert.Summary.Failed"], s.FailedFiles.ToString("N0")));
+        if (s.UnsupportedActorXFiles > 0)
+            Summary.Add(new SummaryLine(L["Convert.Summary.ActorX"], s.UnsupportedActorXFiles.ToString("N0")));
+        if (s.SkippedFiles > 0)
+            Summary.Add(new SummaryLine(L["Convert.Summary.Skipped"], s.SkippedFiles.ToString("N0")));
+        if (s.ErrorReportPath is not null)
+            Summary.Add(new SummaryLine(L["Convert.Summary.Report"], s.ErrorReportPath));
+        Summary.Add(new SummaryLine(L["Convert.Summary.TargetVersion"], s.TargetVersion));
+        Summary.Add(new SummaryLine(L["Convert.Summary.Destination"], s.DestinationPath));
+        Summary.Add(new SummaryLine(L["Convert.Summary.Working"], s.WorkingDirectory));
+        OnPropertyChanged(nameof(HasSummary));
+    }
+
+    private void RememberConversionSettings()
+    {
+        _settings.ConversionSourcePath = ConversionSourcePath;
+        _settings.ConversionSourceVersion = ConversionSourceVersion.Version;
+        _settings.UModelPath = UModelPath;
+        _settings.TargetProjectPath = TargetProjectPath;
+        _settings.UnrealEditorPath = UnrealEditorPath;
+        _settings.ConversionDestinationPath = ConversionDestinationPath;
+        _settings.Save();
     }
 
     private void RememberRun()

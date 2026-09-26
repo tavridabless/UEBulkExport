@@ -67,6 +67,9 @@ public sealed partial class MainViewModel : ObservableObject
                     OnPropertyChanged(nameof(IsBusy));
                     OnPropertyChanged(nameof(ShowProgress));
                     break;
+                case nameof(ExportViewModel.IsBusy):
+                    OnPropertyChanged(nameof(IsBusy));
+                    break;
                 case nameof(ExportViewModel.ProgressFraction):
                     OnPropertyChanged(nameof(ProgressFraction));
                     break;

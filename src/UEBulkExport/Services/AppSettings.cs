@@ -29,6 +29,13 @@ public sealed class AppSettings
     public string ZlibPath { get; set; } = "";
     public string VgmStreamPath { get; set; } = "";
 
+    public string ConversionSourcePath { get; set; } = "";
+    public string ConversionSourceVersion { get; set; } = "4.27";
+    public string UModelPath { get; set; } = "";
+    public string TargetProjectPath { get; set; } = "";
+    public string UnrealEditorPath { get; set; } = "";
+    public string ConversionDestinationPath { get; set; } = "/Game/ConvertedDump";
+
     public double WindowWidth { get; set; } = 1240;
     public double WindowHeight { get; set; } = 820;
 

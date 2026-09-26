@@ -283,6 +283,89 @@
           </StackPanel>
         </Expander>
 
+        <!-- 5 · Dump conversion -->
+        <Expander>
+          <Expander.Header>
+            <StackPanel Margin="4,2">
+              <TextBlock Classes="CardTitle" Text="{loc:Tr Convert.Title}" />
+              <TextBlock Classes="CardSubtitle" Text="{loc:Tr Convert.Subtitle}" Margin="0,2,0,0" />
+            </StackPanel>
+          </Expander.Header>
+          <StackPanel Margin="4,6,4,4" Spacing="4">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="0,0,0,8">
+              <TextBlock Grid.Column="0" Classes="Hint" Text="{loc:Tr Convert.AutoDetect.Hint}"
+                         TextWrapping="Wrap" VerticalAlignment="Center" Margin="0" />
+              <Button Grid.Column="1" Content="{loc:Tr Convert.AutoDetect}"
+                      Command="{Binding DetectConversionPathsCommand}" />
+            </Grid>
+            <TextBlock Classes="Warning" Text="{loc:Tr Convert.Limitations}" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+            <TextBlock Classes="Label" Text="{loc:Tr Convert.Source.Label}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Grid.Column="0" Text="{Binding ConversionSourcePath}" Watermark="{loc:Tr Convert.Source.Placeholder}" />
+              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFolder}" Command="{Binding BrowseConversionSourceCommand}" />
+            </Grid>
+            <TextBlock Classes="Hint" Text="{loc:Tr Convert.Source.Hint}" />
+
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="16" Margin="0,6,0,0">
+              <StackPanel Grid.Column="0">
+                <TextBlock Classes="Label" Text="{loc:Tr Convert.SourceVersion.Label}" />
+                <ComboBox ItemsSource="{Binding ConversionSourceVersions}" SelectedItem="{Binding ConversionSourceVersion}" />
+                <TextBlock Classes="Hint" Text="{loc:Tr Convert.SourceVersion.Hint}" />
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock Classes="Label" Text="{loc:Tr Convert.TargetVersion.Label}" />
+                <Border MinHeight="38" Padding="12,8" CornerRadius="6"
+                        Background="{DynamicResource Brush.Field}" BorderBrush="{DynamicResource Brush.FieldBorder}" BorderThickness="1">
+                  <TextBlock Text="{Binding ConversionTargetVersion}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                </Border>
+                <TextBlock Classes="Hint" Text="{loc:Tr Convert.TargetVersion.Hint}" />
+              </StackPanel>
+            </Grid>
+
+            <TextBlock Classes="Label" Text="{loc:Tr Convert.UModel.Label}" Margin="0,6,0,0" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Grid.Column="0" Text="{Binding UModelPath}" Watermark="F:\umodel\umodel_64.exe" />
+              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseUModelCommand}" />
+            </Grid>
+
+            <TextBlock Classes="Label" Text="{loc:Tr Convert.Project.Label}" Margin="0,6,0,0" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Grid.Column="0" Text="{Binding TargetProjectPath}" Watermark="D:\Project\MyProject.uproject" />
+              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseTargetProjectCommand}" />
+            </Grid>
+
+            <TextBlock Classes="Label" Text="{loc:Tr Convert.Editor.Label}" Margin="0,6,0,0" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBox Grid.Column="0" Text="{Binding UnrealEditorPath}" Watermark="D:\UE_5.x\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" />
+              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseUnrealEditorCommand}" />
+            </Grid>
+
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="16" Margin="0,6,0,0">
+              <StackPanel Grid.Column="0">
+                <TextBlock Classes="Label" Text="{loc:Tr Convert.Destination.Label}" />
+                <TextBox Text="{Binding ConversionDestinationPath}" Watermark="/Game/ConvertedDump" />
+                <TextBlock Classes="Hint" Text="{loc:Tr Convert.Destination.Hint}" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <CheckBox IsChecked="{Binding ConversionOverwrite}" Content="{loc:Tr Convert.Overwrite}" />
+                <TextBlock Classes="Hint" Text="{loc:Tr Convert.Overwrite.Hint}" />
+              </StackPanel>
+            </Grid>
+
+            <ProgressBar Value="{Binding ConversionProgress}" Maximum="1" Margin="0,12,0,2"
+                         IsVisible="{Binding ConversionIsBusy}" />
+            <TextBlock Text="{Binding ConversionStatus}" Classes="Hint" TextWrapping="Wrap"
+                       IsVisible="{Binding ConversionStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+              <Button Classes="Primary" Content="{loc:Tr Convert.Start}" Command="{Binding StartConversionCommand}" />
+              <Button Classes="Danger" Content="{loc:Tr Export.Cancel}" Command="{Binding CancelConversionCommand}"
+                      IsVisible="{Binding CanCancelConversion}" />
+            </StackPanel>
+          </StackPanel>
+        </Expander>
+
         <!-- Outcome: error -->
         <Border x:Name="ErrorCard" Classes="Card" IsVisible="{Binding HasError}" BorderBrush="{DynamicResource Brush.Error}">
           <StackPanel Spacing="6">
@@ -290,6 +373,9 @@
             <TextBlock Text="{Binding ErrorHeadline}" Classes="Error" FontWeight="SemiBold" FontSize="14" />
             <TextBlock Text="{Binding ErrorHint}" Classes="Mono" TextWrapping="Wrap"
                        IsVisible="{Binding ErrorHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <Button Classes="Primary" Content="{loc:Tr Convert.Error.Continue}"
+                    Command="{Binding ContinueConversionCommand}" HorizontalAlignment="Left" Margin="0,8,0,0"
+                    IsVisible="{Binding HasPendingConversionIssue}" />
           </StackPanel>
         </Border>
 
@@ -310,7 +396,7 @@
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,14,0,0" IsVisible="{Binding CanOpenOutput}">
               <Button Content="{loc:Tr Export.OpenOutput}" Command="{Binding OpenOutputCommand}" />
               <Button Content="{loc:Tr Export.OpenErrors}" Command="{Binding OpenErrorsCommand}" IsVisible="{Binding HasErrorsFile}" />
-              <Button Content="{loc:Tr Export.OpenLog}" Command="{Binding OpenLogCommand}" />
+              <Button Content="{loc:Tr Export.OpenLog}" Command="{Binding OpenLogCommand}" IsVisible="{Binding CanOpenLog}" />
             </StackPanel>
           </StackPanel>
         </Border>

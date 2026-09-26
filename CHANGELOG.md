@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-25
+
+### Added
+
+- A fifth Export-page function, **Migrate assets between Unreal Engine versions**. It uses a user-selected
+  UE Viewer executable to export recoverable assets from loose UE4.0–4.27 cooked dumps, then starts
+  the selected target `UnrealEditor-Cmd` to create new assets inside a target project. The source
+  version, target project, editor, content destination, overwrite policy and progress are available
+  in the English and Russian interfaces and remembered between runs.
+- UE Viewer, the most recently modified project in common Unreal project folders, and the matching
+  `UnrealEditor-Cmd` are detected automatically on startup and on demand. Every detected path can
+  still be overridden manually.
+- A UE Viewer failure no longer has to abort the whole conversion. The window displays the failing
+  package and a **Continue** button; continuing skips that package, resumes the export, and writes
+  every skipped or failed file to `conversion-errors.csv` at the end. Packages with empty `.ubulk`
+  or `.uexp` payloads are detected and skipped up front, while their source files are preserved.
+- Conversion reports and the UE Viewer/Unreal Editor logs are retained under
+  `Saved/UEBulkExport/DumpConversion` in the target project. Interchange files that are already in a
+  dump can be imported without exporting them again, and interrupted runs can be resumed.
+
+### Known limitations
+
+- Conversion reconstructs supported meshes, textures and audio; cooking has already discarded
+  editor-only data such as Blueprint, material, Niagara and level graphs. UE Viewer ActorX animation
+  files (`.psa`) are reported but cannot be imported natively by Unreal Engine 5.
+
 ## [2.0.0] - 2026-09-24
 
 ### Added
