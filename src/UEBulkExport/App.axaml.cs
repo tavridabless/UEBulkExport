@@ -22,8 +22,10 @@ public sealed class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         Settings = AppSettings.Load();
-        // English and the light theme are the defaults; the OS language is deliberately not consulted.
-        Loc.Instance.Language = string.IsNullOrEmpty(Settings.Language) ? Loc.DefaultLanguage : Settings.Language;
+        // The user's own choice wins, then the language picked in the installer, then English. The
+        // OS language is deliberately not consulted.
+        Loc.Instance.Language = !string.IsNullOrEmpty(Settings.Language) ? Settings.Language
+            : AppSettings.InstallerLanguage() ?? Loc.DefaultLanguage;
         ApplyTheme(Settings.Theme);
 
         Log.AddSink(LogSink);

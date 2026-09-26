@@ -14,6 +14,7 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        RunningMarker.Announce();
         if (args.Length > 0) return RunCommandLine(args);
 
         try

@@ -3,6 +3,7 @@ using UEBulkExport.CommandLine;
 
 var launchedFromExplorer = args.Length == 0 && !Console.IsOutputRedirected;
 
+RunningMarker.Announce();
 Log.AddSink(new ConsoleLogSink());
 
 // Ctrl+C asks the exporter to stop; it then flushes the resume index and prints a summary, so

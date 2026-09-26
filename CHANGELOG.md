@@ -36,6 +36,20 @@ All notable changes to this project are documented here. The format follows
   the editor exits successfully.
 - The editor receives the import script path in the form Unreal expects, so projects in folders
   with spaces or names that begin with digits import correctly.
+- The installer recognises an installed copy. A newer version runs as an update (*Update
+  2.0.0 → 2.1.0*) that reuses the licence, folder, components and shortcuts; the same version
+  runs as a reinstall where the components can be changed; an older version asks before it
+  replaces a newer one, and unattended installs need `/ALLOWDOWNGRADE` for that.
+- UEBulkExport can be installed for the current user only, without administrator rights (a choice
+  at the start of the wizard, or `/CURRENTUSER`). An update keeps the mode of the existing
+  installation, so no second copy appears.
+- An optional installer task adds the command line program to `PATH`; uninstalling removes it
+  again and leaves every other `PATH` entry untouched.
+- The uninstaller offers to delete the user's settings, recent games and downloaded helper
+  libraries; by default they are kept.
+- Releases carry `SHA256SUMS.txt`. The release workflow signs the executables, the installer and
+  the uninstaller when a signing certificate is configured as a repository secret.
+- Setup and uninstall write logs to `%TEMP%`.
 
 ### Changed
 
@@ -56,9 +70,21 @@ All notable changes to this project are documented here. The format follows
 - The bar at the bottom of each page says whether the operation is ready and, when it is not,
   why; the Start button stays disabled until the required fields are filled. Warnings about
   overwriting or lost editor data stay visible next to the setting they concern.
+- The **UEBulkExport CLI** Start menu shortcut opens a command prompt with the command line help,
+  ready for the next command, instead of a console that can only show the help and close.
+- The application starts in the language chosen in the installer until a language is picked in
+  Settings.
 
 ### Fixed
 
+- An update removes program files the new version no longer ships, and deselecting a component
+  in a reinstall removes its files; a core-only installation no longer leaves empty `docs` and
+  `tools` folders behind.
+- The installer offers only the native components the build actually contains; the others are
+  downloaded by the application on first use and no longer appear as empty checkboxes.
+- The installer refuses to run on Windows versions that .NET 10 does not support (desktop
+  Windows older than 10 version 1607, servers older than 2012), and both the installer and the
+  uninstaller ask to close UEBulkExport while it is running.
 - Game packages export of a game built with an engine newer than the bundled retoc knows (UE 5.8
   and later) no longer fails with an unexplained `invalid value` error. The version is left for
   retoc to read from the containers; if retoc still cannot convert them, the error names the

@@ -85,9 +85,9 @@ The **Command line** section of the Export page shows the equivalent command for
 configuration. Copy it when you want to repeat the same job in a script with `UEBulkExport.Cli.exe`.
 
 Dropping a game folder or a `.utoc`/`.pak` file onto the window fills in the source; dropping a
-`.uproject` opens **Migrate to UE** with it as the target project. A fresh
-install starts in English with the light theme; both are changed on the Settings page and
-remembered. Settings are stored per user in
+`.uproject` opens **Migrate to UE** with it as the target project. A fresh install starts in the
+language chosen in the installer (English otherwise) with the light theme; both are changed on
+the Settings page and remembered. Settings are stored per user in
 `%LOCALAPPDATA%\UEBulkExport\settings.json`; nothing leaves the machine. Should the window fail
 to start, the exception is written to `%LOCALAPPDATA%\UEBulkExport\crash.log`.
 
@@ -124,27 +124,50 @@ With `--mode full`, the tool instead writes converted files:
 
 ### 1. Install
 
+UEBulkExport runs on 64-bit Windows 10 version 1607 or later, Windows 11, and Windows Server 2012
+or later. The build is self-contained, so no separate .NET installation is needed.
+
 1. Download the latest `UEBulkExport-<version>-win-x64-setup.exe` from
-   [Releases](https://github.com/tavridabless/UEBulkExport/releases).
-2. Run it. Windows asks for administrator rights, because the tool installs into Program Files.
-   The installer is not code-signed, so SmartScreen may say *Windows protected your PC*; choose
-   **More info**, then **Run anyway**.
-3. Pick the installer language (English or Russian) and accept the Apache-2.0 licence.
-4. Choose the folder, `C:\Program Files\UEBulkExport` by default, and the components. **Full
-   installation** is recommended: besides the application it adds the native export helpers, the
-   offline documentation and the UE4SS mappings helper. **Core application only** installs just the
-   window and the command line program.
-5. Optionally create a desktop shortcut, then finish; the wizard can start UEBulkExport right away.
+   [Releases](https://github.com/tavridabless/UEBulkExport/releases). `SHA256SUMS.txt` next to it
+   lets you check the download: `Get-FileHash .\UEBulkExport-<version>-win-x64-setup.exe`.
+2. Run it and choose how to install:
+   - **For all users** (recommended) installs into `C:\Program Files\UEBulkExport` and needs
+     administrator rights.
+   - **Only for me** installs into `%LOCALAPPDATA%\Programs\UEBulkExport` without administrator
+     rights.
 
-The build is self-contained, so no separate .NET installation is needed. The Start menu gets two
-shortcuts: **UEBulkExport** opens the window, **UEBulkExport CLI** is the command line program. The
-command line program is not added to `PATH`; call it by its full path, for example
-`"C:\Program Files\UEBulkExport\UEBulkExport.Cli.exe" --help`, or from the installation folder.
+   The installer is not code-signed yet, so SmartScreen may say *Windows protected your PC*;
+   choose **More info**, then **Run anyway**.
+3. Pick the installer language (English or Russian); the application starts in the same language
+   until you change it in Settings. Accept the Apache-2.0 licence.
+4. Choose the folder and the components. **Full installation** is recommended: besides the
+   application it adds the native export helpers, the offline documentation and the UE4SS
+   mappings helper. **Core application only** installs just the window and the command line
+   program.
+5. Optionally create a desktop shortcut and add the command line program to `PATH`, then finish;
+   the wizard can start UEBulkExport right away.
 
-**Updating:** run the setup of the newer version; it replaces the installed one in place and keeps
-your settings. **Uninstalling:** Windows Settings → Apps → Installed apps → UEBulkExport →
-Uninstall. Settings and downloaded helper libraries stay in `%LOCALAPPDATA%\UEBulkExport`; delete
-that folder to remove them as well.
+The Start menu gets two shortcuts: **UEBulkExport** opens the window, and **UEBulkExport CLI**
+opens a command prompt with the command line help, ready for the next command. With the `PATH`
+option, `UEBulkExport.Cli` works from any console; otherwise call it by its full path, for
+example `"C:\Program Files\UEBulkExport\UEBulkExport.Cli.exe" --help`.
+
+**Updating.** Run the setup of the newer version. It recognises the installed copy and says
+*Update 2.0.0 → 2.1.0*: the licence, folder, components and shortcuts are taken from the
+installed copy, files the new version no longer uses are removed, and your settings are kept.
+Close UEBulkExport first; the installer asks you to if it is still running. Running the same
+version again reinstalls it and lets you change the components; files of components you deselect
+are removed. An older setup asks before it replaces a newer version (unattended installs need
+`/ALLOWDOWNGRADE`).
+
+**Uninstalling.** Windows Settings → Apps → Installed apps → UEBulkExport → Uninstall. At the
+end, the uninstaller asks whether to delete your settings, recent games and downloaded helper
+libraries in `%LOCALAPPDATA%\UEBulkExport` as well; by default they are kept.
+
+**Unattended installation.** The standard Inno Setup switches work, for example
+`UEBulkExport-<version>-win-x64-setup.exe /VERYSILENT /ALLUSERS /TASKS="addtopath"`. `/CURRENTUSER`
+installs for the current user only; `/LOG="setup.log"` writes a log. Setup always writes a log to
+`%TEMP%` as well (`Setup Log <date>.txt`).
 
 ### 2. Run an export
 

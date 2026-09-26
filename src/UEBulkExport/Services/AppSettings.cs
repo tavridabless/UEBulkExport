@@ -47,6 +47,30 @@ public sealed class AppSettings
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault
     };
 
+    /// <summary>
+    /// The language chosen in the installer wizard, written next to the executable as
+    /// installer.json. It only applies until the user picks a language in Settings.
+    /// </summary>
+    public static string? InstallerLanguage()
+    {
+        try
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "installer.json");
+            if (!File.Exists(path)) return null;
+
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            return document.RootElement.TryGetProperty("Language", out var language) &&
+                   language.ValueKind == JsonValueKind.String &&
+                   language.GetString() is { Length: > 0 } code
+                ? code
+                : null;
+        }
+        catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     public static AppSettings Load()
     {
         try

@@ -83,6 +83,40 @@ committed; `app.ico`, `logo.png` and `docs/images/logo*.png` are. After replacin
 run the generator and commit the regenerated icon and logo files. The README describes installing from
 `setup.exe` only; build instructions for the installer belong here.
 
+How the installer behaves, so changes keep it that way:
+
+- **`AppId` never changes.** Setup finds an existing installation by it and switches to update
+  mode (the licence, folder, components and shortcuts are reused), reinstall mode (same version;
+  components can be changed) or asks before a downgrade (`/ALLOWDOWNGRADE` for unattended runs).
+- **Install mode.** All users by default; *only for me* is offered by a dialog or `/CURRENTUSER`.
+  An update keeps the mode of the existing installation, so there is never a second copy.
+- **Obsolete files.** At compile time ISPP lists every file in `SourceDir`; an update deletes
+  `.dll`/`.exe`/`.json`/`.pdb` files in the application folder that are not on that list.
+  Deselected components are removed through `[InstallDelete]`. Native components appear only when
+  their libraries are in `SourceDir`, so a checkbox never installs nothing.
+- **Running application.** `UEBulkExport.exe` and `UEBulkExport.Cli.exe` create the
+  `UEBulkExport.Running` mutex (`RunningMarker.cs`); the installer's `AppMutex` must use the same
+  name.
+- **Language.** Setup writes `installer.json` with the wizard language next to the executable; the
+  application uses it until the user picks a language in Settings.
+
+To try the installer without touching a real installation, compile it with its own identity and
+install for the current user into a scratch folder:
+
+```bat
+ISCC.exe /DAppVersion=2.0.9 /DAppGuid=0B7F2E54-3C1D-4E0A-9D61-7A5C2B9E8F10 "/DAppName=UEBulkExport Test" /DSourceDir="artifacts\publish" /DOutputDir="artifacts\test" installer\UEBulkExport.iss
+artifacts\test\UEBulkExport-2.0.9-win-x64-setup.exe /CURRENTUSER /DIR="%TEMP%\uebe-test"
+```
+
+Then compile a higher `AppVersion` the same way to see the update flow, and a lower one for the
+downgrade question.
+
+**Code signing** is optional. Add the repository secrets `WINDOWS_SIGNING_CERTIFICATE` (the
+`.pfx` file, base64-encoded) and `WINDOWS_SIGNING_PASSWORD`; the release workflow then signs both
+executables, the installer and its uninstaller, and timestamps them. Every release also carries
+`SHA256SUMS.txt`. Locally, the same happens when ISCC gets `/DSignInstaller` and a `signtool`
+command, for example `"/Ssigntool=signtool.exe sign /fd sha256 /f cert.pfx /p password $f"`.
+
 ### GUI code
 
 The window lives under `src/UEBulkExport` and is built with Avalonia, MVVM style, using

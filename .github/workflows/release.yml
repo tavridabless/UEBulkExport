@@ -16,6 +16,13 @@ jobs:
   release:
     name: Publish ${{ matrix.rid }}
     runs-on: ${{ matrix.os }}
+    # Code signing is optional: add these two repository secrets (a base64-encoded .pfx and its
+    # password) and every executable, the installer and its uninstaller are signed. Without
+    # them the release is built unsigned, exactly as before.
+    env:
+      SIGNING_CERTIFICATE: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE }}
+      SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+      TIMESTAMP_URL: http://timestamp.digicert.com
     # Windows only, deliberately. Every piece a real export needs off the managed path -
     # the Oodle decompressor, the ACL native, vgmstream, retoc - is published by its upstream for
     # Windows alone, so a Linux binary would only disappoint. Linux still builds from source
@@ -98,23 +105,71 @@ jobs:
           }
           "ISCC_PATH=$(Join-Path $installDir 'ISCC.exe')" >> $env:GITHUB_ENV
 
+      - name: Prepare code signing
+        if: env.SIGNING_CERTIFICATE != ''
+        shell: powershell
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_CERTIFICATE))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw 'signtool.exe was not found on the runner.' }
+          "SIGNTOOL_PATH=$($signtool.FullName)" >> $env:GITHUB_ENV
+          "SIGNING_PFX=$pfx" >> $env:GITHUB_ENV
+
+      - name: Sign the executables
+        if: env.SIGNING_CERTIFICATE != ''
+        shell: powershell
+        run: |
+          foreach ($exe in 'UEBulkExport.exe', 'UEBulkExport.Cli.exe') {
+            & $env:SIGNTOOL_PATH sign /fd sha256 /tr $env:TIMESTAMP_URL /td sha256 `
+              /f $env:SIGNING_PFX /p $env:SIGNING_PASSWORD "staging\UEBulkExport\$exe"
+            if ($LASTEXITCODE -ne 0) { throw "Signing $exe failed with exit code $LASTEXITCODE" }
+          }
+
       - name: Build the Windows installer
         shell: powershell
         run: |
           $source = (Resolve-Path 'staging\UEBulkExport').Path
           $output = Join-Path $PWD 'artifacts\installer'
-          & $env:ISCC_PATH `
-            "/DAppVersion=${{ steps.version.outputs.value }}" `
-            "/DSourceDir=$source" `
-            "/DOutputDir=$output" `
-            'installer\UEBulkExport.iss'
+          $arguments = @(
+            "/DAppVersion=${{ steps.version.outputs.value }}",
+            "/DSourceDir=$source",
+            "/DOutputDir=$output"
+          )
+          # With a certificate, Inno Setup signs the installer and the uninstaller it embeds.
+          if ($env:SIGNING_CERTIFICATE) {
+            $sign = "`"$env:SIGNTOOL_PATH`" sign /fd sha256 /tr $env:TIMESTAMP_URL /td sha256 " +
+              "/f `"$env:SIGNING_PFX`" /p `"$env:SIGNING_PASSWORD`" `$f"
+            $arguments += '/DSignInstaller'
+            $arguments += "/Ssigntool=$sign"
+          }
+          & $env:ISCC_PATH @arguments 'installer\UEBulkExport.iss'
           if ($LASTEXITCODE -ne 0) {
             throw "Inno Setup failed with exit code $LASTEXITCODE"
           }
+
+      # Lets anyone check that the file they downloaded is the one that was published.
+      - name: Write checksums
+        shell: powershell
+        run: |
+          Push-Location 'artifacts\installer'
+          Get-ChildItem 'UEBulkExport-*-win-x64-setup.exe' | ForEach-Object {
+            '{0}  {1}' -f (Get-FileHash $_.Name -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+          } | Set-Content 'SHA256SUMS.txt' -Encoding ascii
+          Get-Content 'SHA256SUMS.txt'
+          Pop-Location
+
+      - name: Remove the signing certificate
+        if: always() && env.SIGNING_PFX != ''
+        shell: powershell
+        run: Remove-Item $env:SIGNING_PFX -Force -ErrorAction SilentlyContinue
 
       - name: Attach to the release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
           generate_release_notes: true
-          files: artifacts/installer/UEBulkExport-*-win-x64-setup.exe
+          files: |
+            artifacts/installer/UEBulkExport-*-win-x64-setup.exe
+            artifacts/installer/SHA256SUMS.txt
