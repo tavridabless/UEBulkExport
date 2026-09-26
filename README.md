@@ -280,8 +280,14 @@ s.AllowUnversionedContentInEditor=1
 
 Copy the package and every associated payload into the matching `Content` path. Epic notes that
 asset editors and many classes remain unsupported; this does not make the package editable.
-The automatic retoc 0.1.5 download supports versions through UE5.7; for newer versions, supply
-a compatible retoc build with `--retoc` when one becomes available.
+
+
+**Engine versions newer than retoc knows.** The automatically downloaded retoc 0.1.5 supports
+IoStore games through UE5.7. For a newer engine, such as UE5.8, UEBulkExport does not force a
+version and lets retoc read it from the containers, but retoc 0.1.5 cannot convert UE5.8 IoStore
+packages. The Export page warns about this before the run starts. Choose **Exact copy** (`raw`) or
+**Converted files** (`full`) instead, or point **Helper tools** (`--retoc`) at a newer retoc build
+once one supports that version.
 
 ---
 
