@@ -81,9 +81,19 @@ All notable changes to this project are documented here. The format follows
   ready for the next command, instead of a console that can only show the help and close.
 - The application starts in the language chosen in the installer until a language is picked in
   Settings.
+- The installer is built by one script (`installer/build.ps1`) on developer machines, in CI and
+  for releases. CI now builds it on every push and pull request, installs it silently, runs the
+  installed CLI, uninstalls it and keeps the setup as a build artifact; a release is attached only
+  after the same check passes.
 
 ### Fixed
 
+- The Russian interface no longer shows English option names for mesh LODs, Nanite, sockets
+  and texture platform, or English size units (КБ, МБ, ГБ). The Browser size column no longer
+  cuts folder totals short, and its type filters are visible as buttons in the light theme.
+- The filter warning names the new result, Game packages, and appears only for IoStore games,
+  where it applies. The close confirmation also covers migrations, and the About page links to
+  the security policy.
 - An update removes program files the new version no longer ships, and deselecting a component
   in a reinstall removes its files; a core-only installation no longer leaves empty `docs` and
   `tools` folders behind.

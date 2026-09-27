@@ -70,20 +70,29 @@ libraries. The default Full installation must include every export dependency an
 choose the destination directory. Whenever installation or release behaviour changes, update
 `README.md` and `README.ru.md` together.
 
-To build the installer locally, publish both executables into one folder, generate the wizard
-artwork and compile with Inno Setup 6.6 or later (the release workflow uses 6.7.3):
+The installer is built by one script everywhere: on your machine, in CI and for a release.
+`installer/build.ps1` publishes both executables into one staging folder, adds the offline
+documentation, generates the wizard artwork, optionally signs, compiles `installer/UEBulkExport.iss`
+and writes `SHA256SUMS.txt`. It needs Inno Setup 6.6 or later; `installer/install-inno.ps1`
+downloads the pinned 6.7.3, checks its SHA-256 and installs it portably:
 
-```bat
-dotnet publish src/UEBulkExport     -c Release -r win-x64 --self-contained -o artifacts/publish
-dotnet publish src/UEBulkExport.Cli -c Release -r win-x64 --self-contained -o artifacts/publish
-dotnet run --project installer/branding/generator -- installer/branding src/UEBulkExport/Assets docs/images
-ISCC.exe /DAppVersion=2.0.0 /DSourceDir="artifacts\publish" /DOutputDir="artifacts\installer" installer\UEBulkExport.iss
+```powershell
+./installer/install-inno.ps1 -Destination "$env:TEMP\inno-setup"   # once; prints the ISCC.exe path
+./installer/build.ps1 -Iscc "$env:TEMP\inno-setup\ISCC.exe"          # -> artifacts/installer
+./installer/smoke-test.ps1 -Installer artifacts/installer/UEBulkExport-2.1.0-win-x64-setup.exe
 ```
+
+The version comes from `Directory.Build.props` unless `-Version` is given. The smoke test installs
+the setup silently for the current user into a temporary folder, checks the payload, runs the
+installed CLI with `--version` and uninstalls it again. The CI workflow runs all three on every push
+and pull request and keeps the result as a build artifact for 14 days, so a change that breaks the
+installer shows up long before a release is tagged.
 
 The artwork sources live in `installer/branding`: `icon-source.webp` for the application icon and
 `design/*.webp` for the wizard and the README logo. The generated `wizard-*.png` files are not
 committed; `app.ico`, `logo.png` and `docs/images/logo*.png` are. After replacing a source image,
-run the generator and commit the regenerated icon and logo files. The README describes installing from
+run the generator (`dotnet run --project installer/branding/generator -- installer/branding
+src/UEBulkExport/Assets docs/images`) and commit the regenerated icon and logo files. The README describes installing from
 `setup.exe` only; build instructions for the installer belong here.
 
 How the installer behaves, so changes keep it that way:
@@ -103,22 +112,26 @@ How the installer behaves, so changes keep it that way:
 - **Language.** Setup writes `installer.json` with the wizard language next to the executable; the
   application uses it until the user picks a language in Settings.
 
-To try the installer without touching a real installation, compile it with its own identity and
-install for the current user into a scratch folder:
+To try the installer without touching a real installation, build it with its own identity
+(`UEBulkExport Test`, a separate `AppId`) and install it for the current user into a scratch folder.
+Run the smoke test only against such a build on a machine where UEBulkExport is really installed:
 
-```bat
-ISCC.exe /DAppVersion=2.0.9 /DAppGuid=0B7F2E54-3C1D-4E0A-9D61-7A5C2B9E8F10 "/DAppName=UEBulkExport Test" /DSourceDir="artifacts\publish" /DOutputDir="artifacts\test" installer\UEBulkExport.iss
-artifacts\test\UEBulkExport-2.0.9-win-x64-setup.exe /CURRENTUSER /DIR="%TEMP%\uebe-test"
+```powershell
+./installer/build.ps1 -Version 2.0.9 -TestIdentity -Output artifacts/test
+artifacts\test\UEBulkExport-2.0.9-win-x64-setup.exe /CURRENTUSER /DIR="$env:TEMP\uebe-test"
 ```
 
-Then compile a higher `AppVersion` the same way to see the update flow, and a lower one for the
-downgrade question.
+Then build a higher `-Version` the same way (add `-SkipPublish` to reuse the staging folder) to see
+the update flow, and a lower one for the downgrade question.
 
 **Code signing** is optional. Add the repository secrets `WINDOWS_SIGNING_CERTIFICATE` (the
 `.pfx` file, base64-encoded) and `WINDOWS_SIGNING_PASSWORD`; the release workflow then signs both
 executables, the installer and its uninstaller, and timestamps them. Every release also carries
-`SHA256SUMS.txt`. Locally, the same happens when ISCC gets `/DSignInstaller` and a `signtool`
-command, for example `"/Ssigntool=signtool.exe sign /fd sha256 /f cert.pfx /p password $f"`.
+`SHA256SUMS.txt`. Locally, pass the same kind of command to `build.ps1 -SignCommand`, written in
+Inno Setup's sign tool syntax (`$q` is a double quote, `$f` the file to sign), for example
+`'$qC:\Kits\signtool.exe$q sign /fd sha256 /f $qcert.pfx$q /p password $f'`. Inno Setup refuses a
+command that returns success without actually signing, so a broken certificate cannot slip
+through as an unsigned release.
 
 ### GUI code
 

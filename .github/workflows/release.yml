@@ -48,62 +48,9 @@ jobs:
           [ -n "$version" ] || version="${GITHUB_REF_NAME#v}"
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
-      # Both front ends land in one folder: UEBulkExport.exe (the window) and
-      # UEBulkExport.Cli.exe (the console), sharing the same Core and native libraries.
-      - name: Publish the GUI
-        run: >
-          dotnet publish src/UEBulkExport
-          -c Release
-          -r ${{ matrix.rid }}
-          --self-contained true
-          -p:Version=${{ steps.version.outputs.value }}
-          -o staging/UEBulkExport
-
-      - name: Publish the CLI
-        run: >
-          dotnet publish src/UEBulkExport.Cli
-          -c Release
-          -r ${{ matrix.rid }}
-          --self-contained true
-          -p:Version=${{ steps.version.outputs.value }}
-          -o staging/UEBulkExport
-
-      - name: Add the documentation people will need offline
-        shell: bash
-        run: |
-          cp README.md README.ru.md LICENSE NOTICE THIRD-PARTY-NOTICES.md CHANGELOG.md staging/UEBulkExport/
-          mkdir -p staging/UEBulkExport/docs
-          cp docs/mappings.md docs/mappings.ru.md docs/screenshot.png staging/UEBulkExport/docs/
-          cp -r docs/images staging/UEBulkExport/docs/
-          cp -r tools staging/UEBulkExport/
-
-      # The wizard images are derived from the designs in installer/branding; only the sources
-      # are committed. The generator also refreshes the application icon, which the publish above
-      # has already embedded, so running it here changes nothing that ships besides the wizard.
-      - name: Generate installer artwork
-        run: dotnet run --project installer/branding/generator -c Release -- installer/branding src/UEBulkExport/Assets docs/images
-
       - name: Install Inno Setup
         shell: powershell
-        run: |
-          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
-          $installDir = Join-Path $env:RUNNER_TEMP 'inno-setup'
-          Invoke-WebRequest `
-            'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' `
-            -OutFile $installer
-
-          $expectedHash = '9C73C3BAE7ED48D44112A0F48E66742C00090BDB5BEF71D9D3C056C66E97B732'
-          $actualHash = (Get-FileHash $installer -Algorithm SHA256).Hash
-          if ($actualHash -ne $expectedHash) {
-            throw "Inno Setup checksum mismatch: $actualHash"
-          }
-
-          $process = Start-Process -FilePath $installer -WindowStyle Hidden -Wait -PassThru `
-            -ArgumentList @('/PORTABLE=1', '/VERYSILENT', '/CURRENTUSER', '/NORESTART', "/DIR=`"$installDir`"")
-          if ($process.ExitCode -ne 0) {
-            throw "Inno Setup installation failed with exit code $($process.ExitCode)"
-          }
-          "ISCC_PATH=$(Join-Path $installDir 'ISCC.exe')" >> $env:GITHUB_ENV
+        run: ./installer/install-inno.ps1
 
       - name: Prepare code signing
         if: env.SIGNING_CERTIFICATE != ''
@@ -114,51 +61,27 @@ jobs:
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
             Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $signtool) { throw 'signtool.exe was not found on the runner.' }
-          "SIGNTOOL_PATH=$($signtool.FullName)" >> $env:GITHUB_ENV
-          "SIGNING_PFX=$pfx" >> $env:GITHUB_ENV
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "SIGNTOOL_PATH=$($signtool.FullName)`nSIGNING_PFX=$pfx`n")
 
-      - name: Sign the executables
-        if: env.SIGNING_CERTIFICATE != ''
-        shell: powershell
-        run: |
-          foreach ($exe in 'UEBulkExport.exe', 'UEBulkExport.Cli.exe') {
-            & $env:SIGNTOOL_PATH sign /fd sha256 /tr $env:TIMESTAMP_URL /td sha256 `
-              /f $env:SIGNING_PFX /p $env:SIGNING_PASSWORD "staging\UEBulkExport\$exe"
-            if ($LASTEXITCODE -ne 0) { throw "Signing $exe failed with exit code $LASTEXITCODE" }
-          }
-
+      # The same script as CI and local builds: publishes the window and the console program into
+      # one folder, adds the offline documentation, generates the wizard artwork, signs the
+      # executables, the installer and its uninstaller (with a certificate) and writes SHA256SUMS.txt.
       - name: Build the Windows installer
+        id: build
         shell: powershell
         run: |
-          $source = (Resolve-Path 'staging\UEBulkExport').Path
-          $output = Join-Path $PWD 'artifacts\installer'
-          $arguments = @(
-            "/DAppVersion=${{ steps.version.outputs.value }}",
-            "/DSourceDir=$source",
-            "/DOutputDir=$output"
-          )
-          # With a certificate, Inno Setup signs the installer and the uninstaller it embeds.
+          $arguments = @{ Version = '${{ steps.version.outputs.value }}'; Runtime = '${{ matrix.rid }}' }
           if ($env:SIGNING_CERTIFICATE) {
-            $sign = "`"$env:SIGNTOOL_PATH`" sign /fd sha256 /tr $env:TIMESTAMP_URL /td sha256 " +
-              "/f `"$env:SIGNING_PFX`" /p `"$env:SIGNING_PASSWORD`" `$f"
-            $arguments += '/DSignInstaller'
-            $arguments += "/Ssigntool=$sign"
+            # Inno Setup's sign tool syntax: $q is a double quote, $f the file to sign.
+            $arguments.SignCommand = "`$q$env:SIGNTOOL_PATH`$q sign /fd sha256 /tr $env:TIMESTAMP_URL /td sha256 " +
+              "/f `$q$env:SIGNING_PFX`$q /p `$q$env:SIGNING_PASSWORD`$q `$f"
           }
-          & $env:ISCC_PATH @arguments 'installer\UEBulkExport.iss'
-          if ($LASTEXITCODE -ne 0) {
-            throw "Inno Setup failed with exit code $LASTEXITCODE"
-          }
+          ./installer/build.ps1 @arguments
 
-      # Lets anyone check that the file they downloaded is the one that was published.
-      - name: Write checksums
+      # Nothing is attached unless the installer really installs, starts and uninstalls.
+      - name: Install, run and uninstall it
         shell: powershell
-        run: |
-          Push-Location 'artifacts\installer'
-          Get-ChildItem 'UEBulkExport-*-win-x64-setup.exe' | ForEach-Object {
-            '{0}  {1}' -f (Get-FileHash $_.Name -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
-          } | Set-Content 'SHA256SUMS.txt' -Encoding ascii
-          Get-Content 'SHA256SUMS.txt'
-          Pop-Location
+        run: ./installer/smoke-test.ps1 -Installer '${{ steps.build.outputs.installer }}'
 
       - name: Remove the signing certificate
         if: always() && env.SIGNING_PFX != ''

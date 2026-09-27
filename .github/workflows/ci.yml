@@ -54,3 +54,40 @@ jobs:
       # The GUI executable accepts the same arguments and must answer without opening a window.
       - name: Smoke test the GUI executable in command-line mode
         run: dotnet run --project src/UEBulkExport -c Release --no-build -- --version
+
+  # Builds the real installer exactly as a release does (installer/build.ps1), then installs it
+  # silently for the current user, runs the installed CLI and uninstalls it again. Catches an
+  # installer script that compiles but breaks at install time before a release is tagged.
+  installer:
+    name: Installer (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: ./installer/install-inno.ps1
+
+      - name: Build the installer
+        id: build
+        shell: powershell
+        run: ./installer/build.ps1
+
+      - name: Install, run and uninstall it
+        shell: powershell
+        run: ./installer/smoke-test.ps1 -Installer '${{ steps.build.outputs.installer }}'
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: UEBulkExport-setup-${{ github.sha }}
+          path: |
+            artifacts/installer/UEBulkExport-*-setup.exe
+            artifacts/installer/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
