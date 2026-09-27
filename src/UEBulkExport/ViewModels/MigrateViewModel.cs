@@ -52,6 +52,9 @@ public sealed partial class MigrateViewModel : ObservableObject
 
     public ObservableCollection<SummaryLine> Summary { get; } = [];
 
+    /// <summary>Hardware load recorded while a migration runs.</summary>
+    public PerformanceViewModel Performance { get; } = new();
+
     /// <summary>Set by the view: asks a yes/no question (title, message) and returns the answer.</summary>
     public Func<string, string, Task<bool>>? Confirm { get; set; }
 
@@ -293,6 +296,7 @@ public sealed partial class MigrateViewModel : ObservableObject
         Stage = L["Migrate.Stage.Preparing"];
         _cancellation = new CancellationTokenSource();
         Remember();
+        Performance.Start();
 
         try
         {
@@ -338,6 +342,7 @@ public sealed partial class MigrateViewModel : ObservableObject
         }
         finally
         {
+            Performance.Stop();
             _cancellation?.Dispose();
             _cancellation = null;
             _decision?.TrySetResult(false);

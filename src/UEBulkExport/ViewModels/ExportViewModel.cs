@@ -220,6 +220,9 @@ public sealed partial class ExportViewModel : ObservableObject
     public ObservableCollection<SummaryLine> Summary { get; } = [];
     public ObservableCollection<RecentGame> Recent { get; } = [];
 
+    /// <summary>Hardware load recorded while an export runs.</summary>
+    public PerformanceViewModel Performance { get; } = new();
+
     public bool IsBusy => State is RunState.Scanning or RunState.Preparing or RunState.Running or RunState.Cancelling;
     /// <summary>A scan runs by itself and is quick; only a real run shows progress and blocks the form.</summary>
     public bool IsRunning => State is RunState.Preparing or RunState.Running or RunState.Cancelling;
@@ -975,6 +978,7 @@ public sealed partial class ExportViewModel : ObservableObject
         ClearOutcome();
         RememberRun();
         State = RunState.Preparing;
+        Performance.Start();
         ProgressIndeterminate = true;
         LastOutputDirectory = "";
 
@@ -994,6 +998,7 @@ public sealed partial class ExportViewModel : ObservableObject
         }
         finally
         {
+            Performance.Stop();
             ProgressIndeterminate = false;
             OnPropertyChanged(nameof(HasErrorsFile));
             RunQueuedScan();

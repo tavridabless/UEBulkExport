@@ -114,6 +114,14 @@
           <Color x:Key="App.Error">#C4312B</Color>
           <Color x:Key="App.Info">#3A6FF7</Color>
 
+          <!-- Chart series, validated as a set against the card surface (light #f5f7fd, dark
+               #141c33): CVD and normal-vision separation pass for every pair. -->
+          <Color x:Key="App.Chart.Cpu">#2A78D6</Color>
+          <Color x:Key="App.Chart.Memory">#E87BA4</Color>
+          <Color x:Key="App.Chart.Gpu">#EDA100</Color>
+          <Color x:Key="App.Chart.Read">#1BAF7A</Color>
+          <Color x:Key="App.Chart.Write">#4A3AA7</Color>
+
           <BoxShadows x:Key="Shadow.Card">0 8 28 0 #142A3A78</BoxShadows>
           <BoxShadows x:Key="Shadow.Surface">0 16 48 0 #1A2A3A78</BoxShadows>
           <BoxShadows x:Key="Shadow.Accent">0 6 18 0 #553A6FF7</BoxShadows>
@@ -151,6 +159,12 @@
           <Color x:Key="App.Error">#FF8A80</Color>
           <Color x:Key="App.Info">#6B96FF</Color>
 
+          <Color x:Key="App.Chart.Cpu">#3987E5</Color>
+          <Color x:Key="App.Chart.Memory">#D55181</Color>
+          <Color x:Key="App.Chart.Gpu">#C98500</Color>
+          <Color x:Key="App.Chart.Read">#199E70</Color>
+          <Color x:Key="App.Chart.Write">#9085E9</Color>
+
           <BoxShadows x:Key="Shadow.Card">0 8 28 0 #40000000</BoxShadows>
           <BoxShadows x:Key="Shadow.Surface">0 16 48 0 #59000000</BoxShadows>
           <BoxShadows x:Key="Shadow.Accent">0 6 18 0 #666B96FF</BoxShadows>
@@ -184,6 +198,11 @@
       <SolidColorBrush x:Key="Brush.Warning" Color="{DynamicResource App.Warning}" />
       <SolidColorBrush x:Key="Brush.Error" Color="{DynamicResource App.Error}" />
       <SolidColorBrush x:Key="Brush.Info" Color="{DynamicResource App.Info}" />
+      <SolidColorBrush x:Key="Brush.Chart.Cpu" Color="{DynamicResource App.Chart.Cpu}" />
+      <SolidColorBrush x:Key="Brush.Chart.Memory" Color="{DynamicResource App.Chart.Memory}" />
+      <SolidColorBrush x:Key="Brush.Chart.Gpu" Color="{DynamicResource App.Chart.Gpu}" />
+      <SolidColorBrush x:Key="Brush.Chart.Read" Color="{DynamicResource App.Chart.Read}" />
+      <SolidColorBrush x:Key="Brush.Chart.Write" Color="{DynamicResource App.Chart.Write}" />
 
       <!-- Primary buttons: a gentle blue-to-violet sheen instead of a flat fill -->
       <LinearGradientBrush x:Key="Brush.AccentGradient" StartPoint="0%,0%" EndPoint="100%,100%">

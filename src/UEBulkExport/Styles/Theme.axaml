@@ -188,6 +188,104 @@
     <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
   </Style>
 
+  <!-- Performance panel: tiles, keys, charts and load meters -->
+  <Style Selector="Border.Tile">
+    <Setter Property="Background" Value="{DynamicResource Brush.Field}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="14,12" />
+    <Setter Property="Margin" Value="0,0,10,0" />
+  </Style>
+  <Style Selector="UniformGrid.Tiles > Border.Tile:nth-last-child(1)">
+    <Setter Property="Margin" Value="0" />
+  </Style>
+  <Style Selector="TextBlock.TileLabel">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.TileValue">
+    <Setter Property="FontSize" Value="22" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+    <Setter Property="Margin" Value="0,2,0,0" />
+  </Style>
+  <Style Selector="TextBlock.TileDetail">
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+    <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+  </Style>
+  <!-- Identity keys: a swatch for tiles, a short line for the legends, as the marks are lines -->
+  <Style Selector="Border.Key">
+    <Setter Property="Width" Value="8" />
+    <Setter Property="Height" Value="8" />
+    <Setter Property="CornerRadius" Value="4" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.LineKey">
+    <Setter Property="Width" Value="14" />
+    <Setter Property="Height" Value="3" />
+    <Setter Property="CornerRadius" Value="1.5" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.Legend">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.ChartTitle">
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Border.Plot">
+    <Setter Property="Background" Value="{DynamicResource Brush.Field}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="12" />
+    <Setter Property="Padding" Value="10,10,14,6" />
+  </Style>
+  <Style Selector="Border.Chip">
+    <Setter Property="Background" Value="{DynamicResource Brush.Field}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="14" />
+    <Setter Property="Padding" Value="12,6" />
+  </Style>
+  <!-- A slow pulse on the recording dot; the only motion in the panel -->
+  <Style Selector="Ellipse.Dot.Live">
+    <Setter Property="Fill" Value="{DynamicResource Brush.Accent}" />
+    <Style.Animations>
+      <Animation Duration="0:0:1.6" IterationCount="INFINITE">
+        <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+        <KeyFrame Cue="50%"><Setter Property="Opacity" Value="0.35" /></KeyFrame>
+        <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1" /></KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
+  <!-- Load meters: the fill carries severity, the track is a lighter step behind it -->
+  <Style Selector="ProgressBar.Meter">
+    <Setter Property="Minimum" Value="0" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="Maximum" Value="100" />
+    <Setter Property="MinHeight" Value="4" />
+    <Setter Property="Height" Value="4" />
+    <Setter Property="CornerRadius" Value="2" />
+    <Setter Property="Margin" Value="0,6,0,0" />
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Accent}" />
+    <Setter Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+  </Style>
+  <Style Selector="ProgressBar.Meter.Warning">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Warning}" />
+  </Style>
+  <Style Selector="ProgressBar.Meter.Critical">
+    <Setter Property="Foreground" Value="{DynamicResource Brush.Error}" />
+  </Style>
+
   <!-- Small caption on a mode tile: the matching command line switch -->
   <Style Selector="TextBlock.Caption">
     <Setter Property="FontSize" Value="11" />

@@ -70,6 +70,10 @@ The pages:
   says whether the export is ready and, if not, why; **Dry run** previews the plan. Live progress
   includes throughput and ETA, followed by a result summary and shortcuts to the output, log and
   `errors.csv`. Recent games are one click away.
+- **Performance** — while an export or a migration runs, a panel on its page charts disk read
+  and write speed and the processor, memory and graphics load of the whole computer, second by
+  second, and names what holds the run back (for example *Disk-bound · busy 96 %*). Hover over a
+  chart for the readings at any moment; the history stays after the run for a look back.
 - **Migrate to UE** — rebuilds assets from a UE4 cooked dump inside your own Unreal project; see
   [Migrating assets to another engine version](#migrating-assets-to-another-engine-version).
 - **Browser** — inspect the mounted folder tree, search and filter entries by type, view paths and

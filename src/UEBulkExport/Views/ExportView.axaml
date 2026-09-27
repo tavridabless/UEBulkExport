@@ -3,6 +3,7 @@
              xmlns:vm="using:UEBulkExport.Gui.ViewModels"
              xmlns:loc="using:UEBulkExport.Gui.Localization"
              xmlns:svc="using:UEBulkExport.Gui.Services"
+             xmlns:views="using:UEBulkExport.Gui.Views"
              x:Class="UEBulkExport.Gui.Views.ExportView"
              x:DataType="vm:ExportViewModel">
 
@@ -347,6 +348,11 @@
             <Button Grid.Column="1" Content="{loc:Tr Common.Copy}" Command="{Binding CopyCommandCommand}" VerticalAlignment="Top" />
           </Grid>
         </Expander>
+
+        <!-- Hardware load while the run goes on, kept afterwards for a look back -->
+        <Panel IsVisible="{Binding Performance.IsVisible}">
+          <views:PerformancePanel DataContext="{Binding Performance}" />
+        </Panel>
 
         <!-- Outcome: error -->
         <Border x:Name="ErrorCard" Classes="Card" IsVisible="{Binding HasError}" BorderBrush="{DynamicResource Brush.Error}">

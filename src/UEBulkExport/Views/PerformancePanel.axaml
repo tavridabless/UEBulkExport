@@ -1,0 +1,153 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:UEBulkExport.Gui.ViewModels"
+             xmlns:loc="using:UEBulkExport.Gui.Localization"
+             xmlns:ctl="using:UEBulkExport.Gui.Controls"
+             x:Class="UEBulkExport.Gui.Views.PerformancePanel"
+             x:DataType="vm:PerformanceViewModel">
+
+  <!--
+    How hard the machine works during a run. System-wide on purpose: retoc, UE Viewer and the
+    Unreal Editor do much of the work in their own processes.
+  -->
+  <Border Classes="Card">
+    <StackPanel Spacing="16">
+
+      <!-- Header: what this is, whether it is recording, and what holds the run back -->
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <StackPanel Grid.Column="0" Spacing="2">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Perf.Title}" />
+            <Border Classes="Help" ToolTip.Tip="{loc:Tr Perf.Help}"><TextBlock /></Border>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <Ellipse Classes="Dot Live" IsVisible="{Binding IsActive}" />
+            <TextBlock Classes="Hint" Margin="0" Text="{Binding StatusText}" />
+          </StackPanel>
+        </StackPanel>
+        <Border Grid.Column="1" Classes="Chip" VerticalAlignment="Top">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <Ellipse Classes="Dot Warning" IsVisible="{Binding HasBottleneck}" />
+            <Ellipse Classes="Dot" IsVisible="{Binding !HasBottleneck}" />
+            <TextBlock Text="{Binding BottleneckText}" FontSize="12" VerticalAlignment="Center"
+                       Foreground="{DynamicResource Brush.Text}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <!-- Tiles: the current reading of each part, with its peak or total -->
+      <UniformGrid Columns="{Binding TileColumns}" Classes="Tiles">
+        <Border Classes="Tile">
+          <StackPanel Spacing="3">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <Border Classes="Key" Background="{DynamicResource Brush.Chart.Cpu}" />
+              <TextBlock Classes="TileLabel" Text="{loc:Tr Perf.Cpu}" />
+            </StackPanel>
+            <TextBlock Classes="TileValue" Text="{Binding CpuValue}" />
+            <TextBlock Classes="TileDetail" Text="{Binding CpuDetail}" />
+            <ProgressBar Classes="Meter" Value="{Binding CpuPercent}"
+                         Classes.Warning="{Binding CpuWarning}" Classes.Critical="{Binding CpuCritical}" />
+          </StackPanel>
+        </Border>
+        <Border Classes="Tile">
+          <StackPanel Spacing="3">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <Border Classes="Key" Background="{DynamicResource Brush.Chart.Memory}" />
+              <TextBlock Classes="TileLabel" Text="{loc:Tr Perf.Memory}" />
+            </StackPanel>
+            <TextBlock Classes="TileValue" Text="{Binding MemoryValue}" />
+            <TextBlock Classes="TileDetail" Text="{Binding MemoryDetail}" />
+            <ProgressBar Classes="Meter" Value="{Binding MemoryPercent}"
+                         Classes.Warning="{Binding MemoryWarning}" Classes.Critical="{Binding MemoryCritical}" />
+          </StackPanel>
+        </Border>
+        <Border Classes="Tile" ToolTip.Tip="{loc:Tr Perf.DiskHelp}">
+          <StackPanel Spacing="3">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <Border Classes="Key" Background="{DynamicResource Brush.TextMuted}" />
+              <TextBlock Classes="TileLabel" Text="{loc:Tr Perf.Disk}" />
+            </StackPanel>
+            <TextBlock Classes="TileValue" Text="{Binding DiskValue}" />
+            <TextBlock Classes="TileDetail" Text="{Binding DiskDetail}" />
+            <ProgressBar Classes="Meter" Value="{Binding DiskBusyPercent}"
+                         Classes.Warning="{Binding DiskWarning}" Classes.Critical="{Binding DiskCritical}" />
+          </StackPanel>
+        </Border>
+        <Border Classes="Tile" IsVisible="{Binding HasGpu}">
+          <StackPanel Spacing="3">
+            <StackPanel Orientation="Horizontal" Spacing="7">
+              <Border Classes="Key" Background="{DynamicResource Brush.Chart.Gpu}" />
+              <TextBlock Classes="TileLabel" Text="{loc:Tr Perf.Gpu}" />
+            </StackPanel>
+            <TextBlock Classes="TileValue" Text="{Binding GpuValue}" />
+            <TextBlock Classes="TileDetail" Text="{Binding GpuDetail}" />
+            <ProgressBar Classes="Meter" Value="{Binding GpuPercent}"
+                         Classes.Warning="{Binding GpuWarning}" Classes.Critical="{Binding GpuCritical}" />
+          </StackPanel>
+        </Border>
+      </UniformGrid>
+
+      <!-- Disk throughput: one unit, MB/s, two series with a legend -->
+      <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0" Classes="ChartTitle" Text="{loc:Tr Perf.DiskChart}" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16">
+            <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent"
+                        ToolTip.Tip="{Binding ReadLegendDetail}">
+              <Border Classes="LineKey" Background="{DynamicResource Brush.Chart.Read}" />
+              <TextBlock Classes="Legend" Text="{Binding ReadLegend}" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6" Background="Transparent"
+                        ToolTip.Tip="{Binding WriteLegendDetail}">
+              <Border Classes="LineKey" Background="{DynamicResource Brush.Chart.Write}" />
+              <TextBlock Classes="Legend" Text="{Binding WriteLegend}" />
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+        <Border Classes="Plot">
+          <ctl:PerformanceChart Height="200" Kind="Disk" Source="{Binding}"
+                                ReadBrush="{DynamicResource Brush.Chart.Read}"
+                                WriteBrush="{DynamicResource Brush.Chart.Write}"
+                                GridBrush="{DynamicResource Brush.Divider}"
+                                TextBrush="{DynamicResource Brush.Text}"
+                                MutedBrush="{DynamicResource Brush.TextMuted}"
+                                SurfaceBrush="{DynamicResource Brush.SurfaceSolid}"
+                                OutlineBrush="{DynamicResource Brush.FieldBorder}" />
+        </Border>
+      </StackPanel>
+
+      <!-- Load: one unit, per cent, so processor, memory and graphics share a scale -->
+      <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBlock Grid.Column="0" Classes="ChartTitle" Text="{loc:Tr Perf.LoadChart}" />
+          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="16">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Border Classes="LineKey" Background="{DynamicResource Brush.Chart.Cpu}" />
+              <TextBlock Classes="Legend" Text="{loc:Tr Perf.Cpu}" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Border Classes="LineKey" Background="{DynamicResource Brush.Chart.Memory}" />
+              <TextBlock Classes="Legend" Text="{loc:Tr Perf.Memory}" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasGpu}">
+              <Border Classes="LineKey" Background="{DynamicResource Brush.Chart.Gpu}" />
+              <TextBlock Classes="Legend" Text="{loc:Tr Perf.Gpu}" />
+            </StackPanel>
+          </StackPanel>
+        </Grid>
+        <Border Classes="Plot">
+          <ctl:PerformanceChart Height="150" Kind="Load" Source="{Binding}"
+                                CpuBrush="{DynamicResource Brush.Chart.Cpu}"
+                                MemoryBrush="{DynamicResource Brush.Chart.Memory}"
+                                GpuBrush="{DynamicResource Brush.Chart.Gpu}"
+                                GridBrush="{DynamicResource Brush.Divider}"
+                                TextBrush="{DynamicResource Brush.Text}"
+                                MutedBrush="{DynamicResource Brush.TextMuted}"
+                                SurfaceBrush="{DynamicResource Brush.SurfaceSolid}"
+                                OutlineBrush="{DynamicResource Brush.FieldBorder}" />
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </Border>
+
+</UserControl>

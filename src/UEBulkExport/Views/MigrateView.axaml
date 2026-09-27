@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:UEBulkExport.Gui.ViewModels"
              xmlns:loc="using:UEBulkExport.Gui.Localization"
+             xmlns:views="using:UEBulkExport.Gui.Views"
              x:Class="UEBulkExport.Gui.Views.MigrateView"
              x:DataType="vm:MigrateViewModel">
 
@@ -115,6 +116,11 @@
             <TextBlock Classes="Hint" Text="{loc:Tr Migrate.Editor.Hint}" />
           </StackPanel>
         </Expander>
+
+        <!-- Hardware load while the run goes on, kept afterwards for a look back -->
+        <Panel IsVisible="{Binding Performance.IsVisible}">
+          <views:PerformancePanel DataContext="{Binding Performance}" />
+        </Panel>
 
         <!-- Outcome: error, or a UE Viewer failure waiting for a decision -->
         <Border x:Name="ErrorCard" Classes="Card" IsVisible="{Binding HasError}" BorderBrush="{DynamicResource Brush.Error}">
