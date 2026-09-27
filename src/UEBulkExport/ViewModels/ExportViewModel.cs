@@ -159,29 +159,29 @@ public sealed partial class ExportViewModel : ObservableObject
 
     public IReadOnlyList<EnumOption<EMeshQuality>> MeshQualities { get; } =
     [
-        new(EMeshQuality.Highest, "Highest LOD only"),
-        new(EMeshQuality.Lowest, "Lowest LOD only"),
-        new(EMeshQuality.All, "All LODs")
+        new(EMeshQuality.Highest, L["Fmt.Quality.Highest"]),
+        new(EMeshQuality.Lowest, L["Fmt.Quality.Lowest"]),
+        new(EMeshQuality.All, L["Fmt.Quality.All"])
     ];
 
     public IReadOnlyList<EnumOption<ENaniteMeshFormat>> NaniteFormats { get; } =
     [
-        new(ENaniteMeshFormat.NoNanite, "Skip Nanite meshes"),
-        new(ENaniteMeshFormat.NaniteOnly, "Nanite only"),
-        new(ENaniteMeshFormat.NaniteFirst, "Nanite first"),
-        new(ENaniteMeshFormat.NaniteLast, "Nanite last")
+        new(ENaniteMeshFormat.NoNanite, L["Fmt.Nanite.Skip"]),
+        new(ENaniteMeshFormat.NaniteOnly, L["Fmt.Nanite.Only"]),
+        new(ENaniteMeshFormat.NaniteFirst, L["Fmt.Nanite.First"]),
+        new(ENaniteMeshFormat.NaniteLast, L["Fmt.Nanite.Last"])
     ];
 
     public IReadOnlyList<EnumOption<ESocketFormat>> SocketFormats { get; } =
     [
-        new(ESocketFormat.Bone, "As bones"),
-        new(ESocketFormat.Socket, "As sockets"),
-        new(ESocketFormat.None, "None")
+        new(ESocketFormat.Bone, L["Fmt.Sockets.Bone"]),
+        new(ESocketFormat.Socket, L["Fmt.Sockets.Socket"]),
+        new(ESocketFormat.None, L["Fmt.Sockets.None"])
     ];
 
     public IReadOnlyList<EnumOption<ETexturePlatform>> Platforms { get; } =
     [
-        new(ETexturePlatform.DesktopMobile, "Desktop / Mobile"),
+        new(ETexturePlatform.DesktopMobile, L["Fmt.Platform.Desktop"]),
         new(ETexturePlatform.XboxAndPlaystation4, "Xbox / PlayStation 4"),
         new(ETexturePlatform.Playstation5, "PlayStation 5"),
         new(ETexturePlatform.NintendoSwitch, "Nintendo Switch")
@@ -697,6 +697,9 @@ public sealed partial class ExportViewModel : ObservableObject
 
     public string OverwriteWarning => L["Export.Out.OverwriteWarning"];
 
+    /// <summary>retoc converts an IoStore container whole, so filters cannot apply there.</summary>
+    public bool ShowFilterIoStoreWarning => IsLegacyMode && _hasIoStore;
+
     private void RefreshSourceStatus()
     {
         foreach (var property in new[]
@@ -705,7 +708,7 @@ public sealed partial class ExportViewModel : ObservableObject
                      nameof(ShowEngineSelector), nameof(ScanText), nameof(ShowScanLine), nameof(ScanIsProblem),
                      nameof(ScanIsWarning), nameof(ScanIsNormal), nameof(CanRescan), nameof(ShowAes),
                      nameof(CanAddAesKey), nameof(AesPrompt), nameof(HasAesPrompt), nameof(MappingsText),
-                     nameof(MappingsIsWarning), nameof(MappingsIsNormal)
+                     nameof(MappingsIsWarning), nameof(MappingsIsNormal), nameof(ShowFilterIoStoreWarning)
                  })
             OnPropertyChanged(property);
     }

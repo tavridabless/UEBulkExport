@@ -235,7 +235,7 @@
                 <TextBox Classes="Mono" Text="{Binding ExcludeRegex}" Watermark="^Engine/" />
               </StackPanel>
             </Grid>
-            <TextBlock Classes="Warning" Text="{loc:Tr Export.Filters.LegacyIoStore}" IsVisible="{Binding IsLegacyMode}" />
+            <TextBlock Classes="Warning" Text="{loc:Tr Export.Filters.LegacyIoStore}" IsVisible="{Binding ShowFilterIoStoreWarning}" />
 
             <Separator />
 

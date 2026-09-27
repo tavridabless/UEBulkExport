@@ -49,6 +49,7 @@
             <Button Classes="Link" Content="{loc:Tr About.Link.Project}" Command="{Binding OpenProjectCommand}" />
             <Button Classes="Link" Content="{loc:Tr About.Link.Mappings}" Command="{Binding OpenMappingsCommand}" />
             <Button Classes="Link" Content="{loc:Tr About.Link.Issues}" Command="{Binding OpenIssuesCommand}" />
+            <Button Classes="Link" Content="{loc:Tr About.Link.Security}" Command="{Binding OpenSecurityCommand}" />
             <Button Classes="Link" Content="{loc:Tr About.Link.Cue4Parse}" Command="{Binding OpenCue4ParseCommand}" />
             <Button Classes="Link" Content="{loc:Tr About.Link.Retoc}" Command="{Binding OpenRetocCommand}" />
           </StackPanel>

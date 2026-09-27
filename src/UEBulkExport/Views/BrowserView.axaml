@@ -100,7 +100,7 @@
       <!-- Rows -->
       <Border Grid.Column="2" Classes="Card" Padding="0">
         <Grid RowDefinitions="Auto,*">
-          <Grid Grid.Row="0" ColumnDefinitions="34,22,*,72,112" Margin="18,12,18,6">
+          <Grid Grid.Row="0" ColumnDefinitions="34,22,*,72,168" Margin="18,12,18,6">
             <TextBlock Grid.Column="2" Text="{loc:Tr Browser.Column.Name}" Classes="Muted" FontSize="11" />
             <TextBlock Grid.Column="3" Text="{loc:Tr Browser.Column.Type}" Classes="Muted" FontSize="11" />
             <TextBlock Grid.Column="4" Text="{loc:Tr Browser.Column.Size}" Classes="Muted" FontSize="11" HorizontalAlignment="Right" />
@@ -110,7 +110,7 @@
                    Margin="8,0,8,8" Background="Transparent" DoubleTapped="OnRowDoubleTapped">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:BrowserRow">
-                <Grid ColumnDefinitions="34,22,*,72,112">
+                <Grid ColumnDefinitions="34,22,*,72,168">
                   <CheckBox Grid.Column="0" IsChecked="{Binding IsChecked}" MinWidth="0" Padding="0" Margin="0"
                             HorizontalAlignment="Center" VerticalAlignment="Center" />
                   <PathIcon Grid.Column="1" Width="14" Height="14" VerticalAlignment="Center"
@@ -124,7 +124,7 @@
                              Classes.ExcludedRow="{Binding IsExcluded}" Margin="8,0,0,0" />
                   <TextBlock Grid.Column="3" Text="{Binding TypeText}" FontSize="12" Classes="Muted Mono" VerticalAlignment="Center" />
                   <TextBlock Grid.Column="4" Text="{Binding SizeText}" FontSize="12" Classes="Muted" VerticalAlignment="Center"
-                             HorizontalAlignment="Right" />
+                             HorizontalAlignment="Right" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SizeText}" />
                 </Grid>
               </DataTemplate>
             </ListBox.ItemTemplate>

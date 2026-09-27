@@ -526,7 +526,7 @@
     <Setter Property="MinHeight" Value="0" />
     <Setter Property="CornerRadius" Value="16" />
     <Setter Property="Background" Value="{DynamicResource Brush.Field}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource Brush.CardBorder}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource Brush.FieldBorder}" />
     <Setter Property="BorderThickness" Value="1" />
     <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
   </Style>

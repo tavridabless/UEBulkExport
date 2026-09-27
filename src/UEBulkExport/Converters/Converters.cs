@@ -6,10 +6,11 @@ namespace UEBulkExport.Gui.Converters;
 
 public static class Format
 {
-    /// <summary>1536 → "1.5 KB". Used everywhere a byte count is shown.</summary>
+    /// <summary>1536 → "1.5 KB" ("1,5 КБ" in Russian). Used everywhere a byte count is shown.</summary>
     public static string Bytes(long bytes)
     {
-        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var loc = Localization.Loc.Instance;
+        string[] units = [loc["Unit.B"], loc["Unit.KB"], loc["Unit.MB"], loc["Unit.GB"], loc["Unit.TB"]];
         double value = bytes;
         var unit = 0;
         while (value >= 1024 && unit < units.Length - 1)
@@ -18,7 +19,11 @@ public static class Format
             unit++;
         }
 
-        return unit == 0 ? $"{bytes} B" : $"{value:0.#} {units[unit]}";
+        // The interface language decides the decimal separator, like every other number on screen.
+        var culture = CultureInfo.CurrentUICulture;
+        return unit == 0
+            ? string.Format(culture, "{0} {1}", bytes, units[0])
+            : string.Format(culture, "{0:0.#} {1}", value, units[unit]);
     }
 
     public static string Duration(TimeSpan t) =>

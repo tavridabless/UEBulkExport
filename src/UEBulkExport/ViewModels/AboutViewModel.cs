@@ -14,6 +14,7 @@ public sealed partial class AboutViewModel : ObservableObject
     public const string MappingsUrl = "https://github.com/tavridabless/UEBulkExport/blob/main/docs/mappings.md";
     public const string MappingsUrlRu = "https://github.com/tavridabless/UEBulkExport/blob/main/docs/mappings.ru.md";
     public const string IssuesUrl = "https://github.com/tavridabless/UEBulkExport/issues";
+    public const string SecurityUrl = "https://github.com/tavridabless/UEBulkExport/blob/main/SECURITY.md";
     public const string Cue4ParseUrl = "https://github.com/FabianFG/CUE4Parse";
     public const string RetocUrl = "https://github.com/trumank/retoc";
 
@@ -22,6 +23,7 @@ public sealed partial class AboutViewModel : ObservableObject
     [RelayCommand] private void OpenMappings() =>
         ShellHelper.OpenUrl(Loc.Instance.Language == "ru" ? MappingsUrlRu : MappingsUrl);
     [RelayCommand] private void OpenIssues() => ShellHelper.OpenUrl(IssuesUrl);
+    [RelayCommand] private void OpenSecurity() => ShellHelper.OpenUrl(SecurityUrl);
     [RelayCommand] private void OpenCue4Parse() => ShellHelper.OpenUrl(Cue4ParseUrl);
     [RelayCommand] private void OpenRetoc() => ShellHelper.OpenUrl(RetocUrl);
 
