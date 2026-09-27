@@ -2,6 +2,9 @@
 
 Thanks for looking. This is a small project with a narrow purpose, which keeps things simple.
 
+Taking part means following the [code of conduct](CODE_OF_CONDUCT.md). Found a security problem?
+Please do not open an issue; follow [SECURITY.md](SECURITY.md) and report it privately.
+
 ## Scope
 
 UEBulkExport is a front end for [CUE4Parse](https://github.com/FabianFG/CUE4Parse). That boundary

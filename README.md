@@ -17,6 +17,10 @@
 
 </div>
 
+<p align="center">
+  <img src="docs/images/readme-hero.webp" alt="UEBulkExport turns Unreal containers into an organised asset tree" width="980">
+</p>
+
 ---
 
 ## What this is
@@ -102,6 +106,10 @@ an interactive shell or return its exit code there.
 ---
 
 ## Output
+
+<p align="center">
+  <img src="docs/images/export-pipeline.webp" alt="Export pipeline: reading the container, processing, four kinds of result and the final folder tree" width="920">
+</p>
 
 By default, the container's package tree is mirrored. For a package, the output is its cooked
 `.uasset` or `.umap` plus any associated `.uexp`, `.ubulk` and `.uptnl`. No `.usmap` is needed.
@@ -209,6 +217,10 @@ Run `--mode full` for converted files or `--mode json` for property dumps.
 
 ## Migrating assets to another engine version
 
+<p align="center">
+  <img src="docs/images/asset-migration.webp" alt="Cooked assets migrated into an organised Unreal project" width="920">
+</p>
+
 The **Migrate to UE** page turns a loose cooked dump from an older game into ordinary assets of your own Unreal project. It runs
 in two stages:
 
@@ -281,6 +293,10 @@ the right to use.
 ---
 
 ## Modes
+
+<p align="center">
+  <img src="docs/images/export-modes.webp" alt="Four results: game packages, converted files, data for comparison and an exact copy" width="860">
+</p>
 
 | Mode | In the window | Mappings | What it does |
 |---|---|---|---|
@@ -534,6 +550,15 @@ Other runtime identifiers do build and are covered by CI, so `linux-x64` and `os
 perfectly usable for containers that avoid Oodle compression. Animation export there needs a
 native library built from the `CUE4Parse-Natives` sources in the CUE4Parse repository; without
 it, animations are skipped and everything else still works.
+
+---
+
+## Contributing and security
+
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — how to build the project, shape a change and send a pull request.
+- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** — how we treat each other here and how to report a problem.
+- **[SECURITY.md](SECURITY.md)** — how to report a vulnerability. Please do not open a public issue
+  for it: send a private report from the repository's **Security** tab.
 
 ---
 

@@ -1,0 +1,81 @@
+name: Bug report / Сообщить об ошибке
+description: Something does not work as described. / Что-то работает не так, как описано.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. English or Russian — both are fine.
+        Спасибо, что сообщаете. Можно писать по-английски или по-русски.
+
+        **Security problem? Do not use this form** — report it privately as described in
+        [SECURITY.md](https://github.com/tavridabless/UEBulkExport/blob/main/SECURITY.md).
+        **Уязвимость? Не используйте эту форму** — сообщите приватно по инструкции в SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: UEBulkExport version / Версия
+      description: Shown next to the title in the window, or `UEBulkExport.Cli --version`.
+      placeholder: "2.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: frontend
+    attributes:
+      label: Where / Где
+      options:
+        - Window — Export / Окно — Экспорт
+        - Window — Migrate to UE / Окно — Перенос в UE
+        - Window — Browser / Окно — Обзор
+        - Command line / Командная строка
+        - Installer / Установщик
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Game and engine version / Игра и версия движка
+      description: The game you exported and the Unreal Engine version shown on the Export page.
+      placeholder: "MyGame, Unreal Engine 5.3, IoStore"
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Result / Результат
+      options:
+        - Game packages (legacy) / Игровые пакеты
+        - Converted files (full) / Готовые файлы
+        - Data for comparison (json) / Данные для сравнения
+        - Exact copy (raw) / Точная копия
+        - Not an export / Не экспорт
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened / Что произошло
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Equivalent command line / Эквивалентная команда
+      description: From the **Command line** section of the Export page. Remove AES keys before posting.
+      render: bat
+  - type: textarea
+    id: log
+    attributes:
+      label: Log / Журнал
+      description: |
+        The end of `UEBulkExport.log` or `errors.csv` from the output folder, or `crash.log` from
+        `%LOCALAPPDATA%\UEBulkExport`. Remove AES keys and anything personal.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting / Перед отправкой
+      options:
+        - label: I use the latest release. / Я использую последний релиз.
+          required: true
+        - label: I removed AES keys and personal data. / Я удалил AES-ключи и личные данные.
+          required: true
+        - label: I did not attach copyrighted game files. / Я не прикладывал файлы игр, защищённые авторским правом.
+          required: true

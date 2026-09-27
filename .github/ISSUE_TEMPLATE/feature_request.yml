@@ -1,0 +1,29 @@
+name: Feature request / Предложение
+description: An idea that would make UEBulkExport more useful. / Идея, которая сделает UEBulkExport полезнее.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Parsing a format or decoding an asset type usually belongs in
+        [CUE4Parse](https://github.com/FabianFG/CUE4Parse/issues); workflow, export and interface ideas belong here.
+        Разбор форматов и типов ассетов обычно относится к CUE4Parse; идеи про работу, экспорт и интерфейс — сюда.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem / Задача
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help / Что поможет
+      description: How you imagine it working, in the window or on the command line.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds / Обходные пути
+      description: What you do today instead, if anything.

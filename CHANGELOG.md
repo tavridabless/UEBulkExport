@@ -50,6 +50,9 @@ All notable changes to this project are documented here. The format follows
 - Releases carry `SHA256SUMS.txt`. The release workflow signs the executables, the installer and
   the uninstaller when a signing certificate is configured as a repository secret.
 - Setup and uninstall write logs to `%TEMP%`.
+- A code of conduct, a security policy with private vulnerability reporting through GitHub, issue
+  forms for bugs and feature requests, and a pull request checklist. The README gained
+  illustrations of the export pipeline, the four results and asset migration.
 - A **Performance** panel on the Export and Migrate to UE pages records the whole computer while
   a run goes on: disk read and write speed, processor, memory and graphics load, a reading a
   second, with tiles for the current values, peaks and totals, charts with a crosshair readout,
