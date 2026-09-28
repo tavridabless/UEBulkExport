@@ -26,9 +26,22 @@ internal sealed class ResumeJournal : IDisposable
 
         if (overwrite && File.Exists(path)) File.Delete(path);
 
+        var tornTail = EndsWithoutNewline(path);
         _stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read,
             bufferSize: 4096, FileOptions.WriteThrough);
         _writer = new StreamWriter(_stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+        // A line cut by a power loss must not swallow the first record of this run.
+        if (tornTail) _writer.WriteLine();
+    }
+
+    private static bool EndsWithoutNewline(string path)
+    {
+        if (!File.Exists(path)) return false;
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        if (stream.Length == 0) return false;
+        stream.Seek(-1, SeekOrigin.End);
+        return stream.ReadByte() != '\n';
     }
 
     public static HashSet<string> Load(string path, string outputDirectory, string profile)
@@ -58,7 +71,8 @@ internal sealed class ResumeJournal : IDisposable
             try
             {
                 var entry = JsonSerializer.Deserialize<Entry>(line);
-                if (entry is null || entry.Profile != profile || !OutputsAreIntact(outputDirectory, entry.Outputs))
+                if (entry is null || entry.Path is null || entry.Outputs is null || entry.Profile != profile ||
+                    !OutputsAreIntact(outputDirectory, entry.Outputs))
                 {
                     invalid++;
                     continue;
@@ -148,7 +162,8 @@ internal sealed class ResumeJournal : IDisposable
     }
 
     private static IEnumerable<string> ContainerFiles(string directory) =>
-        Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories)
+        Directory.EnumerateFiles(directory, "*",
+                new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 })
             .Where(path => IsContainerExtension(Path.GetExtension(path)))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
 

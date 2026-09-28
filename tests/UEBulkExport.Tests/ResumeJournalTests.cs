@@ -46,6 +46,35 @@ public sealed class ResumeJournalTests
     }
 
     [Fact]
+    public void A_record_written_after_a_torn_line_survives()
+    {
+        using var temp = new TempDir();
+        var options = OptionsFor(temp);
+        var output = temp.File("Export", "next.bin");
+        File.WriteAllBytes(output, [5]);
+        var journalPath = Path.Combine(options.OutputDirectory, "_completed.raw.txt");
+        var profile = ResumeJournal.CreateProfile(options);
+        File.WriteAllText(journalPath, "{\"Profile\":");
+
+        using (var journal = new ResumeJournal(journalPath, options.OutputDirectory, profile, overwrite: false))
+            journal.MarkDone("next.bin", [output]);
+
+        Assert.Contains("next.bin", ResumeJournal.Load(journalPath, options.OutputDirectory, profile));
+    }
+
+    [Fact]
+    public void A_record_without_outputs_is_ignored()
+    {
+        using var temp = new TempDir();
+        var options = OptionsFor(temp);
+        var journalPath = Path.Combine(options.OutputDirectory, "_completed.raw.txt");
+        var profile = ResumeJournal.CreateProfile(options);
+        File.WriteAllText(journalPath, $"{{\"Profile\":\"{profile}\",\"Path\":\"a.bin\"}}" + Environment.NewLine);
+
+        Assert.Empty(ResumeJournal.Load(journalPath, options.OutputDirectory, profile));
+    }
+
+    [Fact]
     public void Checkpoints_from_a_different_export_profile_are_not_reused()
     {
         using var temp = new TempDir();

@@ -401,14 +401,23 @@ public sealed class BulkExporter : IDisposable
             var stagedByRelativePath = stagedFiles.ToDictionary(
                 path => RelativeStagingPath(staging, path), StringComparer.OrdinalIgnoreCase);
             var packageFiles = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+            var converted = new List<GameFile>();
 
             foreach (var file in packages)
             {
                 var mainRelative = file.Path.Replace('/', Path.DirectorySeparatorChar);
                 if (!stagedByRelativePath.ContainsKey(mainRelative))
-                    throw new IOException($"retoc did not create the expected package: {file.Path}");
+                {
+                    // One package retoc could not convert must not throw away all the others.
+                    _failed++;
+                    _processed++;
+                    checkpointed++;
+                    RecordError(file.Path, new IOException("retoc did not create this package"));
+                    continue;
+                }
 
                 packageFiles[file.Path] = PackageOutputsInStaging(staging, mainRelative);
+                converted.Add(file);
             }
 
             var outputs = PublishStagingTree(staging);
@@ -418,9 +427,9 @@ public sealed class BulkExporter : IDisposable
             var common = outputs.Where(path => !claimed.Contains(
                 Path.GetRelativePath(_options.OutputDirectory, path))).ToList();
 
-            for (var index = 0; index < packages.Count; index++)
+            for (var index = 0; index < converted.Count; index++)
             {
-                var file = packages[index];
+                var file = converted[index];
                 var artifacts = packageFiles[file.Path].Select(path =>
                     Path.Combine(_options.OutputDirectory, Path.GetRelativePath(staging, path))).ToList();
                 if (index == 0) artifacts.AddRange(common);
@@ -434,6 +443,15 @@ public sealed class BulkExporter : IDisposable
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            throw;
+        }
+        catch (UserFacingException)
+        {
+            // retoc missing or unable to read this engine version: the explanation belongs on
+            // screen, not in errors.csv. Ordinary entries are already checkpointed.
+            var remaining = packages.Count - checkpointed;
+            _failed += remaining;
+            _processed += remaining;
             throw;
         }
         catch (Exception e)
@@ -707,7 +725,8 @@ public sealed class BulkExporter : IDisposable
             wrote |= WriteBytes(soundPath, data);
             outputs.Add(soundPath);
 
-            if (_options.ConvertAudio && extension is not ("wav" or "ogg"))
+            // "bin" means the format is unknown; vgmstream would only fail on it on every run.
+            if (_options.ConvertAudio && extension is not ("wav" or "ogg" or "bin"))
             {
                 var wavPath = $"{basePath}.wav";
                 var conversion = await Audio.TryConvertToWavAsync(soundPath, wavPath, ct);
@@ -803,8 +822,9 @@ public sealed class BulkExporter : IDisposable
                 "Wait for it to finish, or choose a different output folder.");
         }
 
-        foreach (var temporary in Directory.EnumerateFiles(_options.OutputDirectory,
-                     "*" + AtomicFile.TemporarySuffix, SearchOption.AllDirectories))
+        // A drive root or a folder with restricted subfolders must not stop the export.
+        foreach (var temporary in Directory.EnumerateFiles(_options.OutputDirectory, "*" + AtomicFile.TemporarySuffix,
+                     new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = 0 }))
             AtomicFile.TryDelete(temporary);
 
         Directory.CreateDirectory(StagingBase);

@@ -36,7 +36,8 @@ internal static class AtomicFile
 
         // External converters have already closed the file. FlushFileBuffers through a new
         // handle before the rename so a journal record can never get ahead of the file data.
-        using (var stream = new FileStream(stagedPath, FileMode.Open, FileAccess.Read,
+        // The handle needs write access: FileStream skips the flush on a read-only stream.
+        using (var stream = new FileStream(stagedPath, FileMode.Open, FileAccess.ReadWrite,
                    FileShare.Read, bufferSize: 1, FileOptions.WriteThrough))
             stream.Flush(flushToDisk: true);
 
