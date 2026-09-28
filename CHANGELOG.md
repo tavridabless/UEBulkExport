@@ -6,16 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Fixed
-
-- Interrupted exports now publish files atomically and keep a durable, validated resume journal.
-  A power loss cannot make a truncated output look complete, closing the GUI waits for checkpoint
-  persistence, and cancelled `vgmstream` processes no longer outlive the export.
-- Legacy IoStore conversion now writes through staging after ordinary entries. Cancelling or
-  failing retoc keeps all previously checkpointed work and leaves no partial final packages; the
-  incomplete retoc phase is retried on the next run.
-
-## [2.1.0] - 2026-09-27
+## [2.1.0] - 2026-09-29
 
 ### Added
 
@@ -90,6 +81,10 @@ All notable changes to this project are documented here. The format follows
   ready for the next command, instead of a console that can only show the help and close.
 - The application starts in the language chosen in the installer until a language is picked in
   Settings.
+- Resuming trusts only what it can verify. The resume journal has a new format, so an export left
+  unfinished by 2.0.0 starts over once. A finished entry is redone when its files are missing or
+  changed size, when the game's containers change (for example after a game update) or when the
+  export settings change; its files in the output folder are then written again.
 - The installer is built by one script (`installer/build.ps1`) on developer machines, in CI and
   for releases. CI now builds it on every push and pull request, installs it silently, runs the
   installed CLI, uninstalls it and keeps the setup as a build artifact; a release is attached only
@@ -97,6 +92,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Interrupted exports now publish files atomically and keep a durable, validated resume journal.
+  A power loss cannot make a truncated output look complete, closing the GUI waits for checkpoint
+  persistence, and cancelled `vgmstream` processes no longer outlive the export.
+- Legacy IoStore conversion now writes through staging after ordinary entries. Cancelling or
+  failing retoc keeps all previously checkpointed work and leaves no partial final packages; the
+  incomplete retoc phase is retried on the next run.
 - The Russian interface no longer shows English option names for mesh LODs, Nanite, sockets
   and texture platform, or English size units (КБ, МБ, ГБ). The Browser size column no longer
   cuts folder totals short, and its type filters are visible as buttons in the light theme.
@@ -250,6 +251,7 @@ First release.
 - A UE4SS mod under `tools/` that dumps a `.usmap` on a timer, for keyboards without a numeric
   keypad.
 
+[Unreleased]: https://github.com/tavridabless/UEBulkExport/compare/v2.1.0...HEAD
 [1.0.0]: https://github.com/tavridabless/UEBulkExport/releases/tag/v1.0.0
 [1.1.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.0.0...v1.1.0
 [1.2.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.1.0...v1.2.0
