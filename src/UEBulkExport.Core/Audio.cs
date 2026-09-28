@@ -2,6 +2,8 @@ using System.Diagnostics;
 
 namespace UEBulkExport;
 
+internal enum AudioConversionStatus { Unavailable, Converted, Failed }
+
 /// <summary>
 /// Shipping Unreal builds usually store audio as Bink (.binka) or ADPCM, neither of which most
 /// tools can open. vgmstream turns those into plain .wav when it is available.
@@ -33,11 +35,13 @@ public static class Audio
                      "Pass --vgmstream to also get .wav files.");
     }
 
-    public static async Task<bool> TryConvertToWavAsync(string sourcePath, string wavPath, bool skipExisting,
+    internal static async Task<AudioConversionStatus> TryConvertToWavAsync(string sourcePath, string wavPath,
         CancellationToken ct)
     {
-        if (_vgmStream is null) return false;
-        if (skipExisting && File.Exists(wavPath)) return false;
+        if (_vgmStream is null) return AudioConversionStatus.Unavailable;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(wavPath)!);
+        var temporary = AtomicFile.CreateTemporaryPath(wavPath);
 
         var info = new ProcessStartInfo(_vgmStream)
         {
@@ -46,25 +50,62 @@ public static class Audio
             RedirectStandardError = true
         };
         info.ArgumentList.Add("-o");
-        info.ArgumentList.Add(wavPath);
+        info.ArgumentList.Add(temporary);
         info.ArgumentList.Add(sourcePath);
 
+        Process? process = null;
         try
         {
-            using var process = Process.Start(info);
-            if (process is null) return false;
+            process = Process.Start(info);
+            if (process is null) return AudioConversionStatus.Failed;
 
             // vgmstream is quick, but a malformed stream can make it sit there indefinitely.
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(60));
 
             await process.WaitForExitAsync(timeout.Token);
-            return process.ExitCode == 0 && File.Exists(wavPath);
+            if (process.ExitCode != 0 || !File.Exists(temporary))
+            {
+                Log.Warn($"vgmstream failed on {Path.GetFileName(sourcePath)} (exit {process.ExitCode})");
+                return AudioConversionStatus.Failed;
+            }
+
+            AtomicFile.Publish(temporary, wavPath);
+            return AudioConversionStatus.Converted;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            Stop(process);
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            Stop(process);
+            Log.Warn($"vgmstream timed out on {Path.GetFileName(sourcePath)}");
+            return AudioConversionStatus.Failed;
         }
         catch (Exception e)
         {
+            Stop(process);
             Log.Warn($"vgmstream failed on {Path.GetFileName(sourcePath)}: {e.Message}");
-            return false;
+            return AudioConversionStatus.Failed;
         }
+        finally
+        {
+            process?.Dispose();
+            AtomicFile.TryDelete(temporary);
+        }
+    }
+
+    private static void Stop(Process? process)
+    {
+        try
+        {
+            if (process is not { HasExited: false }) return;
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+        }
+        catch (InvalidOperationException) { }
+        catch (System.ComponentModel.Win32Exception) { }
     }
 }

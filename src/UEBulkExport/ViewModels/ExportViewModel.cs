@@ -228,7 +228,7 @@ public sealed partial class ExportViewModel : ObservableObject
     public bool IsRunning => State is RunState.Preparing or RunState.Running or RunState.Cancelling;
     public bool CanRun => !IsBusy;
     public bool CanStart => !IsBusy && ReadinessState.Level != Readiness.Blocked;
-    public bool CanCancel => State is RunState.Running or RunState.Preparing;
+    public bool CanCancel => State is RunState.Scanning or RunState.Running or RunState.Preparing;
     public bool HasError => !string.IsNullOrEmpty(ErrorHeadline);
     public bool HasSummary => Summary.Count > 0;
     public bool ShowProgress => IsRunning;

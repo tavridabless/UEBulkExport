@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Interrupted exports now publish files atomically and keep a durable, validated resume journal.
+  A power loss cannot make a truncated output look complete, closing the GUI waits for checkpoint
+  persistence, and cancelled `vgmstream` processes no longer outlive the export.
+- Legacy IoStore conversion now writes through staging after ordinary entries. Cancelling or
+  failing retoc keeps all previously checkpointed work and leaves no partial final packages; the
+  incomplete retoc phase is retried on the next run.
+
 ## [2.1.0] - 2026-09-27
 
 ### Added

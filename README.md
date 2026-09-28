@@ -449,11 +449,17 @@ UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Export" ^
 
 ## Resuming, logs and errors
 
-Every processed entry is appended to `_completed.<mode>.txt` in the output folder. Re-running the same
-command picks up where it stopped — handy when an export is interrupted, or when you want to add
-`--materials` to a finished run without redoing everything. `--overwrite` starts fresh. Ctrl+C
-(or Cancel in the window) stops cleanly: the resume index is flushed and a summary printed, so
-the next run continues from that point.
+Every fully processed entry is appended to `_completed.<mode>.txt` in the output folder. Its files
+are first created in staging, flushed to disk, and atomically moved to their final paths. A power
+loss therefore cannot turn a truncated `.uasset`, `.uexp`, `.ubulk`, or converted file into a
+completed result. The next run verifies the journal, file lengths, source containers, and export
+settings, keeps finished work, and retries only incomplete entries.
+
+Legacy IoStore conversion runs through retoc in staging after ordinary entries. Cancelling it keeps
+the ordinary files that already finished, while the incomplete retoc phase is safely retried by the
+next run. One bad ordinary entry is reported without stopping the remaining work. `--overwrite`
+starts fresh. Ctrl+C, Cancel, and closing the window stop active work, flush the journal, and only
+then finish the run.
 
 Two more files may land in the output folder:
 

@@ -72,7 +72,7 @@
   "Export.Out.Placeholder": "D:\\Export\\MyGame",
   "Export.Out.Title": "Save to",
   "Export.Out.OverwriteWarning": "“Start over” is on: files already in the output folder are written again.",
-  "Export.Out.Hint": "Files that are already there are skipped, so an interrupted export can resume safely.",
+  "Export.Out.Hint": "Fully completed entries are journalled, so an interrupted export can resume safely.",
 
   "Mode.Legacy.Title": "Game packages",
   "Mode.Legacy.Desc": "Cooked .uasset and .umap files with their data, as the game stores them.",

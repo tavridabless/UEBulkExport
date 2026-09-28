@@ -14,6 +14,7 @@ public sealed partial class MainWindow : Window
 {
     private readonly Dictionary<string, Control> _pages = new();
     private bool _closeConfirmed;
+    private bool _closingGracefully;
 
     public MainWindow()
     {
@@ -120,6 +121,8 @@ public sealed partial class MainWindow : Window
             if (!confirmed) return;
         }
 
+        await shell.CancelAllAndWaitAsync();
+
         shell.AppSettings.WindowWidth = Width;
         shell.AppSettings.WindowHeight = Height;
         shell.AppSettings.Save();
@@ -127,7 +130,6 @@ public sealed partial class MainWindow : Window
         if (!ShellHelper.TryRestartApplication()) return;
 
         _closeConfirmed = true;
-        shell.CancelAll();
         Close();
     }
 
@@ -181,15 +183,21 @@ public sealed partial class MainWindow : Window
             shell.AppSettings.WindowWidth = Width;
             shell.AppSettings.WindowHeight = Height;
 
-            if (!_closeConfirmed && shell.IsBusy && shell.AppSettings.ConfirmCloseWhileRunning)
+            if (!_closeConfirmed && shell.IsBusy)
             {
                 e.Cancel = true;
-                if (await ConfirmAsync("Close.Running.Title", "Close.Running.Message", "Close.Running.Confirm", "Close.Running.Stay"))
-                {
-                    _closeConfirmed = true;
-                    shell.CancelAll();
-                    Close();
-                }
+                if (_closingGracefully) return;
+
+                if (shell.AppSettings.ConfirmCloseWhileRunning &&
+                    !await ConfirmAsync("Close.Running.Title", "Close.Running.Message",
+                        "Close.Running.Confirm", "Close.Running.Stay")) return;
+
+                _closingGracefully = true;
+                await shell.CancelAllAndWaitAsync();
+                shell.AppSettings.Save();
+                _closeConfirmed = true;
+                _closingGracefully = false;
+                Close();
 
                 return;
             }

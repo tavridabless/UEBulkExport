@@ -49,6 +49,13 @@ public sealed partial class MainViewModel : ObservableObject
         if (Migrate.CancelCommand.CanExecute(null)) Migrate.CancelCommand.Execute(null);
     }
 
+    /// <summary>Lets exporters flush their checkpoints before the last window ends the process.</summary>
+    public async Task CancelAllAndWaitAsync()
+    {
+        CancelAll();
+        while (IsBusy) await Task.Delay(25);
+    }
+
     public MainViewModel(AppSettings settings)
     {
         AppSettings = settings;

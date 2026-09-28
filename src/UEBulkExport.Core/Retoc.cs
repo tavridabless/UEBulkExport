@@ -86,7 +86,8 @@ public static class Retoc
         }
     }
 
-    public static async Task ConvertAsync(string executable, Options options, CancellationToken ct)
+    public static async Task ConvertAsync(string executable, Options options, string inputPath,
+        string outputDirectory, CancellationToken ct)
     {
         // Cli.Prepare rejects several keys up front; a second key here means a caller skipped it.
         if (options.AesKeys.Count > 1)
@@ -124,8 +125,8 @@ public static class Retoc
             Log.Info($"retoc engine version: {engineVersion}");
         }
 
-        start.ArgumentList.Add(options.PaksDirectory);
-        start.ArgumentList.Add(options.OutputDirectory);
+        start.ArgumentList.Add(inputPath);
+        start.ArgumentList.Add(outputDirectory);
 
         Process? started;
         try { started = Process.Start(start); }
@@ -161,9 +162,21 @@ public static class Retoc
         }
         catch (OperationCanceledException)
         {
-            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            Stop(process);
             throw;
         }
+    }
+
+    private static void Stop(Process process)
+    {
+        try
+        {
+            if (process.HasExited) return;
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+        }
+        catch (InvalidOperationException) { }
+        catch (Win32Exception) { }
     }
 
     private static string LastLines(string output) =>

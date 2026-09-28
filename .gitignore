@@ -18,6 +18,9 @@ Export/
 export/
 _completed.txt
 _completed.*.txt
+.uebulk-staging/
+.uebulk-export.lock
+*.uebulk-part
 errors.csv
 *.log
 
