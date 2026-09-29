@@ -31,6 +31,7 @@ public sealed class AppSettings
 
     public string ConversionSourcePath { get; set; } = "";
     public string ConversionSourceVersion { get; set; } = "4.27";
+    public string ConversionUsmapPath { get; set; } = "";
     public string UModelPath { get; set; } = "";
     public string TargetProjectPath { get; set; } = "";
     public string UnrealEditorPath { get; set; } = "";

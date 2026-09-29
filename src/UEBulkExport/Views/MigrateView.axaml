@@ -97,8 +97,8 @@
           <StackPanel Margin="4,6,4,4">
             <TextBlock Classes="Hint" Text="{loc:Tr Migrate.Tools.Hint}" Margin="0,0,0,4" />
 
-            <TextBlock Classes="Label" Text="{loc:Tr Migrate.UModel.Label}" />
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock Classes="Label" Text="{loc:Tr Migrate.UModel.Label}" IsVisible="{Binding !IsUE5Source}" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding !IsUE5Source}">
               <TextBox Grid.Column="0" Text="{Binding UModelPath}" Watermark="D:\Tools\umodel\umodel_64.exe" />
               <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseUModelCommand}" />
             </Grid>
@@ -106,6 +106,15 @@
               <TextBlock Classes="Hint" Margin="0" Text="{loc:Tr Migrate.UModel.Missing}" VerticalAlignment="Center" />
               <Button Classes="Link" Content="{loc:Tr Migrate.UModel.Get}" Command="{Binding OpenUEViewerSiteCommand}"
                       FontSize="12" VerticalAlignment="Center" />
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding IsUE5Source}">
+              <TextBlock Classes="Label" Text="{loc:Tr Migrate.Mappings.Label}" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBox Grid.Column="0" Text="{Binding MappingsPath}" Watermark="D:\Mappings\Bodycam.usmap" />
+                <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseMappingsCommand}" />
+              </Grid>
+              <TextBlock Classes="Hint" Text="{loc:Tr Migrate.Mappings.Hint}" />
             </StackPanel>
 
             <TextBlock Classes="Label" Text="{loc:Tr Migrate.Editor.Label}" />

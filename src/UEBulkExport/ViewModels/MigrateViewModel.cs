@@ -13,7 +13,7 @@ namespace UEBulkExport.Gui.ViewModels;
 public enum Readiness { Ready, Warning, Blocked }
 
 /// <summary>
-/// The Migrate page: rebuilds a UE4 cooked dump as assets of another Unreal project. A workflow of
+/// The Migrate page: rebuilds a UE4 or UE5 cooked dump as assets of another Unreal project. A workflow of
 /// its own, with its own source, result, tools and run, so it lives apart from the export form.
 /// </summary>
 public sealed partial class MigrateViewModel : ObservableObject
@@ -28,6 +28,7 @@ public sealed partial class MigrateViewModel : ObservableObject
 
     [ObservableProperty] private string _sourcePath = "";
     [ObservableProperty] private EngineVersionOption _sourceVersion;
+    [ObservableProperty] private string _mappingsPath = "";
     [ObservableProperty] private string _uModelPath = "";
     [ObservableProperty] private string _targetProjectPath = "";
     [ObservableProperty] private string _unrealEditorPath = "";
@@ -48,7 +49,9 @@ public sealed partial class MigrateViewModel : ObservableObject
     [ObservableProperty] private string _lastReportPath = "";
 
     public IReadOnlyList<EngineVersionOption> SourceVersions { get; } =
-        Enumerable.Range(0, 28).Reverse().Select(minor => new EngineVersionOption($"4.{minor}")).ToArray();
+        Enumerable.Range(0, 9).Reverse().Select(minor => new EngineVersionOption($"5.{minor}"))
+            .Concat(Enumerable.Range(0, 28).Reverse().Select(minor => new EngineVersionOption($"4.{minor}")))
+            .ToArray();
 
     public ObservableCollection<SummaryLine> Summary { get; } = [];
 
@@ -75,7 +78,8 @@ public sealed partial class MigrateViewModel : ObservableObject
     {
         SourcePath = _settings.ConversionSourcePath;
         SourceVersion = SourceVersions.FirstOrDefault(v => v.Version == _settings.ConversionSourceVersion)
-                        ?? SourceVersions[0];
+                        ?? SourceVersions.First(v => v.Version == "4.27");
+        MappingsPath = _settings.ConversionUsmapPath;
         UModelPath = _settings.UModelPath;
         TargetProjectPath = _settings.TargetProjectPath;
         UnrealEditorPath = _settings.UnrealEditorPath;
@@ -87,6 +91,8 @@ public sealed partial class MigrateViewModel : ObservableObject
     // ---------------------------------------------------------------- derived state
 
     private bool UModelFound => File.Exists(UModelPath.Trim());
+    private bool MappingsProvided => !string.IsNullOrWhiteSpace(MappingsPath);
+    private bool MappingsFound => File.Exists(MappingsPath.Trim());
     private bool EditorFound => File.Exists(UnrealEditorPath.Trim());
     private bool ProjectFound => File.Exists(TargetProjectPath.Trim());
 
@@ -105,14 +111,20 @@ public sealed partial class MigrateViewModel : ObservableObject
     public bool HasTargetVersion => TargetVersion is not null;
 
     /// <summary>One line for the collapsed Tools section, so it need not be opened just to check.</summary>
+    public bool IsUE5Source => DumpConversionService.IsUE5Source(SourceVersion.Version);
+
     public string ToolsSummary => L.Format("Migrate.Tools.Summary",
         EditorFound
             ? TargetVersion is { } v ? L.Format("Migrate.Tools.EditorFoundVersion", v) : L["Migrate.Tools.EditorFound"]
             : L["Migrate.Tools.EditorMissing"],
-        UModelFound ? L["Migrate.Tools.UModelFound"] : L["Migrate.Tools.UModelMissing"]);
+        IsUE5Source
+            ? MappingsFound ? L["Migrate.Tools.MappingsFound"]
+                : MappingsProvided ? L["Migrate.Tools.MappingsInvalid"] : L["Migrate.Tools.MappingsMissing"]
+            : UModelFound ? L["Migrate.Tools.UModelFound"] : L["Migrate.Tools.UModelMissing"]);
 
-    public bool ToolsMissing => !UModelFound || !EditorFound;
-    public bool ShowUModelHelp => !UModelFound;
+    public bool ToolsMissing => !EditorFound ||
+                                (IsUE5Source ? MappingsProvided && !MappingsFound : !UModelFound);
+    public bool ShowUModelHelp => !IsUE5Source && !UModelFound;
 
     public bool OverwriteWarningVisible => Overwrite;
     public string OverwriteWarning => L.Format("Migrate.Overwrite.Warning", DestinationPath.Trim());
@@ -128,7 +140,10 @@ public sealed partial class MigrateViewModel : ObservableObject
             if (!DestinationPath.Trim().StartsWith("/Game", StringComparison.OrdinalIgnoreCase))
                 return (Readiness.Blocked, L["Migrate.Ready.BadDestination"]);
             if (!EditorFound) return (Readiness.Blocked, L["Migrate.Ready.NoEditor"]);
-            if (!UModelFound) return (Readiness.Blocked, L["Migrate.Ready.NoUModel"]);
+            if (IsUE5Source && MappingsProvided && !MappingsFound)
+                return (Readiness.Blocked, L["Migrate.Ready.BadMappings"]);
+            if (IsUE5Source && !MappingsProvided) return (Readiness.Warning, L["Migrate.Ready.NoMappings"]);
+            if (!IsUE5Source && !UModelFound) return (Readiness.Blocked, L["Migrate.Ready.NoUModel"]);
             if (Overwrite) return (Readiness.Warning, OverwriteWarning);
             return (Readiness.Ready, L.Format("Migrate.Ready.Ok",
                 Path.GetFileNameWithoutExtension(TargetProjectPath.Trim()), DestinationPath.Trim()));
@@ -163,6 +178,8 @@ public sealed partial class MigrateViewModel : ObservableObject
         switch (e.PropertyName)
         {
             case nameof(SourcePath):
+            case nameof(SourceVersion):
+            case nameof(MappingsPath):
             case nameof(UModelPath):
             case nameof(TargetProjectPath):
             case nameof(UnrealEditorPath):
@@ -196,6 +213,7 @@ public sealed partial class MigrateViewModel : ObservableObject
         OnPropertyChanged(nameof(ToolsSummary));
         OnPropertyChanged(nameof(ToolsMissing));
         OnPropertyChanged(nameof(ShowUModelHelp));
+        OnPropertyChanged(nameof(IsUE5Source));
         OnPropertyChanged(nameof(OverwriteWarningVisible));
         OnPropertyChanged(nameof(OverwriteWarning));
         OnPropertyChanged(nameof(ReadinessText));
@@ -223,6 +241,10 @@ public sealed partial class MigrateViewModel : ObservableObject
 
     [RelayCommand]
     private async Task BrowseUModel() => UModelPath = await DialogService.PickExecutableAsync(UModelPath) ?? UModelPath;
+
+    [RelayCommand]
+    private async Task BrowseMappings() =>
+        MappingsPath = await DialogService.PickUsmapAsync(MappingsPath) ?? MappingsPath;
 
     [RelayCommand]
     private async Task BrowseTargetProject()
@@ -312,7 +334,8 @@ public sealed partial class MigrateViewModel : ObservableObject
                 TargetProjectPath.Trim(),
                 UnrealEditorPath.Trim(),
                 DestinationPath.Trim(),
-                Overwrite: Overwrite);
+                Overwrite: Overwrite,
+                MappingsPath: IsUE5Source ? MappingsPath.Trim() : null);
             var token = _cancellation.Token;
             // The service scans and links large dumps; keep that work off the UI thread. Progress
             // and the Continue prompt marshal back on their own.
@@ -430,6 +453,7 @@ public sealed partial class MigrateViewModel : ObservableObject
     {
         _settings.ConversionSourcePath = SourcePath;
         _settings.ConversionSourceVersion = SourceVersion.Version;
+        _settings.ConversionUsmapPath = MappingsPath;
         _settings.UModelPath = UModelPath;
         _settings.TargetProjectPath = TargetProjectPath;
         _settings.UnrealEditorPath = UnrealEditorPath;

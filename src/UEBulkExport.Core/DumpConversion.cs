@@ -10,7 +10,8 @@ namespace UEBulkExport;
 
 /// <summary>
 /// Rebuilds the asset types that survive cooking by exporting them to interchange files with
-/// UE Viewer and asking the destination Unreal Editor to import those files. This deliberately
+/// UE Viewer for UE4 or CUE4Parse for UE5, then asking the destination Unreal Editor to import
+/// them. This deliberately
 /// does not rewrite cooked package headers: target packages are always created by the target editor.
 /// The source dump is only ever read: packages UE Viewer must skip are left out of a hard-linked
 /// working copy instead of being renamed in place.
@@ -70,72 +71,80 @@ public sealed class DumpConversionService
 
         if (cookedPackages > 0)
         {
-            progress?.Report(new("Exporting", 0.15,
-                $"UE Viewer is exporting {cookedPackages:N0} cooked packages."));
-
-            var umodelLog = Path.Combine(workingDirectory, "umodel.log");
-            if (File.Exists(umodelLog)) File.Delete(umodelLog);
-
-            // Relative paths of packages UE Viewer must not see.
-            var skipped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var corrupt in await Task.Run(() => FindPackagesWithEmptyPayloads(source).ToList(), ct))
+            if (IsUE5Source(options.SourceVersion))
             {
-                var relative = Path.GetRelativePath(source, corrupt.PackagePath);
-                if (!skipped.Add(relative)) continue;
-                failures.Add(new DumpConversionFailure(relative, "UE Viewer preflight",
-                    $"The required {Path.GetExtension(corrupt.PayloadPath)} payload is empty."));
+                await ExportUE5Async(options, source, exportedDirectory, failures, progress, ct);
+                importRoot = exportedDirectory;
             }
-
-            SourceMirror? mirror = null;
-            try
+            else
             {
-                if (skipped.Count > 0)
-                    mirror = await CreateMirrorAsync(source, workingDirectory, skipped, progress, ct);
+                progress?.Report(new("Exporting", 0.15,
+                    $"UE Viewer is exporting {cookedPackages:N0} cooked packages."));
 
-                while (true)
+                var umodelLog = Path.Combine(workingDirectory, "umodel.log");
+                if (File.Exists(umodelLog)) File.Delete(umodelLog);
+
+                // Relative paths of packages UE Viewer must not see.
+                var skipped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var corrupt in await Task.Run(() => FindPackagesWithEmptyPayloads(source).ToList(), ct))
                 {
-                    var umodelSource = mirror?.Root ?? source;
-                    var logOffset = File.Exists(umodelLog) ? new FileInfo(umodelLog).Length : 0;
-                    try
+                    var relative = Path.GetRelativePath(source, corrupt.PackagePath);
+                    if (!skipped.Add(relative)) continue;
+                    failures.Add(new DumpConversionFailure(relative, "UE Viewer preflight",
+                        $"The required {Path.GetExtension(corrupt.PayloadPath)} payload is empty."));
+                }
+
+                SourceMirror? mirror = null;
+                try
+                {
+                    if (skipped.Count > 0)
+                        mirror = await CreateMirrorAsync(source, workingDirectory, skipped, progress, ct);
+
+                    while (true)
                     {
-                        await RunProcessAsync(options.UModelPath,
-                            start => AddArguments(start, BuildUModelArguments(options, umodelSource, exportedDirectory)),
-                            Path.GetDirectoryName(Path.GetFullPath(options.UModelPath))!, umodelLog,
-                            "UE Viewer", options.UModelInactivityTimeout ?? DefaultUModelInactivityTimeout,
-                            ct, appendLog: true);
-                        break;
-                    }
-                    catch (UserFacingException e) when (issueHandler is not null)
-                    {
-                        // Only this attempt's output counts: an earlier banner names a package that is
-                        // already excluded, and retrying it would loop.
-                        var package = FindFailedPackage(umodelLog, logOffset);
-                        var issue = new DumpConversionIssue(
-                            package ?? "UE Viewer batch",
-                            e.Headline,
-                            e.Hint ?? "See umodel.log for details.");
-                        if (!await issueHandler(issue, ct)) throw new OperationCanceledException(ct);
+                        var umodelSource = mirror?.Root ?? source;
+                        var logOffset = File.Exists(umodelLog) ? new FileInfo(umodelLog).Length : 0;
+                        try
+                        {
+                            await RunProcessAsync(options.UModelPath,
+                                start => AddArguments(start, BuildUModelArguments(options, umodelSource, exportedDirectory)),
+                                Path.GetDirectoryName(Path.GetFullPath(options.UModelPath))!, umodelLog,
+                                "UE Viewer", options.UModelInactivityTimeout ?? DefaultUModelInactivityTimeout,
+                                ct, appendLog: true);
+                            break;
+                        }
+                        catch (UserFacingException e) when (issueHandler is not null)
+                        {
+                            // Only this attempt's output counts: an earlier banner names a package that is
+                            // already excluded, and retrying it would loop.
+                            var package = FindFailedPackage(umodelLog, logOffset);
+                            var issue = new DumpConversionIssue(
+                                package ?? "UE Viewer batch",
+                                e.Headline,
+                                e.Hint ?? "See umodel.log for details.");
+                            if (!await issueHandler(issue, ct)) throw new OperationCanceledException(ct);
 
-                        var physical = package is null ? null : await Task.Run(() => ResolvePackagePath(umodelSource, package), ct);
-                        var relative = physical is null ? null : Path.GetRelativePath(umodelSource, physical);
-                        failures.Add(new DumpConversionFailure(package ?? "UE Viewer batch", "UE Viewer", issue.Details));
-                        if (relative is null || !skipped.Add(relative)) break;
+                            var physical = package is null ? null : await Task.Run(() => ResolvePackagePath(umodelSource, package), ct);
+                            var relative = physical is null ? null : Path.GetRelativePath(umodelSource, physical);
+                            failures.Add(new DumpConversionFailure(package ?? "UE Viewer batch", "UE Viewer", issue.Details));
+                            if (relative is null || !skipped.Add(relative)) break;
 
-                        if (mirror is null)
-                            mirror = await CreateMirrorAsync(source, workingDirectory, skipped, progress, ct);
-                        else
-                            mirror.Exclude(relative);
+                            if (mirror is null)
+                                mirror = await CreateMirrorAsync(source, workingDirectory, skipped, progress, ct);
+                            else
+                                mirror.Exclude(relative);
 
-                        progress?.Report(new("Exporting", 0.15, $"Skipped {package}; UE Viewer is continuing."));
+                            progress?.Report(new("Exporting", 0.15, $"Skipped {package}; UE Viewer is continuing."));
+                        }
                     }
                 }
-            }
-            finally
-            {
-                mirror?.Dispose();
-            }
+                finally
+                {
+                    mirror?.Dispose();
+                }
 
-            importRoot = exportedDirectory;
+                importRoot = exportedDirectory;
+            }
         }
 
         WriteFailureReport(errorReportPath, failures);
@@ -148,9 +157,12 @@ public sealed class DumpConversionService
             var actorXHint = actorX > 0
                 ? $" Found {actorX:N0} ActorX animation/mesh files (.psa/.psk), which Unreal Engine 5 cannot import natively."
                 : "";
+            var sourceHint = IsUE5Source(options.SourceVersion)
+                ? "Inspect Exported\\errors.csv. If no mappings were selected, retry with a .usmap from the same game build."
+                : "Check the source engine version and UE Viewer log.";
             throw new UserFacingException(
                 "No files supported by the target Unreal Editor were produced.",
-                "Check the source engine version and UE Viewer log." + actorXHint);
+                sourceHint + actorXHint);
         }
 
         var manifestPath = Path.Combine(workingDirectory, "import-manifest.json");
@@ -233,28 +245,103 @@ public sealed class DumpConversionService
             throw new UserFacingException("Dump conversion currently requires Windows.");
         if (!Directory.Exists(options.SourceDirectory))
             throw new UserFacingException("The dump folder does not exist.");
-        if (!File.Exists(options.UModelPath))
+        var isUE5 = IsUE5Source(options.SourceVersion);
+        if (!isUE5 && !File.Exists(options.UModelPath))
             throw new UserFacingException("UE Viewer (umodel) was not found.");
+        if (isUE5 && !string.IsNullOrWhiteSpace(options.MappingsPath) && !File.Exists(options.MappingsPath))
+            throw new UserFacingException(
+                "The selected mappings (.usmap) file does not exist.",
+                "Choose an existing mappings file, or clear the field to try the UE5 export without mappings.");
         if (!File.Exists(options.UnrealEditorPath))
             throw new UserFacingException("UnrealEditor-Cmd was not found.");
         if (!File.Exists(options.TargetProject) ||
             !Path.GetExtension(options.TargetProject).Equals(".uproject", StringComparison.OrdinalIgnoreCase))
             throw new UserFacingException("Select a valid .uproject file.");
-        _ = ToUModelTag(options.SourceVersion);
+        _ = ParseSourceVersion(options.SourceVersion);
         _ = NormalizeDestination(options.DestinationPath);
     }
 
     internal static string ToUModelTag(string version)
     {
-        var match = Regex.Match(version.Trim(), @"^(?:UE\s*)?(?<major>\d+)\.(?<minor>\d+)$",
-            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        if (!match.Success || !int.TryParse(match.Groups["major"].Value, out var major) ||
-            !int.TryParse(match.Groups["minor"].Value, out var minor) || major != 4 || minor is < 0 or > 27)
+        var (major, minor) = ParseSourceVersion(version);
+        if (major != 4)
             throw new UserFacingException(
                 "UE Viewer supports this converter only for Unreal Engine 4.0 through 4.27 sources.",
                 "Choose the exact version used to cook the source game.");
         return $"ue{major}.{minor}";
     }
+
+    public static bool IsUE5Source(string version) => ParseSourceVersion(version).Major == 5;
+
+    internal static (int Major, int Minor) ParseSourceVersion(string version)
+    {
+        var match = Regex.Match(version.Trim(), @"^(?:UE\s*)?(?<major>\d+)\.(?<minor>\d+)$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success || !int.TryParse(match.Groups["major"].Value, out var major) ||
+            !int.TryParse(match.Groups["minor"].Value, out var minor) ||
+            (major == 4 && minor is < 0 or > 27) || (major == 5 && minor is < 0 or > 8) ||
+            major is not (4 or 5))
+            throw new UserFacingException(
+                "This converter supports Unreal Engine 4.0–4.27 and 5.0–5.8 source dumps.",
+                "Choose the exact version used to cook the source game.");
+        return (major, minor);
+    }
+
+    private static async Task ExportUE5Async(
+        DumpConversionOptions conversion,
+        string source,
+        string output,
+        ICollection<DumpConversionFailure> failures,
+        IProgress<DumpConversionProgress>? progress,
+        CancellationToken ct)
+    {
+        progress?.Report(new("Exporting", 0.15,
+            "CUE4Parse is rebuilding supported assets from the Unreal Engine 5 dump."));
+
+        var options = CreateUE5ExportOptions(conversion, source, output);
+        Natives.Initialize(options);
+
+        using var exporter = new BulkExporter(options);
+        exporter.ProgressChanged += p => progress?.Report(new DumpConversionProgress(
+            "Exporting", 0.15 + p.Fraction * 0.4,
+            $"CUE4Parse processed {p.Processed:N0} of {p.Total:N0} entries."));
+        exporter.Mount();
+        var files = exporter.SelectFiles();
+        // Without mappings this is deliberately best effort: versioned packages and data that
+        // CUE4Parse can understand are still exported, while failures land in Exported/errors.csv.
+        // With mappings, keep the fast preflight so a wrong file fails before a long run.
+        if (options.UsmapPath is not null) exporter.VerifyMappings(files);
+        var summary = await exporter.RunAsync(files, ct);
+
+        if (summary.Cancelled || ct.IsCancellationRequested)
+            throw new OperationCanceledException(ct);
+
+        var failed = summary.FailedEntries + summary.FailedObjects;
+        if (failed > 0)
+            failures.Add(new DumpConversionFailure(
+                Path.Combine(output, "errors.csv"),
+                "CUE4Parse export",
+                $"{failed:N0} package or object export(s) failed; see Exported\\errors.csv."));
+    }
+
+    internal static Options CreateUE5ExportOptions(DumpConversionOptions conversion, string source, string output) =>
+        new()
+        {
+            PaksDirectory = source,
+            OutputDirectory = output,
+            Game = Cli.ParseGame(conversion.SourceVersion),
+            Mode = ExportMode.Full,
+            UsmapPath = string.IsNullOrWhiteSpace(conversion.MappingsPath)
+                ? null
+                : conversion.MappingsPath.Trim(),
+            WriteJson = false,
+            WriteAssets = true,
+            WriteRawMisc = false,
+            WriteRawPackages = false,
+            ExportMaterials = false,
+            ExportWorlds = false,
+            Resume = !conversion.Overwrite
+        };
 
     internal static string NormalizeDestination(string destination)
     {
@@ -822,7 +909,8 @@ public sealed record DumpConversionOptions(
     string? WorkingDirectory = null,
     bool Overwrite = false,
     TimeSpan? UModelInactivityTimeout = null,
-    TimeSpan? EditorInactivityTimeout = null);
+    TimeSpan? EditorInactivityTimeout = null,
+    string? MappingsPath = null);
 
 public sealed record DumpConversionProgress(string Stage, double Fraction, string Message);
 

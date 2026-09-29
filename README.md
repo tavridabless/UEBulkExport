@@ -221,11 +221,12 @@ Run `--mode full` for converted files or `--mode json` for property dumps.
   <img src="docs/images/asset-migration.webp" alt="Cooked assets migrated into an organised Unreal project" width="920">
 </p>
 
-The **Migrate to UE** page turns a loose cooked dump from an older game into ordinary assets of your own Unreal project. It runs
+The **Migrate to UE** page turns a loose cooked game dump into ordinary assets of your own Unreal project. It runs
 in two stages:
 
-1. [UE Viewer](https://www.gildor.org/en/projects/umodel) exports the recoverable assets of the
-   cooked packages: meshes become glTF, textures become PNG, and sounds become audio files.
+1. [UE Viewer](https://www.gildor.org/en/projects/umodel) handles UE4 dumps, while the built-in
+   CUE4Parse path handles UE5 dumps. They export recoverable meshes as glTF, textures as PNG and
+   sounds as audio files.
 2. Your target `UnrealEditor-Cmd.exe` starts without a window and imports those files into the
    selected project, where they are saved as new assets of that engine version.
 
@@ -236,16 +237,20 @@ OGG or MP3 are imported directly, without the first stage.
 
 - Windows. The feature is available in the desktop application only; the command line program
   does not have it.
-- A loose cooked dump from **UE 4.0–4.27**: a folder of `.uasset` files with their payloads, for
+- A loose cooked dump from **UE 4.0–4.27 or UE 5.0–5.8**: a folder of `.uasset` files with their payloads, for
   example the result of a **Game packages** export.
-- UE Viewer (`umodel_64.exe`) and an installed Unreal Editor. UEBulkExport downloads neither of
-  them.
+- UE Viewer (`umodel_64.exe`) for UE4. A `.usmap` is optional for UE5 but greatly improves the
+  chance of reading every asset; when supplied, it must come from the same game build as the
+  dump. Both paths need an installed Unreal Editor. UEBulkExport
+  does not download UE Viewer or Unreal Editor.
 - A target `.uproject` with the **Python Editor Script Plugin** enabled (*Edit → Plugins*). The
   editor runs the import through Python.
 
 **How to run it**
 
-1. Select the dump folder and the engine version it was built with.
+1. Select the dump folder and the exact engine version it was built with. For UE5, you can leave
+   `.usmap` empty and try the migration; if assets fail to read, generate mappings from that same
+   build and select them under **Tools**.
 2. Choose the target `.uproject`, or press **Suggest** to offer a recently used project when the
    field is empty. UE Viewer and the matching `UnrealEditor-Cmd.exe` are found automatically; the
    **Tools** section shows what was found and opens by itself when something is missing. A path
@@ -277,7 +282,7 @@ dump: `<project>\Saved\UEBulkExport\DumpConversion\<dump>_<version>_<id>\`. The 
 
 | File | Contents |
 |---|---|
-| `Exported\` | Files exported by UE Viewer |
+| `Exported\` | Files exported by UE Viewer (UE4) or CUE4Parse (UE5) |
 | `umodel.log` | UE Viewer output |
 | `unreal-import.log` | Unreal Editor output, including Python errors |
 | `conversion-errors.csv` | Files that were skipped or not imported, with the reason |
@@ -286,7 +291,7 @@ dump: `<project>\Saved\UEBulkExport\DumpConversion\<dump>_<version>_<id>\`. The 
 **Limitations.** Migration rebuilds assets from cooked data; it is not an uncooker. Meshes,
 textures and supported audio can be restored. Blueprint graphs, materials, levels, Niagara
 systems and other editor-only data were removed when the game was cooked and cannot be
-recovered. UE Viewer's ActorX animation files (`.psa`, `.psk`) are listed in the report but are
+recovered. ActorX animation files (`.psa`, `.psk`) are listed in the report but are
 not imported, because Unreal Engine 5 cannot read them natively. Only migrate assets you have
 the right to use.
 

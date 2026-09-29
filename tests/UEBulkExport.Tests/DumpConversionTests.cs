@@ -22,6 +22,73 @@ public sealed class DumpConversionTests
     }
 
     [Theory]
+    [InlineData("5.0", 5, 0)]
+    [InlineData("5.5", 5, 5)]
+    [InlineData("UE 5.8", 5, 8)]
+    public void ParseSourceVersion_accepts_supported_UE5_versions(string version, int major, int minor)
+    {
+        Assert.Equal((major, minor), DumpConversionService.ParseSourceVersion(version));
+        Assert.True(DumpConversionService.IsUE5Source(version));
+    }
+
+    [Theory]
+    [InlineData("4.28")]
+    [InlineData("5.9")]
+    [InlineData("6.0")]
+    public void ParseSourceVersion_rejects_unsupported_versions(string version)
+    {
+        Assert.Throws<UserFacingException>(() => DumpConversionService.ParseSourceVersion(version));
+    }
+
+    [Fact]
+    public void CreateUE5ExportOptions_uses_CUE4Parse_full_mode_without_editor_only_outputs()
+    {
+        var conversion = new DumpConversionOptions(
+            "Dump", "5.5", "", "Target.uproject", "UnrealEditor-Cmd.exe", "/Game/Bodycam",
+            MappingsPath: "Bodycam.usmap");
+
+        var options = DumpConversionService.CreateUE5ExportOptions(conversion, "Dump", "Exported");
+
+        Assert.Equal(CUE4Parse.UE4.Versions.EGame.GAME_UE5_5, options.Game);
+        Assert.Equal(ExportMode.Full, options.Mode);
+        Assert.Equal("Bodycam.usmap", options.UsmapPath);
+        Assert.True(options.WriteAssets);
+        Assert.False(options.WriteJson);
+        Assert.False(options.WriteRawMisc);
+        Assert.False(options.WriteRawPackages);
+        Assert.False(options.ExportMaterials);
+        Assert.False(options.ExportWorlds);
+        Assert.True(options.Resume);
+
+        var withoutMappings = DumpConversionService.CreateUE5ExportOptions(
+            conversion with { MappingsPath = " " }, "Dump", "Exported");
+        Assert.Null(withoutMappings.UsmapPath);
+    }
+
+    [Fact]
+    public void Validate_UE5_allows_missing_mappings_but_rejects_an_invalid_selected_path()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var temp = new TempDir();
+        var source = temp.Dir("Dump");
+        var project = Path.Combine(temp.Path, "Target.uproject");
+        var mappings = Path.Combine(temp.Path, "Bodycam.usmap");
+        File.WriteAllText(project, "{\"EngineAssociation\":\"5.8\"}");
+        File.WriteAllBytes(mappings, [1]);
+        var executable = Path.Combine(Environment.SystemDirectory, "where.exe");
+
+        var withoutMappings = new DumpConversionOptions(
+            source, "5.5", "", project, executable, "/Game/Bodycam");
+        DumpConversionService.Validate(withoutMappings);
+
+        DumpConversionService.Validate(withoutMappings with { MappingsPath = mappings });
+
+        var invalidMappings = withoutMappings with { MappingsPath = Path.Combine(temp.Path, "Missing.usmap") };
+        Assert.Throws<UserFacingException>(() => DumpConversionService.Validate(invalidMappings));
+    }
+
+    [Theory]
     [InlineData("/Game", "/Game")]
     [InlineData("/Game/ConvertedDump/", "/Game/ConvertedDump")]
     [InlineData("\\Game\\Monsters", "/Game/Monsters")]
