@@ -13,7 +13,7 @@
 [![CI](https://github.com/tavridabless/UEBulkExport/actions/workflows/ci.yml/badge.svg)](https://github.com/tavridabless/UEBulkExport/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tavridabless/UEBulkExport?include_prereleases)](https://github.com/tavridabless/UEBulkExport/releases)
 
-[Русский](README.ru.md) · [Mappings guide](docs/mappings.md) · [Third-party notices](THIRD-PARTY-NOTICES.md)
+[Русский](README.ru.md) · [Plugins](docs/plugins.md) · [Mappings guide](docs/mappings.md) · [Third-party notices](THIRD-PARTY-NOTICES.md)
 
 </div>
 
@@ -80,6 +80,9 @@ The pages:
   chart for the readings at any moment; the history stays after the run for a look back.
 - **Migrate to UE** — rebuilds assets from a UE4 cooked dump inside your own Unreal project; see
   [Migrating assets to another engine version](#migrating-assets-to-another-engine-version).
+- **Plugins** — discovers extension manifests without executing their DLLs, shows their icon,
+  description and compatibility status, and loads only explicitly enabled plugins after restart.
+  A plugin can add its own navigation page; see [Desktop plugins](docs/plugins.md).
 - **Browser** — inspect the mounted folder tree, search and filter entries by type, view paths and
   sizes, select individual files or folders, export only the selection, or add it to the exclusion
   list. Locked containers are identified when an AES key is missing or incorrect.

@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Added a full-trust desktop plugin API and plugin manager. Manifest metadata is discovered without
+  executing DLLs; plugins are disabled by default, enabled per user, loaded after restart, and can
+  add navigation pages or grant host capabilities. Both application-local and per-user plugin
+  folders are supported.
+### Fixed
+
+- Plugin switches now stay in sync after resetting settings, status colors distinguish errors and
+  restart-pending states, and both plugin-folder buttons create a missing target when permitted.
+
 ## [2.1.0] - 2026-09-29
 
 ### Added

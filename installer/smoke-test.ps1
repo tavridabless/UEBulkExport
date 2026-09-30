@@ -18,7 +18,10 @@
 param(
     [Parameter(Mandatory)] [string]$Installer,
     # Where to install. Defaults to a fresh folder under the temporary directory.
-    [string]$Directory = (Join-Path ([System.IO.Path]::GetTempPath()) ("uebulkexport-smoke-" + [guid]::NewGuid().ToString('N')))
+    [string]$Directory = [System.IO.Path]::Combine(
+        [System.IO.Path]::GetTempPath(), "uebulkexport-smoke-" + [guid]::NewGuid().ToString('N')),
+    # Optional id of a plugin package expected under <install>/plugins after Setup completes.
+    [string]$ExpectedPluginId
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +45,9 @@ Check "installer exits with 0 (got $($process.ExitCode))" ($process.ExitCode -eq
 
 foreach ($file in 'UEBulkExport.exe', 'UEBulkExport.Cli.exe', 'installer.json', 'unins000.exe', 'docs\mappings.md', 'LICENSE') {
     Check "installed $file" (Test-Path (Join-Path $Directory $file))
+}
+if ($ExpectedPluginId) {
+    Check "installed plugin $ExpectedPluginId" (Test-Path (Join-Path $Directory "plugins\$ExpectedPluginId\plugin.json"))
 }
 
 $cli = Join-Path $Directory 'UEBulkExport.Cli.exe'

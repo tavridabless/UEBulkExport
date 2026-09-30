@@ -9,9 +9,22 @@ namespace UEBulkExport.Gui.Services;
 /// </summary>
 public sealed class AppSettings
 {
-    public static string FilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "UEBulkExport", "settings.json");
+    public static string DataDirectory
+    {
+        get
+        {
+            var overridden = Environment.GetEnvironmentVariable("UEBULKEXPORT_DATA_DIR");
+            if (!string.IsNullOrWhiteSpace(overridden))
+            {
+                try { return Path.GetFullPath(overridden); }
+                catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException) { }
+            }
+
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UEBulkExport");
+        }
+    }
+
+    public static string FilePath => Path.Combine(DataDirectory, "settings.json");
 
     public string Language { get; set; } = "";
     public string Theme { get; set; } = "Light";
@@ -41,6 +54,7 @@ public sealed class AppSettings
     public double WindowHeight { get; set; } = 820;
 
     public List<RecentGame> Recent { get; set; } = [];
+    public List<string> EnabledPlugins { get; set; } = [];
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -77,7 +91,12 @@ public sealed class AppSettings
         try
         {
             if (File.Exists(FilePath))
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions) ?? new AppSettings();
+            {
+                var loaded = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions) ?? new AppSettings();
+                loaded.Recent ??= [];
+                loaded.EnabledPlugins ??= [];
+                return loaded;
+            }
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {

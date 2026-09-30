@@ -43,8 +43,12 @@ public sealed partial class MainWindow : Window
 
         _pages["export"] = new ExportView { DataContext = shell.Export };
         _pages["migrate"] = new MigrateView { DataContext = shell.Migrate };
+        if (shell.Keys is not null) _pages["keys"] = new KeyDiscoveryView { DataContext = shell.Keys };
         _pages["browser"] = new BrowserView { DataContext = shell.Browser };
         _pages["log"] = new LogView { DataContext = shell.Log };
+        foreach (var plugin in shell.Plugins.Catalog.Plugins.Where(plugin => plugin.Page is not null && plugin.ShowsPage))
+            _pages[plugin.PageKey] = plugin.Page!;
+        _pages["plugins"] = new PluginsView { DataContext = shell.Plugins };
         _pages["settings"] = new SettingsView { DataContext = shell.Settings };
         _pages["about"] = new AboutView { DataContext = shell.About };
 
@@ -55,6 +59,7 @@ public sealed partial class MainWindow : Window
         shell.Migrate.Confirm = (title, message) =>
             ConfirmTextAsync(title, message, Loc.Instance["Migrate.Confirm.Yes"], Loc.Instance["Common.Cancel"]);
         shell.Settings.RestartRequested += OnRestartRequested;
+        shell.Plugins.RestartRequested += OnRestartRequested;
         shell.Settings.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(SettingsViewModel.TransparencyEnabled)) ApplyTransparency();
@@ -162,6 +167,14 @@ public sealed partial class MainWindow : Window
         {
             shell.Migrate.TargetProjectPath = path;
             shell.Navigate("migrate");
+        }
+        else if (shell.Keys is { } keys && shell.SelectedPage.Key == "keys" && File.Exists(path))
+        {
+            keys.SourcePath = path;
+        }
+        else if (shell.Keys is { } directoryKeys && shell.SelectedPage.Key == "keys" && Directory.Exists(path))
+        {
+            directoryKeys.PaksPath = path;
         }
         else if (shell.SelectedPage.Key == "migrate" && Directory.Exists(path))
         {

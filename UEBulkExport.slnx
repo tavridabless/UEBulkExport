@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/UEBulkExport.Core/UEBulkExport.Core.csproj" />
     <Project Path="src/UEBulkExport.Cli/UEBulkExport.Cli.csproj" />
+    <Project Path="src/UEBulkExport.Plugin.Abstractions/UEBulkExport.Plugin.Abstractions.csproj" />
     <Project Path="src/UEBulkExport/UEBulkExport.csproj" />
   </Folder>
   <Folder Name="/tests/">

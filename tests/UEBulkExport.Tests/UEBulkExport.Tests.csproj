@@ -14,6 +14,11 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/UEBulkExport.Core/UEBulkExport.Core.csproj" />
+    <ProjectReference Include="../../src/UEBulkExport/UEBulkExport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Fixtures/FakeCooperativeProbe.ps1" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

@@ -46,6 +46,7 @@
 #define HasDetex FileExists(AddBackslash(SourceRoot) + "Detex.dll")
 #define HasCompression FileExists(AddBackslash(SourceRoot) + "oodle-data-shared.dll") || FileExists(AddBackslash(SourceRoot) + "zlib-ng2.dll")
 #define HasNative HasAcl || HasDetex || HasCompression
+#define HasPlugins DirExists(AddBackslash(SourceRoot) + "plugins")
 
 [Setup]
 AppId={{{#AppGuid}}
@@ -128,6 +129,9 @@ Name: "native\compression"; Description: "{cm:ComponentCompression}"; Types: ful
 #endif
 Name: "documentation"; Description: "{cm:ComponentDocumentation}"; Types: full custom
 Name: "tools"; Description: "{cm:ComponentTools}"; Types: full custom
+#if HasPlugins
+Name: "plugins"; Description: "{cm:ComponentPlugins}"; Types: full custom
+#endif
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -162,7 +166,7 @@ Source: "branding\wizard-install-*.png"; Flags: dontcopy noencryption
 Source: "branding\wizard-back-*.png"; Flags: dontcopy noencryption
 
 ; The GUI, CLI, managed runtime and all libraries required to start the application.
-Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "CUE4Parse-Natives.dll,Detex.dll,oodle-data-shared.dll,zlib-ng2.dll,README.md,README.ru.md,LICENSE,NOTICE,THIRD-PARTY-NOTICES.md,CHANGELOG.md,\docs,\tools"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "CUE4Parse-Natives.dll,Detex.dll,oodle-data-shared.dll,zlib-ng2.dll,README.md,README.ru.md,LICENSE,NOTICE,THIRD-PARTY-NOTICES.md,CHANGELOG.md,\docs,\tools,\plugins"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: core
 
 ; Optional native feature providers. They are selected by the default Full installation.
 #if HasAcl
@@ -185,6 +189,11 @@ Source: "{#SourceDir}\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreve
 Source: "{#SourceDir}\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist; Components: documentation
 Source: "{#SourceDir}\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: documentation
 Source: "{#SourceDir}\tools\*"; DestDir: "{app}\tools"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist; Components: tools
+#if HasPlugins
+; Packaged desktop plugins are optional and copied as complete directories. Manually installed
+; per-user plugins live under LocalAppData and are never touched by Setup.
+Source: "{#SourceDir}\plugins\*"; DestDir: "{app}\plugins"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: plugins
+#endif
 
 [Icons]
 Name: "{group}\UEBulkExport"; Filename: "{app}\UEBulkExport.exe"; WorkingDir: "{app}"; Comment: "{cm:GuiShortcutComment}"
@@ -211,6 +220,7 @@ english.ComponentTextures=Additional texture decoding
 english.ComponentCompression=Oodle and zlib-ng container decompression
 english.ComponentDocumentation=Offline documentation and licences
 english.ComponentTools=UE4SS mappings helper tools
+english.ComponentPlugins=Bundled desktop plugins
 english.CommandLineGroup=Command line:
 english.AddToPath=Add UEBulkExport CLI to the PATH (run UEBulkExport.Cli from any console)
 english.GuiShortcutComment=Export Unreal Engine containers
@@ -251,6 +261,7 @@ russian.ComponentTextures=Дополнительное декодировани�
 russian.ComponentCompression=Распаковка контейнеров Oodle и zlib-ng
 russian.ComponentDocumentation=Офлайн-документация и лицензии
 russian.ComponentTools=Инструменты UE4SS для получения mappings
+russian.ComponentPlugins=Встроенные desktop-плагины
 russian.CommandLineGroup=Командная строка:
 russian.AddToPath=Добавить UEBulkExport CLI в PATH (запуск UEBulkExport.Cli из любой консоли)
 russian.GuiShortcutComment=Экспорт контейнеров Unreal Engine

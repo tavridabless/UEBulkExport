@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     1. Publishes the window and the command line program, self-contained, into one staging folder.
-    2. Adds the offline documentation and the UE4SS mappings helper.
+    2. Adds the offline documentation, UE4SS mappings helper and optional external plugin packages.
     3. Generates the wizard artwork from installer/branding.
     4. Optionally signs both executables.
     5. Compiles installer/UEBulkExport.iss (and lets Inno Setup sign the installer and its
@@ -34,6 +34,10 @@ param(
     [string]$Staging = 'artifacts/staging/UEBulkExport',
     [string]$Output = 'artifacts/installer',
     [string]$Runtime = 'win-x64',
+
+    # Optional folder whose immediate subfolders are ready-to-ship plugin packages. This keeps
+    # private plugin sources outside the repository while allowing local/test installers to carry them.
+    [string]$ExtraPluginsPath,
 
     # A signing command in Inno Setup's sign tool syntax: $f is the file to sign, $q a double quote.
     # For example: $qC:\Kits\signtool.exe$q sign /fd sha256 /f $qcert.pfx$q /p secret $f
@@ -108,11 +112,26 @@ try {
         Copy-Item $file $stagingPath -Force
     }
     $docs = New-Item -ItemType Directory -Force (Join-Path $stagingPath 'docs')
-    foreach ($file in 'docs/mappings.md', 'docs/mappings.ru.md', 'docs/screenshot.png') {
+    foreach ($file in 'docs/mappings.md', 'docs/mappings.ru.md', 'docs/plugins.md', 'docs/plugins.ru.md',
+        'docs/screenshot.png') {
         Copy-Item $file $docs.FullName -Force
     }
     Copy-Item 'docs/images' $docs.FullName -Recurse -Force
     Copy-Item 'tools' $stagingPath -Recurse -Force
+
+    if ($ExtraPluginsPath) {
+        $pluginSource = Resolve-Full $ExtraPluginsPath
+        if (-not (Test-Path -LiteralPath $pluginSource -PathType Container)) {
+            throw "Plugin package root not found: $pluginSource"
+        }
+        $pluginDestination = New-Item -ItemType Directory -Force (Join-Path $stagingPath 'plugins')
+        foreach ($plugin in Get-ChildItem -LiteralPath $pluginSource -Directory) {
+            if (-not (Test-Path -LiteralPath (Join-Path $plugin.FullName 'plugin.json') -PathType Leaf)) {
+                throw "Plugin package has no plugin.json: $($plugin.FullName)"
+            }
+            Copy-Item -LiteralPath $plugin.FullName -Destination $pluginDestination.FullName -Recurse -Force
+        }
+    }
 
     Invoke-Native 'Generate the wizard artwork' {
         # No --nologo here: dotnet run does not know it and would hand it to the generator.

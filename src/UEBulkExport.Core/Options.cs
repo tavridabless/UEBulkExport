@@ -103,6 +103,8 @@ public sealed class Options
         USAGE
           UEBulkExport.Cli --paks <path> --out <dir> [options]
           UEBulkExport --paks <path> --out <dir> [options]      (the GUI build accepts the same arguments)
+          UEBulkExport.Cli keys scan --source <file> [options]  (offline AES key discovery)
+          UEBulkExport.Cli keys probe --exe <file> [options]    (cooperative instrumented test build)
 
         PATHS
           --paks <path>         Where the containers are. Accepts the Paks folder itself, any

@@ -46,6 +46,13 @@ public static class DialogService
         PickFileAsync("Dialog.PickLibrary", startPath,
             new FilePickerFileType(L["Dialog.Filter.Libraries"]) { Patterns = ["*.dll", "*.so", "*.dylib"] });
 
+    public static Task<string?> PickKeySourceAsync(string? startPath = null) =>
+        PickFileAsync("Dialog.PickKeySource", startPath,
+            new FilePickerFileType(L["Dialog.Filter.KeySources"])
+            {
+                Patterns = ["*.exe", "*.dll", "*.so", "*.dylib", "*.dmp", "*.dump", "*.bin", "*.json"]
+            });
+
     private static async Task<string?> PickFileAsync(string titleKey, string? startPath, FilePickerFileType type)
     {
         if (Owner?.StorageProvider is not { } storage) return null;

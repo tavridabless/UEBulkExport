@@ -1,0 +1,112 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:UEBulkExport.Gui.ViewModels"
+             xmlns:loc="using:UEBulkExport.Gui.Localization"
+             x:Class="UEBulkExport.Gui.Views.PluginsView"
+             x:DataType="vm:PluginsViewModel">
+
+  <ScrollViewer>
+    <Grid Width="{Binding $parent[ScrollViewer].Viewport.Width}">
+      <StackPanel Margin="28,24,28,20" Spacing="14" MaxWidth="960" HorizontalAlignment="Stretch">
+        <StackPanel Margin="0,0,0,6">
+          <TextBlock Classes="PageTitle" Text="{loc:Tr Plugins.Title}" />
+          <TextBlock Classes="PageSubtitle" Text="{loc:Tr Plugins.Subtitle}" />
+        </StackPanel>
+
+        <Border Classes="Card" Background="{DynamicResource Brush.Field}"
+                BorderBrush="{DynamicResource Brush.Warning}">
+          <StackPanel>
+            <TextBlock Text="{loc:Tr Plugins.Trust.Title}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.Warning}" />
+            <TextBlock Classes="Hint" Text="{loc:Tr Plugins.Trust.Hint}" />
+          </StackPanel>
+        </Border>
+
+        <Border Classes="Card">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Plugins.Folders}" />
+            <TextBlock Classes="Hint" Text="{loc:Tr Plugins.Folders.Hint}" Margin="0,0,0,4" />
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+              <TextBlock Grid.Column="0" Text="{loc:Tr Plugins.Folder.User}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Classes="Mono Muted" Text="{Binding UserFolder}"
+                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <Button Grid.Column="2" Content="{loc:Tr Common.OpenFolder}" Command="{Binding OpenUserFolderCommand}" />
+            </Grid>
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+              <TextBlock Grid.Column="0" Text="{loc:Tr Plugins.Folder.App}" VerticalAlignment="Center" />
+              <TextBlock Grid.Column="1" Classes="Mono Muted" Text="{Binding ApplicationFolder}"
+                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+              <Button Grid.Column="2" Content="{loc:Tr Common.OpenFolder}" Command="{Binding OpenApplicationFolderCommand}" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="Card" IsVisible="{Binding RestartRequired}"
+                Background="{DynamicResource Brush.AccentSoft}" BorderBrush="{DynamicResource Brush.Accent}">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <StackPanel>
+              <TextBlock Text="{loc:Tr Plugins.Restart.Title}" FontWeight="SemiBold"
+                         Foreground="{DynamicResource Brush.Accent}" />
+              <TextBlock Classes="Hint" Text="{loc:Tr Plugins.Restart.Hint}" />
+            </StackPanel>
+            <Button Grid.Column="1" Classes="Primary" Content="{loc:Tr Settings.Language.RestartNow}"
+                    Command="{Binding RestartCommand}" VerticalAlignment="Center" />
+          </Grid>
+        </Border>
+
+        <Border Classes="Card" IsVisible="{Binding !HasPlugins}">
+          <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="20">
+            <TextBlock Text="{loc:Tr Plugins.Empty.Title}" FontSize="18" FontWeight="SemiBold"
+                       HorizontalAlignment="Center" />
+            <TextBlock Classes="Hint" Text="{loc:Tr Plugins.Empty.Hint}" TextAlignment="Center" />
+          </StackPanel>
+        </Border>
+
+        <ItemsControl ItemsSource="{Binding Items}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:PluginItemViewModel">
+              <Border Classes="Card" Margin="0,0,0,12">
+                <Grid ColumnDefinitions="64,*,Auto" ColumnSpacing="16">
+                  <Border Grid.Column="0" Width="56" Height="56" CornerRadius="12"
+                          Background="{DynamicResource Brush.Field}" ClipToBounds="True">
+                    <Grid>
+                      <PathIcon Data="M8 3 L16 3 L16 7 L20 7 L20 15 L16 15 L16 21 L8 21 L8 17 L4 17 L4 9 L8 9 Z"
+                                Width="28" Height="28" Foreground="{DynamicResource Brush.TextMuted}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      <Image Source="{Binding Icon}" Stretch="UniformToFill" />
+                    </Grid>
+                  </Border>
+
+                  <StackPanel Grid.Column="1" Spacing="5">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <TextBlock Text="{Binding Name}" FontSize="17" FontWeight="SemiBold" />
+                      <Border Classes="Chip" Padding="8,2">
+                        <TextBlock Text="{Binding Version}" FontSize="11" />
+                      </Border>
+                    </StackPanel>
+                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap"
+                               Foreground="{DynamicResource Brush.TextMuted}" />
+                    <TextBlock Text="{Binding Author}" FontSize="12" Classes="Muted" />
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" TextWrapping="Wrap"
+                               Classes.Error="{Binding HasError}"
+                               Classes.Warning="{Binding HasWarning}"
+                               Classes.Success="{Binding IsSuccess}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                      <Button Classes="Link" Content="{loc:Tr Common.OpenFolder}" Command="{Binding OpenFolderCommand}" />
+                      <Button Classes="Link" Content="{loc:Tr Plugins.Homepage}" Command="{Binding OpenHomepageCommand}"
+                              IsVisible="{Binding HasHomepage}" />
+                    </StackPanel>
+                  </StackPanel>
+
+                  <ToggleSwitch Grid.Column="2" IsChecked="{Binding IsEnabled}" IsEnabled="{Binding CanToggle}"
+                                OnContent="{loc:Tr Plugins.Enabled}" OffContent="{loc:Tr Plugins.Disabled}"
+                                VerticalAlignment="Top" />
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </Grid>
+  </ScrollViewer>
+</UserControl>

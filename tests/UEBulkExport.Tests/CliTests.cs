@@ -133,6 +133,7 @@ public sealed class CliParseGameTests
     [InlineData("GAME_UE5_3", EGame.GAME_UE5_3)]
     [InlineData("ue4_27", EGame.GAME_UE4_27)]
     [InlineData("4.27", EGame.GAME_UE4_27)]
+    [InlineData("5.8", EGame.GAME_UE5_8)]
     public void Accepts_dotted_underscored_and_full_names(string input, EGame expected)
     {
         Assert.Equal(expected, Cli.ParseGame(input));

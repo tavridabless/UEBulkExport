@@ -13,7 +13,7 @@
 [![CI](https://github.com/tavridabless/UEBulkExport/actions/workflows/ci.yml/badge.svg)](https://github.com/tavridabless/UEBulkExport/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/tavridabless/UEBulkExport?include_prereleases)](https://github.com/tavridabless/UEBulkExport/releases)
 
-[English](README.md) · [Про маппинги](docs/mappings.ru.md) · [Сторонние компоненты](THIRD-PARTY-NOTICES.md)
+[English](README.md) · [Плагины](docs/plugins.ru.md) · [Про маппинги](docs/mappings.ru.md) · [Сторонние компоненты](THIRD-PARTY-NOTICES.md)
 
 </div>
 
@@ -80,6 +80,9 @@ UEBulkExport отвечает за работу в окне и оркестро�
   курсор на график, чтобы увидеть показания в любой момент; после завершения история остаётся.
 - **Перенос в UE** — восстанавливает ассеты из cooked-дампа UE4 в вашем проекте Unreal; см.
   [Перенос ассетов на другую версию движка](#перенос-ассетов-на-другую-версию-движка).
+- **Плагины** — находит manifest расширений без выполнения их DLL, показывает иконку, описание и
+  совместимость и загружает только явно включённые плагины после перезапуска. Плагин может добавить
+  собственную страницу навигации; см. [Desktop-плагины](docs/plugins.ru.md).
 - **Обзор** — дерево папок смонтированных контейнеров, поиск и фильтр записей по типу, пути и
   размеры, выбор отдельных файлов или папок, экспорт только выбранного или добавление его в список
   исключений. Контейнеры с неверным или отсутствующим ключом AES помечаются как заблокированные.

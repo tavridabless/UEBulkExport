@@ -110,6 +110,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _settings.LastGame = "";
         _settings.RetocPath = _settings.OodlePath = _settings.ZlibPath = _settings.VgmStreamPath = "";
         _settings.Recent.Clear();
+        _settings.EnabledPlugins.Clear();
         _settings.Save();
 
         Language = Languages.First(l => l.Code == Loc.DefaultLanguage);

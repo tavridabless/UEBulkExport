@@ -34,7 +34,11 @@ public sealed class App : Application
         {
             var shell = new MainViewModel(Settings);
             desktop.MainWindow = new MainWindow { DataContext = shell };
-            desktop.ShutdownRequested += (_, _) => Settings.Save();
+            desktop.ShutdownRequested += (_, _) =>
+            {
+                Settings.Save();
+                shell.Dispose();
+            };
         }
 
         base.OnFrameworkInitializationCompleted();

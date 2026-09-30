@@ -5,40 +5,41 @@ using UEBulkExport.Gui.Services;
 
 namespace UEBulkExport.Gui.ViewModels;
 
-public sealed record NavItem(string Key, string LabelKey, string IconData)
+public sealed record NavItem(string Key, string LabelKey, string IconData, string? LiteralLabel = null)
 {
-    public string Label => Loc.Instance[LabelKey];
-    public Geometry Icon => Geometry.Parse(IconData);
+    public string Label => LiteralLabel ?? Loc.Instance[LabelKey];
+    public Geometry Icon
+    {
+        get
+        {
+            try { return Geometry.Parse(IconData); }
+            catch (Exception) { return Geometry.Parse(Icons.Plugins); }
+        }
+    }
 }
 
 /// <summary>The shell: navigation rail, the pages, and the status bar.</summary>
-public sealed partial class MainViewModel : ObservableObject
+public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     public ExportViewModel Export { get; }
     public MigrateViewModel Migrate { get; }
+    public KeyDiscoveryViewModel? Keys { get; }
     public BrowserViewModel Browser { get; } = new();
     public LogViewModel Log { get; }
+    public PluginsViewModel Plugins { get; }
     public SettingsViewModel Settings { get; }
     public AboutViewModel About { get; } = new();
 
     public AppSettings AppSettings { get; }
 
-    public IReadOnlyList<NavItem> Pages { get; } =
-    [
-        new("export", "Nav.Export", Icons.Export),
-        new("migrate", "Nav.Migrate", Icons.Migrate),
-        new("browser", "Nav.Browser", Icons.Browser),
-        new("log", "Nav.Log", Icons.Log),
-        new("settings", "Nav.Settings", Icons.Settings),
-        new("about", "Nav.About", Icons.About)
-    ];
+    public IReadOnlyList<NavItem> Pages { get; }
 
     [ObservableProperty] private NavItem _selectedPage;
 
     public string Version => $"v{Cli.Version}";
     // Export and migration run independently; the status line follows whichever is working.
-    public string StatusText => Migrate.IsBusy && !Export.IsRunning ? Migrate.StatusText : Export.StatusText;
-    public bool IsBusy => Export.IsBusy || Migrate.IsBusy;
+    public string StatusText => Keys?.IsBusy == true ? Keys.StatusText : Migrate.IsBusy && !Export.IsRunning ? Migrate.StatusText : Export.StatusText;
+    public bool IsBusy => Export.IsBusy || Migrate.IsBusy || Keys?.IsBusy == true;
     public double ProgressFraction => Export.IsRunning || !Migrate.IsBusy ? Export.ProgressFraction : Migrate.Progress;
     public bool ShowProgress => Export.ShowProgress || Migrate.IsBusy;
 
@@ -47,6 +48,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         if (Export.CancelCommand.CanExecute(null)) Export.CancelCommand.Execute(null);
         if (Migrate.CancelCommand.CanExecute(null)) Migrate.CancelCommand.Execute(null);
+        if (Keys?.CancelCommand.CanExecute(null) == true) Keys.CancelCommand.Execute(null);
     }
 
     /// <summary>
@@ -66,7 +68,24 @@ public sealed partial class MainViewModel : ObservableObject
         Export = new ExportViewModel(settings);
         Migrate = new MigrateViewModel(settings);
         Log = new LogViewModel(App.LogSink);
+        Plugins = new PluginsViewModel(settings);
+        if (Plugins.Catalog.HasCapability(PluginCatalog.AesKeysCapability))
+            Keys = new KeyDiscoveryViewModel(Export);
         Settings = new SettingsViewModel(settings);
+        var pages = new List<NavItem>
+        {
+            new("export", "Nav.Export", Icons.Export),
+            new("migrate", "Nav.Migrate", Icons.Migrate),
+            new("browser", "Nav.Browser", Icons.Browser),
+            new("log", "Nav.Log", Icons.Log)
+        };
+        if (Keys is not null) pages.Insert(2, new NavItem("keys", "Nav.Keys", Icons.Keys));
+        pages.AddRange(Plugins.Catalog.Plugins.Where(plugin => plugin.IsLoaded && plugin.ShowsPage).Select(plugin =>
+            new NavItem(plugin.PageKey, "", plugin.NavigationIcon, plugin.NavigationLabel)));
+        pages.Add(new NavItem("plugins", "Nav.Plugins", Icons.Plugins));
+        pages.Add(new NavItem("settings", "Nav.Settings", Icons.Settings));
+        pages.Add(new NavItem("about", "Nav.About", Icons.About));
+        Pages = pages;
         _selectedPage = Pages[0];
 
         Export.Scanned += Browser.Load;
@@ -79,6 +98,8 @@ public sealed partial class MainViewModel : ObservableObject
         };
         Settings.SettingsReset += Export.LoadFromSettings;
         Settings.SettingsReset += Migrate.LoadFromSettings;
+        Settings.SettingsReset += Plugins.SyncFromSettings;
+        if (Keys is not null) Keys.KeyApplied += () => Navigate("export");
 
         Export.PropertyChanged += (_, e) =>
         {
@@ -116,6 +137,15 @@ public sealed partial class MainViewModel : ObservableObject
             }
         };
 
+        if (Keys is not null) Keys.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(KeyDiscoveryViewModel.StatusText) or nameof(KeyDiscoveryViewModel.IsBusy))
+            {
+                OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(IsBusy));
+            }
+        };
+
         Loc.Instance.LanguageChanged += () =>
         {
             OnPropertyChanged(nameof(Pages));
@@ -124,6 +154,8 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     public void Navigate(string key) => SelectedPage = Pages.First(p => p.Key == key);
+
+    public void Dispose() => Plugins.Dispose();
 }
 
 /// <summary>Simple 24x24 outline glyphs drawn for this application.</summary>
@@ -138,12 +170,19 @@ internal static class Icons
     public const string Browser =
         "M3 6 A2 2 0 0 1 5 4 L9 4 L11 6 L19 6 A2 2 0 0 1 21 8 L21 18 A2 2 0 0 1 19 20 L5 20 A2 2 0 0 1 3 18 Z M3 10 L21 10";
 
+    public const string Keys =
+        "M8 12 A4 4 0 1 1 15.5 14 L21 14 L21 17 L18 17 L18 20 L15 20 L15 17 L13 17 M8 10 L8 10.01";
+
     public const string Log =
         "M6 3 L15 3 L20 8 L20 21 L6 21 Z M15 3 L15 8 L20 8 M9 12 L17 12 M9 16 L17 16";
 
     public const string Settings =
         "M12 8 A4 4 0 1 0 12 16 A4 4 0 1 0 12 8 M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12 " +
         "M4.9 4.9 L7 7 M17 17 L19.1 19.1 M4.9 19.1 L7 17 M17 7 L19.1 4.9";
+
+    public const string Plugins =
+        "M8 3 L16 3 L16 7 L20 7 L20 15 L16 15 L16 21 L8 21 L8 17 L4 17 L4 9 L8 9 Z " +
+        "M8 9 L12 9 L12 5 M16 15 L12 15 L12 19";
 
     public const string About =
         "M12 3 A9 9 0 1 0 12 21 A9 9 0 1 0 12 3 M12 11 L12 16 M12 8 L12 8.01";
