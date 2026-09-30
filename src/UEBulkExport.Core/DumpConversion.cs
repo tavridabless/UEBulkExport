@@ -147,6 +147,9 @@ public sealed class DumpConversionService
             }
         }
 
+        // Sound left in its original encoding is simply not picked up by the import below; without
+        // a row here it would vanish from the result with nothing to say why.
+        failures.AddRange(await Task.Run(() => FindUnconvertedAudio(importRoot).ToList(), ct));
         WriteFailureReport(errorReportPath, failures);
 
         progress?.Report(new("PreparingImport", 0.55, "Preparing files for the target Unreal Editor."));
@@ -334,6 +337,11 @@ public sealed class DumpConversionService
             UsmapPath = string.IsNullOrWhiteSpace(conversion.MappingsPath)
                 ? null
                 : conversion.MappingsPath.Trim(),
+            // UE5 sound is usually Bink, which the editor cannot import; vgmstream adds the .wav it
+            // can. A stale path from settings is dropped rather than failing on every sound.
+            VgmStreamPath = !string.IsNullOrWhiteSpace(conversion.VgmStreamPath) && File.Exists(conversion.VgmStreamPath.Trim())
+                ? conversion.VgmStreamPath.Trim()
+                : null,
             WriteJson = false,
             WriteAssets = true,
             WriteRawMisc = false,
@@ -425,6 +433,28 @@ public sealed class DumpConversionService
         foreach (var c in value)
             builder.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
         return builder.ToString().Trim('_');
+    }
+
+    /// <summary>Audio encodings the exporters write as-is and Unreal Editor cannot import.</summary>
+    private static readonly string[] EncodedAudioExtensions = [".binka", ".adpcm", ".opus", ".rada", ".at9", ".xma"];
+
+    /// <summary>
+    /// Sounds that stayed in an encoding the editor cannot import because no .wav was produced next
+    /// to them, which is what happens when vgmstream is not available during the export.
+    /// </summary>
+    internal static IEnumerable<DumpConversionFailure> FindUnconvertedAudio(string root)
+    {
+        foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            if (!EncodedAudioExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)) continue;
+            if (File.Exists(Path.ChangeExtension(path, ".wav"))) continue;
+
+            yield return new DumpConversionFailure(
+                Path.GetRelativePath(root, path),
+                "Audio",
+                $"The sound was exported as {Path.GetExtension(path).TrimStart('.').ToUpperInvariant()}, which Unreal Editor " +
+                "cannot import. Set the vgmstream path in Settings and run the conversion again to get a .wav.");
+        }
     }
 
     private static int CountActorXFiles(string root) =>
@@ -910,7 +940,8 @@ public sealed record DumpConversionOptions(
     bool Overwrite = false,
     TimeSpan? UModelInactivityTimeout = null,
     TimeSpan? EditorInactivityTimeout = null,
-    string? MappingsPath = null);
+    string? MappingsPath = null,
+    string? VgmStreamPath = null);
 
 public sealed record DumpConversionProgress(string Stage, double Fraction, string Message);
 

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace UEBulkExport.Gui.Services;
 
@@ -56,11 +55,10 @@ public sealed class AppSettings
     public List<RecentGame> Recent { get; set; } = [];
     public List<string> EnabledPlugins { get; set; } = [];
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault
-    };
+    // Every property is written, defaults included. Skipping CLR defaults would drop a switch the
+    // user turned off (false is the default for bool), and the initializer would then turn it back
+    // on at the next start.
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     /// <summary>
     /// The language chosen in the installer wizard, written next to the executable as
@@ -90,13 +88,7 @@ public sealed class AppSettings
     {
         try
         {
-            if (File.Exists(FilePath))
-            {
-                var loaded = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(FilePath), JsonOptions) ?? new AppSettings();
-                loaded.Recent ??= [];
-                loaded.EnabledPlugins ??= [];
-                return loaded;
-            }
+            if (File.Exists(FilePath)) return Deserialize(File.ReadAllText(FilePath));
         }
         catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -111,11 +103,41 @@ public sealed class AppSettings
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(this, JsonOptions));
+            File.WriteAllText(FilePath, Serialize(this));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             Log.Warn($"could not save settings: {e.Message}");
+        }
+    }
+
+    internal static string Serialize(AppSettings settings) => JsonSerializer.Serialize(settings, JsonOptions);
+
+    internal static AppSettings Deserialize(string json)
+    {
+        var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+
+        // An explicit null in the file (a hand edit, or an older version) replaces the initializer,
+        // and the pages call Trim() on these paths directly.
+        ReplaceNullStrings(loaded);
+        loaded.Recent ??= [];
+        loaded.EnabledPlugins ??= [];
+        loaded.Recent.RemoveAll(game => game is null);
+        foreach (var game in loaded.Recent)
+        {
+            ReplaceNullStrings(game);
+            game.AesKeys ??= [];
+        }
+
+        return loaded;
+    }
+
+    private static void ReplaceNullStrings(object target)
+    {
+        foreach (var property in target.GetType().GetProperties())
+        {
+            if (property.PropertyType == typeof(string) && property.CanWrite && property.GetValue(target) is null)
+                property.SetValue(target, "");
         }
     }
 

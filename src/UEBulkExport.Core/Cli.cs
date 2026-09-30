@@ -333,13 +333,20 @@ public static class Cli
     /// <summary>Accepts "5.3", "UE5_3" and "GAME_UE5_3" alike.</summary>
     public static EGame ParseGame(string s)
     {
-        if (Enum.TryParse<EGame>(s, true, out var g)) return g;
-        if (Enum.TryParse($"GAME_{s}", true, out g)) return g;
+        if (TryParseGameName(s, out var g)) return g;
+        if (TryParseGameName($"GAME_{s}", out g)) return g;
 
         var dotted = s.TrimStart('U', 'E', 'u', 'e').Replace('.', '_');
-        if (Enum.TryParse($"GAME_UE{dotted}", true, out g)) return g;
+        if (TryParseGameName($"GAME_UE{dotted}", out g)) return g;
 
         throw new UserFacingException($"Unknown engine version '{s}'.",
             "Expected something like 5.3, UE5_3 or GAME_UE5_3.");
     }
+
+    /// <summary>
+    /// Enum.TryParse also accepts bare numbers, which would turn "--game 5" into whichever engine
+    /// happens to have that underlying value. Only names mean anything here.
+    /// </summary>
+    private static bool TryParseGameName(string value, out EGame game) =>
+        Enum.TryParse(value, true, out game) && !long.TryParse(value, out _) && Enum.IsDefined(game);
 }

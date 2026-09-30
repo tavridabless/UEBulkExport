@@ -111,7 +111,7 @@
             <StackPanel IsVisible="{Binding IsUE5Source}">
               <TextBlock Classes="Label" Text="{loc:Tr Migrate.Mappings.Label}" />
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                <TextBox Grid.Column="0" Text="{Binding MappingsPath}" Watermark="D:\Mappings\Bodycam.usmap" />
+                <TextBox Grid.Column="0" Text="{Binding MappingsPath}" Watermark="D:\Mappings\MyGame.usmap" />
                 <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseMappingsCommand}" />
               </Grid>
               <TextBlock Classes="Hint" Text="{loc:Tr Migrate.Mappings.Hint}" />

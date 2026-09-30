@@ -55,18 +55,14 @@ plugins/
   "navigationLabel": "Example",
   "navigationIcon": "M4 4 L20 4 L20 20 L4 20 Z",
   "minimumHostVersion": "2.1.0",
-  "maximumHostVersion": "3.0.0",
-  "capabilities": [],
-  "showPage": true
+  "maximumHostVersion": "3.0.0"
 }
 ```
 
 Id — стабильный идентификатор в нижнем регистре. Entry DLL и иконка должны лежать непосредственно
 в каталоге плагина; абсолютные пути и `..` отклоняются. Допустимы PNG, JPEG, WEBP и BMP размером до
 2 МиБ. Поля `maximumHostVersion`, `homepage`, `icon`, `navigationLabel` и `navigationIcon`
-`capabilities` и `showPage` необязательны; по умолчанию `showPage` равен `true`. Capability
-выдаётся host-приложению только после успешной загрузки включённого плагина. Расширение, которому
-не нужна отдельная страница навигации, может задать `showPage: false`.
+необязательны.
 
 ## Разработка плагина
 

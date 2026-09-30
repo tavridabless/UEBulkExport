@@ -66,6 +66,41 @@ public sealed class DumpConversionTests
     }
 
     [Fact]
+    public void CreateUE5ExportOptions_passes_an_existing_vgmstream_and_ignores_a_missing_one()
+    {
+        using var temp = new TempDir();
+        var vgmstream = Path.Combine(temp.Path, "vgmstream-cli.exe");
+        File.WriteAllBytes(vgmstream, [1]);
+        var conversion = new DumpConversionOptions(
+            "Dump", "5.5", "", "Target.uproject", "UnrealEditor-Cmd.exe", "/Game/Converted",
+            VgmStreamPath: vgmstream);
+
+        Assert.Equal(vgmstream, DumpConversionService.CreateUE5ExportOptions(conversion, "Dump", "Exported").VgmStreamPath);
+
+        // A stale path from settings must not make every sound fail to start a process.
+        var missing = conversion with { VgmStreamPath = Path.Combine(temp.Path, "gone.exe") };
+        Assert.Null(DumpConversionService.CreateUE5ExportOptions(missing, "Dump", "Exported").VgmStreamPath);
+    }
+
+    [Fact]
+    public void Encoded_audio_without_a_wav_is_reported_because_the_editor_cannot_import_it()
+    {
+        using var temp = new TempDir();
+        var sounds = temp.Dir("Exported", "Game", "Audio");
+        File.WriteAllBytes(Path.Combine(sounds, "Voice.binka"), [1]);
+        File.WriteAllBytes(Path.Combine(sounds, "Music.binka"), [1]);
+        File.WriteAllBytes(Path.Combine(sounds, "Music.wav"), [1]);     // converted: imports fine
+        File.WriteAllBytes(Path.Combine(sounds, "Ambient.ogg"), [1]);   // importable as is
+        File.WriteAllBytes(Path.Combine(sounds, "notes.txt"), [1]);     // not an asset at all
+
+        var root = Path.Combine(temp.Path, "Exported");
+        var failure = Assert.Single(DumpConversionService.FindUnconvertedAudio(root));
+
+        Assert.Equal(Path.Combine("Game", "Audio", "Voice.binka"), failure.SourceFile);
+        Assert.Contains("vgmstream", failure.Error);
+    }
+
+    [Fact]
     public void Validate_UE5_allows_missing_mappings_but_rejects_an_invalid_selected_path()
     {
         if (!OperatingSystem.IsWindows()) return;

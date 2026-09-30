@@ -34,7 +34,7 @@ public sealed partial class PluginItemViewModel : ObservableObject, IDisposable
             : NeedsRestart
                 ? Loc.Instance["Plugins.Status.Restart"]
                 : IsLoaded
-                    ? Loc.Instance[Descriptor.ShowsPage ? "Plugins.Status.Loaded" : "Plugins.Status.LoadedFeature"]
+                    ? Loc.Instance["Plugins.Status.Loaded"]
                     : Loc.Instance["Plugins.Status.Disabled"];
 
     [ObservableProperty] private bool _isEnabled;

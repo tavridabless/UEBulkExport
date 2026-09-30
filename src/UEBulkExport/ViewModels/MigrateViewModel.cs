@@ -142,9 +142,11 @@ public sealed partial class MigrateViewModel : ObservableObject
             if (!EditorFound) return (Readiness.Blocked, L["Migrate.Ready.NoEditor"]);
             if (IsUE5Source && MappingsProvided && !MappingsFound)
                 return (Readiness.Blocked, L["Migrate.Ready.BadMappings"]);
-            if (IsUE5Source && !MappingsProvided) return (Readiness.Warning, L["Migrate.Ready.NoMappings"]);
             if (!IsUE5Source && !UModelFound) return (Readiness.Blocked, L["Migrate.Ready.NoUModel"]);
+            // Overwriting target assets is the more costly surprise, so it wins the single line;
+            // missing mappings are still reported in the Tools summary.
             if (Overwrite) return (Readiness.Warning, OverwriteWarning);
+            if (IsUE5Source && !MappingsProvided) return (Readiness.Warning, L["Migrate.Ready.NoMappings"]);
             return (Readiness.Ready, L.Format("Migrate.Ready.Ok",
                 Path.GetFileNameWithoutExtension(TargetProjectPath.Trim()), DestinationPath.Trim()));
         }
@@ -335,7 +337,8 @@ public sealed partial class MigrateViewModel : ObservableObject
                 UnrealEditorPath.Trim(),
                 DestinationPath.Trim(),
                 Overwrite: Overwrite,
-                MappingsPath: IsUE5Source ? MappingsPath.Trim() : null);
+                MappingsPath: IsUE5Source ? MappingsPath.Trim() : null,
+                VgmStreamPath: IsUE5Source ? _settings.VgmStreamPath : null);
             var token = _cancellation.Token;
             // The service scans and links large dumps; keep that work off the UI thread. Progress
             // and the Continue prompt marshal back on their own.

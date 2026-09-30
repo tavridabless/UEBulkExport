@@ -24,8 +24,6 @@ public sealed class PluginManifest
     public string NavigationIcon { get; set; } = "";
     public string MinimumHostVersion { get; set; } = "";
     public string MaximumHostVersion { get; set; } = "";
-    public string[] Capabilities { get; set; } = [];
-    public bool? ShowPage { get; set; }
 }
 
 public sealed class PluginDescriptor
@@ -45,7 +43,6 @@ public sealed class PluginDescriptor
     public Control? Page { get; internal set; }
     public bool IsLoaded => Page is not null;
     public bool IsValid => ValidationError is null;
-    public bool ShowsPage => Manifest.ShowPage is not false;
     public string PageKey => $"plugin:{Manifest.Id}";
     public string NavigationLabel => string.IsNullOrWhiteSpace(Manifest.NavigationLabel)
         ? Manifest.Name
@@ -61,7 +58,6 @@ public sealed class PluginDescriptor
 /// </summary>
 public sealed class PluginCatalog
 {
-    public const string AesKeysCapability = "aes-keys";
     public const string ManifestFileName = "plugin.json";
     public const string DefaultNavigationIcon =
         "M8 3 L16 3 L16 7 L20 7 L20 15 L16 15 L16 21 L8 21 L8 17 L4 17 L4 9 L8 9 Z M8 9 L12 9 L12 5 M16 15 L12 15 L12 19";
@@ -77,9 +73,6 @@ public sealed class PluginCatalog
     public static string ApplicationPluginsDirectory => Path.Combine(AppContext.BaseDirectory, "plugins");
     public static string UserPluginsDirectory => Path.Combine(AppSettings.DataDirectory, "plugins");
     public IReadOnlyList<PluginDescriptor> Plugins { get; }
-
-    public bool HasCapability(string capability) => Plugins.Any(plugin =>
-        plugin.IsLoaded && plugin.Manifest.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase));
 
     public PluginCatalog(AppSettings settings, IEnumerable<string>? roots = null, bool loadEnabled = true)
     {
@@ -185,7 +178,6 @@ public sealed class PluginCatalog
         manifest.NavigationIcon ??= "";
         manifest.MinimumHostVersion ??= "";
         manifest.MaximumHostVersion ??= "";
-        manifest.Capabilities ??= [];
     }
 
     private static string? Validate(PluginManifest manifest, string directory)
@@ -226,13 +218,6 @@ public sealed class PluginCatalog
 
         if (manifest.NavigationIcon.Length > 4096 || manifest.NavigationIcon.Any(char.IsControl))
             return "navigationIcon is too long or contains control characters.";
-
-        if (manifest.Capabilities.Length > 16 || manifest.Capabilities.Any(capability =>
-                string.IsNullOrWhiteSpace(capability) || capability.Length > 64 || !IdPattern.IsMatch(capability)))
-            return "capabilities must contain at most 16 valid lowercase identifiers.";
-
-        if (manifest.Capabilities.Distinct(StringComparer.OrdinalIgnoreCase).Count() != manifest.Capabilities.Length)
-            return "capabilities must not contain duplicates.";
 
         return null;
     }

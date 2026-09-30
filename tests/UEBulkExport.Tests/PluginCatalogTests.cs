@@ -77,25 +77,13 @@ public sealed class PluginCatalogTests : IDisposable
     }
 
     [Fact]
-    public void Disabled_plugin_does_not_grant_declared_capability()
-    {
-        CreatePlugin("sample.plugin", "sample", [PluginCatalog.AesKeysCapability]);
-
-        var catalog = new PluginCatalog(new AppSettings(), [_tmp.Path]);
-
-        Assert.False(catalog.HasCapability(PluginCatalog.AesKeysCapability));
-    }
-
-    [Fact]
-    public void Enabled_plugin_grants_capability_only_after_successful_load_and_can_hide_its_page()
+    public void Enabled_valid_plugin_loads_its_page()
     {
         var folder = _tmp.Dir("loaded");
         File.Copy(typeof(LoadedTestPlugin).Assembly.Location, Path.Combine(folder, "Plugin.dll"));
         WriteManifest(folder, Manifest("loaded.plugin") with
         {
-            EntryType = typeof(LoadedTestPlugin).FullName!,
-            Capabilities = [PluginCatalog.AesKeysCapability],
-            ShowPage = false
+            EntryType = typeof(LoadedTestPlugin).FullName!
         });
         var settings = new AppSettings();
         settings.EnabledPlugins.Add("loaded.plugin");
@@ -104,32 +92,13 @@ public sealed class PluginCatalogTests : IDisposable
         var plugin = Assert.Single(catalog.Plugins);
 
         Assert.True(plugin.IsLoaded, plugin.LoadError);
-        Assert.True(catalog.HasCapability(PluginCatalog.AesKeysCapability));
-        Assert.False(plugin.ShowsPage);
     }
 
-    [Fact]
-    public void Invalid_or_duplicate_capabilities_are_rejected()
-    {
-        var invalid = _tmp.Dir("invalid-capability");
-        File.WriteAllBytes(Path.Combine(invalid, "Plugin.dll"), [0x4d, 0x5a]);
-        WriteManifest(invalid, Manifest("invalid.plugin") with { Capabilities = ["AES Keys"] });
-        var duplicate = _tmp.Dir("duplicate-capability");
-        File.WriteAllBytes(Path.Combine(duplicate, "Plugin.dll"), [0x4d, 0x5a]);
-        WriteManifest(duplicate, Manifest("duplicate.plugin") with { Capabilities = ["aes-keys", "aes-keys"] });
-
-        var plugins = PluginCatalog.Discover([_tmp.Path]);
-
-        Assert.All(plugins, plugin => Assert.False(plugin.IsValid));
-        Assert.Contains(plugins, plugin => plugin.ValidationError!.Contains("valid lowercase", StringComparison.Ordinal));
-        Assert.Contains(plugins, plugin => plugin.ValidationError!.Contains("duplicates", StringComparison.Ordinal));
-    }
-
-    private void CreatePlugin(string id, string folderName, string[]? capabilities = null)
+    private void CreatePlugin(string id, string folderName)
     {
         var folder = _tmp.Dir(folderName);
         File.WriteAllBytes(Path.Combine(folder, "Plugin.dll"), [0x4d, 0x5a]);
-        WriteManifest(folder, Manifest(id) with { Capabilities = capabilities });
+        WriteManifest(folder, Manifest(id));
     }
 
     private static TestManifest Manifest(string id) => new(
@@ -156,9 +125,7 @@ public sealed class PluginCatalogTests : IDisposable
         string Version,
         string Author,
         string EntryAssembly,
-        string EntryType,
-        string[]? Capabilities = null,
-        bool? ShowPage = null);
+        string EntryType);
 }
 
 public sealed class LoadedTestPlugin : IUEBulkExportPlugin

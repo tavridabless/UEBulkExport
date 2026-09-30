@@ -25,6 +25,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="UEBulkExport.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../UEBulkExport.Core/UEBulkExport.Core.csproj" />
     <ProjectReference Include="../UEBulkExport.Plugin.Abstractions/UEBulkExport.Plugin.Abstractions.csproj" />
   </ItemGroup>

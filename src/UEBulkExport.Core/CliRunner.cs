@@ -9,9 +9,6 @@ public static class CliRunner
     /// <summary>Exit codes: 0 clean, 1 could not start or crashed, 2 finished with failed entries.</summary>
     public static async Task<int> RunAsync(string[] args, CancellationToken ct = default)
     {
-        if (KeyDiscoveryCli.IsCommand(args))
-            return await KeyDiscoveryCli.RunAsync(args, ct);
-
         try
         {
             var options = Cli.Parse(args);

@@ -55,18 +55,14 @@ The plugin page then appears in the navigation rail.
   "navigationLabel": "Example",
   "navigationIcon": "M4 4 L20 4 L20 20 L4 20 Z",
   "minimumHostVersion": "2.1.0",
-  "maximumHostVersion": "3.0.0",
-  "capabilities": [],
-  "showPage": true
+  "maximumHostVersion": "3.0.0"
 }
 ```
 
 The id is a stable lowercase identifier. The entry DLL and icon must be direct children of the
 plugin directory; rooted paths and traversal are rejected. The icon may be PNG, JPEG, WEBP or BMP
 and must not exceed 2 MiB. `maximumHostVersion`, `homepage`, `icon`, `navigationLabel` and
-`navigationIcon`, `capabilities` and `showPage` are optional. `showPage` defaults to `true`.
-Capabilities are granted only after the enabled plugin has loaded successfully. A capability-only
-extension can set `showPage` to `false` when it does not need a separate navigation page.
+`navigationIcon` are optional.
 
 ## Building a plugin
 

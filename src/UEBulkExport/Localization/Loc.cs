@@ -43,11 +43,11 @@ public sealed class Loc : INotifyPropertyChanged
         set
         {
             var code = _tables.ContainsKey(value) ? value : "en";
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(code);
             if (code == _language) return;
 
             _language = code;
             _current = _tables[code];
-            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(code);
 
             // An empty name means "everything changed", which is what the indexer bindings need.
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));

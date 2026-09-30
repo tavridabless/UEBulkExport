@@ -143,6 +143,10 @@ public sealed class CliParseGameTests
     [InlineData("banana")]
     [InlineData("")]
     [InlineData("99.99")]
+    // Enum.TryParse also takes bare numbers; "5" must not become whichever EGame happens to be 5.
+    [InlineData("5")]
+    [InlineData("0")]
+    [InlineData("-1")]
     public void Rejects_garbage(string input)
     {
         var e = Assert.Throws<UserFacingException>(() => Cli.ParseGame(input));
