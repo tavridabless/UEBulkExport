@@ -1,6 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- The ordinary target keeps the Avalonia application portable. The Windows target adds
+         the WinRT projection used for real Action Center notifications in Windows installers. -->
+    <TargetFrameworks>net10.0;net10.0-windows10.0.18362.0</TargetFrameworks>
+    <TargetFramework></TargetFramework>
+    <TargetPlatformMinVersion Condition="'$(TargetFramework)' == 'net10.0-windows10.0.18362.0'">10.0.14393.0</TargetPlatformMinVersion>
     <!-- WinExe: no console window when the executable is double-clicked. -->
     <OutputType>WinExe</OutputType>
     <AssemblyName>UEBulkExport</AssemblyName>
@@ -22,6 +27,12 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
     <PackageReference Include="Avalonia.Diagnostics" Version="11.3.22" Condition="'$(Configuration)' == 'Debug'" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2"
+                      Condition="'$(TargetFramework)' == 'net10.0-windows10.0.18362.0'" />
+    <!-- The notification helper accepts any newer System.Drawing.Common; pin the current runtime
+         package so NuGet does not select its vulnerable 4.7-era minimum. -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0"
+                      Condition="'$(TargetFramework)' == 'net10.0-windows10.0.18362.0'" />
   </ItemGroup>
 
   <ItemGroup>

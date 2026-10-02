@@ -15,6 +15,7 @@ are, where they come from, how they reach your machine, and under what terms.
 | [Avalonia.Themes.Fluent](https://github.com/AvaloniaUI/Avalonia) | 11.3.22 | MIT | Fluent control theme for the window |
 | [Avalonia.Fonts.Inter](https://github.com/AvaloniaUI/Avalonia) | 11.3.22 | MIT; the bundled [Inter](https://github.com/rsms/inter) font is OFL-1.1 | Default UI font for the window |
 | [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | 8.4.2 | MIT | Observable properties and commands for the window's view models |
+| [CommunityToolkit.WinUI.Notifications](https://github.com/CommunityToolkit/WindowsCommunityToolkit) | 7.1.2 | MIT | Delivers Windows toast notifications from the unpackaged desktop application |
 
 The Avalonia packages and CommunityToolkit.Mvvm are referenced by the GUI project alone; the
 console executable and the core library do not depend on them.

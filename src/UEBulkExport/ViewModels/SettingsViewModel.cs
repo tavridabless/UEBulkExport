@@ -8,6 +8,7 @@ namespace UEBulkExport.Gui.ViewModels;
 public sealed partial class SettingsViewModel : ObservableObject
 {
     private readonly AppSettings _settings;
+    private readonly IAppNotificationService? _notifications;
     private readonly string _startupLanguage;
 
     public IReadOnlyList<LanguageInfo> Languages => Loc.Languages;
@@ -24,6 +25,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] private bool _rememberPaths;
     [ObservableProperty] private bool _confirmClose;
     [ObservableProperty] private bool _transparencyEnabled;
+    [ObservableProperty] private bool _notificationsEnabled;
     [ObservableProperty] private int _defaultThreads;
     [ObservableProperty] private string _retocPath;
     [ObservableProperty] private string _oodlePath;
@@ -38,15 +40,17 @@ public sealed partial class SettingsViewModel : ObservableObject
     /// <summary>Handled by the main window, which owns shutdown and running-export confirmation.</summary>
     public event Action? RestartRequested;
 
-    public SettingsViewModel(AppSettings settings)
+    public SettingsViewModel(AppSettings settings, IAppNotificationService? notifications = null)
     {
         _settings = settings;
+        _notifications = notifications;
         _startupLanguage = Loc.Instance.Language;
         _language = Languages.FirstOrDefault(l => l.Code == Loc.Instance.Language) ?? Languages[0];
         _theme = Themes.FirstOrDefault(t => t.Code == settings.Theme) ?? Themes[0];
         _rememberPaths = settings.RememberPaths;
         _confirmClose = settings.ConfirmCloseWhileRunning;
         _transparencyEnabled = settings.TransparencyEnabled;
+        _notificationsEnabled = settings.NotificationsEnabled;
         _defaultThreads = settings.DefaultThreads;
         _retocPath = settings.RetocPath;
         _oodlePath = settings.OodlePath;
@@ -71,6 +75,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     partial void OnRememberPathsChanged(bool value) { _settings.RememberPaths = value; _settings.Save(); }
     partial void OnConfirmCloseChanged(bool value) { _settings.ConfirmCloseWhileRunning = value; _settings.Save(); }
     partial void OnTransparencyEnabledChanged(bool value) { _settings.TransparencyEnabled = value; _settings.Save(); }
+    partial void OnNotificationsEnabledChanged(bool value) { _settings.NotificationsEnabled = value; _settings.Save(); }
     partial void OnDefaultThreadsChanged(int value) { _settings.DefaultThreads = Math.Max(1, value); _settings.Save(); }
     partial void OnRetocPathChanged(string value) { _settings.RetocPath = value; _settings.Save(); }
     partial void OnOodlePathChanged(string value) { _settings.OodlePath = value; _settings.Save(); }
@@ -93,6 +98,16 @@ public sealed partial class SettingsViewModel : ObservableObject
     private void OpenSettingsFolder() => ShellHelper.OpenFolder(Path.GetDirectoryName(AppSettings.FilePath)!);
 
     [RelayCommand]
+    private void TestNotification()
+    {
+        if (!NotificationsEnabled) return;
+        _notifications?.Show(new AppNotification(
+            Loc.Instance["Notification.Test.Title"],
+            Loc.Instance["Notification.Test.Body"],
+            "settings"));
+    }
+
+    [RelayCommand]
     private void Restart() => RestartRequested?.Invoke();
 
     [RelayCommand]
@@ -103,6 +118,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         _settings.Theme = fresh.Theme;
         _settings.RememberPaths = fresh.RememberPaths;
         _settings.TransparencyEnabled = fresh.TransparencyEnabled;
+        _settings.NotificationsEnabled = fresh.NotificationsEnabled;
         _settings.ConfirmCloseWhileRunning = fresh.ConfirmCloseWhileRunning;
         _settings.DefaultThreads = fresh.DefaultThreads;
         _settings.LastPaksPath = "";
@@ -118,6 +134,7 @@ public sealed partial class SettingsViewModel : ObservableObject
         RememberPaths = fresh.RememberPaths;
         ConfirmClose = fresh.ConfirmCloseWhileRunning;
         TransparencyEnabled = fresh.TransparencyEnabled;
+        NotificationsEnabled = fresh.NotificationsEnabled;
         DefaultThreads = fresh.DefaultThreads;
         RetocPath = OodlePath = ZlibPath = VgmStreamPath = "";
 

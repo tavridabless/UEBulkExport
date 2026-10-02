@@ -29,12 +29,12 @@
   </ItemGroup>
 
   <Target Name="CopyCUE4ParseNatives" AfterTargets="Build"
-          Condition="'$(NativesWanted)' == 'true' and Exists('$(NativesLibraryPath)')">
+          Condition="'$(NativesWanted)' == 'true' and '$(OutDir)' != '' and Exists('$(NativesLibraryPath)')">
     <Copy SourceFiles="$(NativesLibraryPath)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="PublishCUE4ParseNatives" AfterTargets="Publish"
-          Condition="'$(NativesWanted)' == 'true' and Exists('$(NativesLibraryPath)')">
+          Condition="'$(NativesWanted)' == 'true' and '$(PublishDir)' != '' and Exists('$(NativesLibraryPath)')">
     <Copy SourceFiles="$(NativesLibraryPath)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
 

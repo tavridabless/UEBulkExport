@@ -12,8 +12,14 @@ All notable changes to this project are documented here. The format follows
   executing DLLs; plugins are disabled by default, enabled per user, loaded after restart, and can
   add navigation pages or grant host capabilities. Both application-local and per-user plugin
   folders are supported.
+- Windows system notifications report completed, cancelled and failed exports and migrations,
+  and immediately signal when conversion pauses for the user's decision. Clicking a notification
+  restores the window on the relevant page; notifications can be disabled in Settings.
+
 ### Fixed
 
+- Windows completion and error messages now use real toast notifications retained in Action
+  Center. The notification-area balloon remains as a fallback, and Settings has a test button.
 - Plugin switches now stay in sync after resetting settings, status colors distinguish errors and
   restart-pending states, and both plugin-folder buttons create a missing target when permitted.
 

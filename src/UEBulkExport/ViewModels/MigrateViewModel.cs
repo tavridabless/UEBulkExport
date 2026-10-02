@@ -60,6 +60,8 @@ public sealed partial class MigrateViewModel : ObservableObject
 
     /// <summary>Set by the view: asks a yes/no question (title, message) and returns the answer.</summary>
     public Func<string, string, Task<bool>>? Confirm { get; set; }
+    /// <summary>Raised for a completed conversion or an error that needs a decision.</summary>
+    public event Action<AppNotification>? NotificationRequested;
 
     public MigrateViewModel(AppSettings settings)
     {
@@ -294,6 +296,8 @@ public sealed partial class MigrateViewModel : ObservableObject
         catch (Exception e)
         {
             DetectionNote = L.Format("Migrate.Detect.Error", e.Message);
+            if (searchProjects)
+                Notify("Notification.Detect.Failed.Title", e.Message, AppNotificationSeverity.Error);
         }
         finally
         {
@@ -347,24 +351,35 @@ public sealed partial class MigrateViewModel : ObservableObject
             LastWorkingDirectory = summary.WorkingDirectory;
             LastReportPath = summary.ErrorReportPath ?? "";
             ShowSummary(summary);
+            var unavailable = summary.FailedFiles + summary.SkippedFiles;
+            if (unavailable > 0)
+                Notify("Notification.Migrate.Errors.Title",
+                    L.Format("Notification.Migrate.Errors.Body", summary.ImportedFiles, unavailable),
+                    AppNotificationSeverity.Warning);
+            else
+                Notify("Notification.Migrate.Done.Title",
+                    L.Format("Notification.Migrate.Done.Body", summary.ImportedFiles));
         }
         catch (OperationCanceledException)
         {
             SummaryTitle = "";
             ErrorHeadline = L["Migrate.Stage.Cancelled"];
             ErrorHint = "";
+            Notify("Notification.Migrate.Cancelled.Title", L["Notification.Migrate.Cancelled.Body"]);
         }
         catch (UserFacingException u)
         {
             ErrorHeadline = u.Headline;
             ErrorHint = u.Hint ?? "";
             Log.Problem(u.Headline, u.Hint);
+            Notify("Notification.Migrate.Failed.Title", ErrorNotificationText(), AppNotificationSeverity.Error);
         }
         catch (Exception e)
         {
             ErrorHeadline = L["Error.Unexpected"];
             ErrorHint = e.Message;
             Log.Error(e.ToString());
+            Notify("Notification.Migrate.Failed.Title", ErrorNotificationText(), AppNotificationSeverity.Error);
         }
         finally
         {
@@ -390,6 +405,8 @@ public sealed partial class MigrateViewModel : ObservableObject
             ErrorHint = $"{issue.SourceFile}{Environment.NewLine}{issue.Details}";
             HasPendingIssue = true;
             Stage = L["Migrate.Error.Waiting"];
+            Notify("Notification.Migrate.Attention.Title", issue.Headline,
+                AppNotificationSeverity.Warning);
         });
 
         using var registration = ct.Register(() => decision.TrySetCanceled(ct));
@@ -451,6 +468,14 @@ public sealed partial class MigrateViewModel : ObservableObject
         Summary.Add(new SummaryLine(L["Migrate.Summary.Destination"], s.DestinationPath));
         OnPropertyChanged(nameof(HasSummary));
     }
+
+    private void Notify(string titleKey, string message,
+        AppNotificationSeverity severity = AppNotificationSeverity.Information) =>
+        NotificationRequested?.Invoke(new AppNotification(L[titleKey], message, "migrate", severity));
+
+    private string ErrorNotificationText() => string.IsNullOrWhiteSpace(ErrorHint)
+        ? ErrorHeadline
+        : $"{ErrorHeadline}: {ErrorHint}";
 
     private void Remember()
     {

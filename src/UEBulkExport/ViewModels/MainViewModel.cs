@@ -60,14 +60,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         while (IsBusy && DateTime.UtcNow < deadline) await Task.Delay(25);
     }
 
-    public MainViewModel(AppSettings settings)
+    public MainViewModel(AppSettings settings, IAppNotificationService notifications)
     {
         AppSettings = settings;
         Export = new ExportViewModel(settings);
         Migrate = new MigrateViewModel(settings);
         Log = new LogViewModel(App.LogSink);
         Plugins = new PluginsViewModel(settings);
-        Settings = new SettingsViewModel(settings);
+        Settings = new SettingsViewModel(settings, notifications);
         var pages = new List<NavItem>
         {
             new("export", "Nav.Export", Icons.Export),
@@ -84,6 +84,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _selectedPage = Pages[0];
 
         Export.Scanned += Browser.Load;
+        Export.NotificationRequested += notification =>
+        {
+            if (AppSettings.NotificationsEnabled) notifications.Show(notification);
+        };
+        Migrate.NotificationRequested += notification =>
+        {
+            if (AppSettings.NotificationsEnabled) notifications.Show(notification);
+        };
         Browser.Export = Export;
         Browser.ExportRequested += paths =>
         {

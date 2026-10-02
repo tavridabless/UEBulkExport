@@ -78,6 +78,7 @@ public sealed partial class ExportViewModel : ObservableObject
     /// <summary>Bumped by every change that makes a running scan's answer stale.</summary>
     private int _scanGeneration;
     private bool _scanQueued;
+    private bool _notifyNextScanFailure;
     /// <summary>The container folder the engine version was last detected for.</summary>
     private string? _detectedFor;
     /// <summary>The source the user picked the engine version for by hand; detection leaves it alone.</summary>
@@ -254,6 +255,8 @@ public sealed partial class ExportViewModel : ObservableObject
 
     /// <summary>Raised after a successful scan; the shell hands the result to the Browser tab.</summary>
     public event Action<ScanResult>? Scanned;
+    /// <summary>Raised for a completed run or an error that deserves the user's attention.</summary>
+    public event Action<AppNotification>? NotificationRequested;
 
     /// <summary>Set by the view: copies text to the clipboard.</summary>
     public Func<string, Task>? CopyToClipboard { get; set; }
@@ -490,6 +493,8 @@ public sealed partial class ExportViewModel : ObservableObject
         }
 
         var generation = _scanGeneration;
+        var notifyFailure = _notifyNextScanFailure;
+        _notifyNextScanFailure = false;
         var paks = PaksPath.Trim().Trim('"');
         var output = NullIfEmpty(OutputPath);
         ScanPhase = ScanPhase.Pending;
@@ -501,7 +506,12 @@ public sealed partial class ExportViewModel : ObservableObject
         }
         catch (UserFacingException e)
         {
-            if (generation == _scanGeneration) FailScan(e.Headline);
+            if (generation == _scanGeneration)
+            {
+                FailScan(e.Headline);
+                if (notifyFailure) Notify("Notification.Scan.Failed.Title", e.Headline,
+                    AppNotificationSeverity.Error);
+            }
             return;
         }
 
@@ -567,6 +577,9 @@ public sealed partial class ExportViewModel : ObservableObject
             {
                 FailScan(e is UserFacingException u ? u.Headline : e.Message);
                 if (e is not UserFacingException) Log.Error(e.ToString());
+                if (notifyFailure) Notify("Notification.Scan.Failed.Title",
+                    e is UserFacingException user ? user.Headline : e.Message,
+                    AppNotificationSeverity.Error);
             }
         }
         finally
@@ -617,6 +630,7 @@ public sealed partial class ExportViewModel : ObservableObject
     private void Rescan()
     {
         _detectedFor = null;
+        _notifyNextScanFailure = true;
         ScheduleScan(TimeSpan.Zero);
     }
 
@@ -963,6 +977,8 @@ public sealed partial class ExportViewModel : ObservableObject
             var plan = await _service.DryRunAsync(ToOptions());
             ShowPlan(plan);
             State = RunState.Idle;
+            Notify("Notification.Plan.Title",
+                L.Format("Notification.Plan.Body", plan.Packages, plan.LooseFiles));
         }
         catch (Exception e)
         {
@@ -994,6 +1010,7 @@ public sealed partial class ExportViewModel : ObservableObject
             State = summary.Cancelled ? RunState.Cancelled
                 : summary.ExitCode == 0 ? RunState.Done
                 : RunState.DoneWithErrors;
+            NotifyExportResult(summary);
         }
         catch (Exception e)
         {
@@ -1034,6 +1051,7 @@ public sealed partial class ExportViewModel : ObservableObject
         {
             case OperationCanceledException:
                 State = RunState.Cancelled;
+                Notify("Notification.Export.Cancelled.Title", L["Notification.Export.Cancelled.Body"]);
                 return;
 
             case UserFacingException u:
@@ -1050,7 +1068,38 @@ public sealed partial class ExportViewModel : ObservableObject
         }
 
         State = RunState.Failed;
+        Notify("Notification.Export.Failed.Title", ErrorNotificationText(),
+            AppNotificationSeverity.Error);
     }
+
+    private string ErrorNotificationText() => string.IsNullOrWhiteSpace(ErrorHint)
+        ? ErrorHeadline
+        : $"{ErrorHeadline}: {ErrorHint}";
+
+    private void NotifyExportResult(ExportSummary summary)
+    {
+        if (summary.Cancelled)
+        {
+            Notify("Notification.Export.Cancelled.Title", L["Notification.Export.Cancelled.Body"]);
+            return;
+        }
+
+        var failed = summary.FailedEntries + summary.FailedObjects;
+        if (summary.ExitCode == 0)
+        {
+            Notify("Notification.Export.Done.Title",
+                L.Format("Notification.Export.Done.Body", summary.Exported, summary.Written));
+        }
+        else
+        {
+            Notify("Notification.Export.Errors.Title",
+                L.Format("Notification.Export.Errors.Body", failed), AppNotificationSeverity.Warning);
+        }
+    }
+
+    private void Notify(string titleKey, string message,
+        AppNotificationSeverity severity = AppNotificationSeverity.Information) =>
+        NotificationRequested?.Invoke(new AppNotification(L[titleKey], message, "export", severity));
 
     private void ApplyProgress(ExportProgress p)
     {

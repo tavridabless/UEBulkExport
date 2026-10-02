@@ -98,8 +98,13 @@ try {
     if (-not $SkipPublish) {
         if (Test-Path $stagingPath) { Remove-Item $stagingPath -Recurse -Force }
         foreach ($project in 'src/UEBulkExport', 'src/UEBulkExport.Cli') {
+            $framework = if ($project -eq 'src/UEBulkExport' -and $Runtime -like 'win-*') {
+                @('-f', 'net10.0-windows10.0.18362.0')
+            }
+            elseif ($project -eq 'src/UEBulkExport') { @('-f', 'net10.0') }
+            else { @() }
             Invoke-Native "Publish $project" {
-                dotnet publish $project -c Release -r $Runtime --self-contained true "-p:Version=$Version" -o $stagingPath -warnaserror --nologo
+                dotnet publish $project @framework -c Release -r $Runtime --self-contained true "-p:Version=$Version" -o $stagingPath -warnaserror --nologo
             }
         }
     }

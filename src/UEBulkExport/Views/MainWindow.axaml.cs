@@ -111,6 +111,16 @@ public sealed partial class MainWindow : Window
         if (_pages.TryGetValue(key, out var page)) PageHost.Content = page;
     }
 
+    /// <summary>Restores the application and opens the operation named by a system notification.</summary>
+    public void ActivateFromNotification(string page)
+    {
+        if (Shell is not { } shell) return;
+        if (shell.Pages.Any(candidate => candidate.Key == page)) shell.Navigate(page);
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Show();
+        Activate();
+    }
+
     private async void OnRestartRequested()
     {
         if (Shell is not { } shell) return;

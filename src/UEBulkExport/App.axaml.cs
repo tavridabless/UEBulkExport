@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using UEBulkExport.Gui.Localization;
 using UEBulkExport.Gui.Services;
 using UEBulkExport.Gui.ViewModels;
@@ -32,11 +33,16 @@ public sealed class App : Application
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var shell = new MainViewModel(Settings);
-            desktop.MainWindow = new MainWindow { DataContext = shell };
+            var notifications = new AppNotificationService();
+            var shell = new MainViewModel(Settings, notifications);
+            var window = new MainWindow { DataContext = shell };
+            desktop.MainWindow = window;
+            notifications.Activated += page =>
+                Dispatcher.UIThread.Post(() => window.ActivateFromNotification(page));
             desktop.ShutdownRequested += (_, _) =>
             {
                 Settings.Save();
+                notifications.Dispose();
                 shell.Dispose();
             };
         }

@@ -53,7 +53,7 @@ jobs:
 
       # The GUI executable accepts the same arguments and must answer without opening a window.
       - name: Smoke test the GUI executable in command-line mode
-        run: dotnet run --project src/UEBulkExport -c Release --no-build -- --version
+        run: dotnet run --project src/UEBulkExport -f net10.0 -c Release --no-build -- --version
 
   # Builds the real installer exactly as a release does (installer/build.ps1), then installs it
   # silently for the current user, runs the installed CLI and uninstalls it again. Catches an

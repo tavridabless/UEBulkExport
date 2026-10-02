@@ -70,6 +70,12 @@
           <TextBlock Classes="CardTitle" Text="{loc:Tr Settings.Behaviour}" Margin="0,0,0,10" />
           <CheckBox IsChecked="{Binding RememberPaths}" Content="{loc:Tr Settings.RememberPaths}" />
           <CheckBox IsChecked="{Binding ConfirmClose}" Content="{loc:Tr Settings.ConfirmClose}" />
+          <CheckBox IsChecked="{Binding NotificationsEnabled}" Content="{loc:Tr Settings.Notifications}" />
+          <TextBlock Classes="Hint" Text="{loc:Tr Settings.Notifications.Hint}" Margin="26,-4,0,0" />
+          <Button Content="{loc:Tr Settings.Notifications.Test}"
+                  Command="{Binding TestNotificationCommand}"
+                  IsEnabled="{Binding NotificationsEnabled}"
+                  HorizontalAlignment="Left" Margin="26,8,0,0" />
 
           <TextBlock Classes="Label" Text="{loc:Tr Settings.Threads}" Margin="0,14,0,4" />
           <Grid ColumnDefinitions="*,56" ColumnSpacing="12">

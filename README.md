@@ -89,7 +89,7 @@ The pages:
 - **Log** — everything the exporter reports, filtered by level, with copy, clear and follow.
 - **Settings** — language (English / Russian; a restart notice appears after a change), theme
   (Light / Dark / System), remember last paths, confirm closing while an export runs, default
-  worker threads, default helper binary paths, reset.
+  worker threads, system notifications, default helper binary paths, reset.
 - **About** — version, dependencies, licence, documentation and project links.
 
 The **Command line** section of the Export page shows the equivalent command for the current
@@ -101,6 +101,13 @@ language chosen in the installer (English otherwise) with the light theme; both 
 the Settings page and remembered. Settings are stored per user in
 `%LOCALAPPDATA%\UEBulkExport\settings.json`; nothing leaves the machine. Should the window fail
 to start, the exception is written to `%LOCALAPPDATA%\UEBulkExport\crash.log`.
+
+On Windows, the application posts a system notification when an export, dry run or migration
+finishes, fails, is cancelled, or pauses for a decision. Clicking it restores UEBulkExport and
+opens the relevant page. Per-file failures are combined into one final notification, and the
+Settings page includes a **Test notification** button. Windows 10/11 uses a real toast retained in
+Action Center, with the notification-area balloon kept as a fallback for portable and older systems.
+The feature can be disabled in **Settings**.
 
 For scripts and CI, use `UEBulkExport.Cli.exe`. The GUI executable also accepts command-line
 arguments for compatibility, but as a Windows GUI-subsystem executable it does not reliably block
@@ -535,7 +542,7 @@ Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 ```bash
 git clone https://github.com/tavridabless/UEBulkExport.git
 cd UEBulkExport
-dotnet publish src/UEBulkExport     -c Release -r win-x64 --self-contained -o artifacts/publish
+dotnet publish src/UEBulkExport     -f net10.0-windows10.0.18362.0 -c Release -r win-x64 --self-contained -o artifacts/publish
 dotnet publish src/UEBulkExport.Cli -c Release -r win-x64 --self-contained -o artifacts/publish
 ```
 
