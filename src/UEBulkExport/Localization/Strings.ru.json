@@ -354,6 +354,9 @@
   "Export.Selection.Clear": "Сбросить выбор",
   "Browser.NotScanned": "Пока нечего показать. Выберите игру на странице «Экспорт» — она прочитается автоматически.",
   "Browser.Search.Placeholder": "Поиск в этой папке…",
+  "Browser.Paging.Summary": "Показано: {0:N0} из {1:N0} · страница {2:N0}/{3:N0}",
+  "Browser.Paging.Previous": "Назад",
+  "Browser.Paging.Next": "Далее",
   "Browser.Folders": "Папки",
   "Browser.Files": "Файлы",
   "Browser.Extensions": "По типу",
@@ -378,6 +381,7 @@
   "Log.Clear": "Очистить",
   "Log.Empty": "Пока пусто.",
   "Log.AutoScroll": "Следить",
+  "Log.Retention": "В окне последние {0:N0} записей; {1:N0} более старых записей убраны из окна. Файловый журнал не сокращается.",
 
   "Settings.Title": "Настройки",
   "Settings.Subtitle": "Хранятся для пользователя; ничего не покидает этот компьютер.",

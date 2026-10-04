@@ -7,7 +7,7 @@
              x:Class="UEBulkExport.Gui.Views.LogView"
              x:DataType="vm:LogViewModel">
 
-  <Grid RowDefinitions="Auto,Auto,*" Margin="28,24,28,20">
+  <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="28,24,28,20">
 
     <StackPanel Grid.Row="0">
       <TextBlock Classes="PageTitle" Text="{loc:Tr Log.Title}" />
@@ -25,7 +25,9 @@
       <Button Grid.Column="4" Content="{loc:Tr Log.Clear}" Command="{Binding ClearCommand}" />
     </Grid>
 
-    <Border Grid.Row="2" Classes="Card" Padding="0">
+    <TextBlock Grid.Row="2" Text="{Binding RetentionText}" Classes="Muted" TextWrapping="Wrap" Margin="0,0,0,8"
+               IsVisible="{Binding RetentionText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    <Border Grid.Row="3" Classes="Card" Padding="0">
       <Grid>
         <ListBox x:Name="List" Classes="Data" ItemsSource="{Binding Visible}" Background="Transparent" Margin="8">
           <ListBox.ItemTemplate>

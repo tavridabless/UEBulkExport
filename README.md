@@ -86,7 +86,11 @@ The pages:
 - **Browser** — inspect the mounted folder tree, search and filter entries by type, view paths and
   sizes, select individual files or folders, export only the selection, or add it to the exclusion
   list. Locked containers are identified when an AES key is missing or incorrect.
+  Large folders use pages of 5000 rows with a total match count and Previous/Next navigation;
+  checked files remain selected across pages and filters.
 - **Log** — everything the exporter reports, filtered by level, with copy, clear and follow.
+  The window retains the latest 20,000 entries, with a bounded pending queue; the export's file
+  log is not truncated. Follow also scrolls to the latest records when opening the page or enabling it.
 - **Settings** — language (English / Russian; a restart notice appears after a change), theme
   (Light / Dark / System), remember last paths, confirm closing while an export runs, default
   worker threads, system notifications, default helper binary paths, reset.

@@ -122,6 +122,77 @@ public sealed class ResumeJournalTests
         Assert.Throws<IOException>(() => journal.MarkDone("missing.bin", [missing]));
     }
 
+    [Fact]
+    public async Task Concurrent_checkpoints_are_complete_and_visible_before_dispose()
+    {
+        using var temp = new TempDir();
+        var options = OptionsFor(temp);
+        var profile = ResumeJournal.CreateProfile(options);
+        var journalPath = Path.Combine(options.OutputDirectory, "_completed.raw.txt");
+        var paths = Enumerable.Range(0, 64).Select(index => temp.File("Export", index + ".bin")).ToArray();
+        foreach (var path in paths) File.WriteAllBytes(path, [1, 2, 3]);
+        using var journal = new ResumeJournal(journalPath, options.OutputDirectory, profile, overwrite: true);
+
+        await Parallel.ForEachAsync(Enumerable.Range(0, paths.Length), new ParallelOptions { MaxDegreeOfParallelism = 4 },
+            (index, _) => { journal.MarkDone(index + ".bin", [paths[index]]); return ValueTask.CompletedTask; });
+
+        var completed = ResumeJournal.Load(journalPath, options.OutputDirectory, profile);
+        Assert.Equal(64, completed.Count);
+        for (var index = 0; index < paths.Length; index++) Assert.Contains(index + ".bin", completed);
+    }
+
+    [Fact]
+    public void One_missing_artifact_does_not_append_a_partial_checkpoint()
+    {
+        using var temp = new TempDir();
+        var options = OptionsFor(temp);
+        var profile = ResumeJournal.CreateProfile(options);
+        var journalPath = Path.Combine(options.OutputDirectory, "_completed.raw.txt");
+        var existing = temp.File("Export", "existing.bin");
+        File.WriteAllBytes(existing, [1]);
+        var missing = Path.Combine(options.OutputDirectory, "missing.bin");
+        using var journal = new ResumeJournal(journalPath, options.OutputDirectory, profile, overwrite: true);
+
+        journal.MarkDone("complete.bin", [existing]);
+        Assert.Throws<IOException>(() => journal.MarkDone("incomplete.bin", [existing, missing]));
+
+        var completed = ResumeJournal.Load(journalPath, options.OutputDirectory, profile);
+        Assert.Equal(["complete.bin"], completed);
+    }
+
+    [Fact]
+    public void A_long_record_crossing_writer_and_stream_buffers_is_immediately_readable()
+    {
+        using var temp = new TempDir();
+        var options = OptionsFor(temp);
+        var profile = ResumeJournal.CreateProfile(options);
+        var journalPath = Path.Combine(options.OutputDirectory, "_completed.raw.txt");
+        var paths = Enumerable.Range(0, 96).Select(index => temp.File("Export", "Unicode_Папка",
+            $"long-output-name-for-buffer-boundary-{index:D4}.json")).ToArray();
+        foreach (var path in paths) File.WriteAllText(path, "{}");
+        using var journal = new ResumeJournal(journalPath, options.OutputDirectory, profile, overwrite: true);
+
+        journal.MarkDone("Unicode_Пакет.uasset", paths.Concat(paths));
+
+        Assert.Contains("Unicode_Пакет.uasset", ResumeJournal.Load(journalPath, options.OutputDirectory, profile));
+        File.WriteAllBytes(paths[^1], [1]);
+        Assert.Empty(ResumeJournal.Load(journalPath, options.OutputDirectory, profile));
+    }
+
+    [Fact]
+    public void Artifact_outside_output_is_rejected_without_recording_completion()
+    {
+        using var temp = new TempDir();
+        var options = OptionsFor(temp);
+        var profile = ResumeJournal.CreateProfile(options);
+        var journalPath = Path.Combine(options.OutputDirectory, "_completed.raw.txt");
+        var outside = temp.File("Outside", "asset.bin");
+        using var journal = new ResumeJournal(journalPath, options.OutputDirectory, profile, overwrite: true);
+
+        Assert.Throws<IOException>(() => journal.MarkDone("asset.bin", [outside]));
+        Assert.Empty(ResumeJournal.Load(journalPath, options.OutputDirectory, profile));
+    }
+
     private static Options OptionsFor(TempDir temp)
     {
         var paks = temp.Dir("Paks");

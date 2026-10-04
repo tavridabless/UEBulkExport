@@ -148,7 +148,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public void Navigate(string key) => SelectedPage = Pages.First(p => p.Key == key);
 
-    public void Dispose() => Plugins.Dispose();
+    public void Dispose()
+    {
+        Browser.Dispose();
+        Log.Dispose();
+        Plugins.Dispose();
+    }
 }
 
 /// <summary>Simple 24x24 outline glyphs drawn for this application.</summary>

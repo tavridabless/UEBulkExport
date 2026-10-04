@@ -354,6 +354,9 @@
   "Export.Selection.Clear": "Clear selection",
   "Browser.NotScanned": "Nothing to show yet. Choose a game on the Export page; it is read automatically.",
   "Browser.Search.Placeholder": "Search in this folder…",
+  "Browser.Paging.Summary": "Shown: {0:N0} of {1:N0} · page {2:N0}/{3:N0}",
+  "Browser.Paging.Previous": "Previous",
+  "Browser.Paging.Next": "Next",
   "Browser.Folders": "Folders",
   "Browser.Files": "Files",
   "Browser.Extensions": "By type",
@@ -378,6 +381,7 @@
   "Log.Clear": "Clear",
   "Log.Empty": "Nothing logged yet.",
   "Log.AutoScroll": "Follow",
+  "Log.Retention": "Showing the latest {0:N0} entries; {1:N0} older entries are no longer in the window. The file log is not truncated.",
 
   "Settings.Title": "Settings",
   "Settings.Subtitle": "Stored per user; nothing leaves this computer.",

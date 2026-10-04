@@ -204,19 +204,35 @@ public sealed class BulkExporter : IDisposable
 
     public static ContainerListing GetListing(IReadOnlyCollection<GameFile> files)
     {
-        var byExtension = files
-            .GroupBy(f => f.Extension.ToLowerInvariant())
-            .Select(g => new ContainerListing.ExtensionGroup("." + g.Key, g.Count(), g.Sum(f => f.Size)))
+        var extensions = new Dictionary<string, (int Count, long Bytes)>(StringComparer.Ordinal);
+        var folders = new Dictionary<string, int>(StringComparer.Ordinal);
+        var folderLookup = folders.GetAlternateLookup<ReadOnlySpan<char>>();
+        long totalBytes = 0;
+        foreach (var file in files)
+        {
+            var extension = file.Extension.ToLowerInvariant();
+            var group = extensions.GetValueOrDefault(extension);
+            extensions[extension] = (checked(group.Count + 1), checked(group.Bytes + file.Size));
+
+            var path = file.Path.AsSpan();
+            var separator = path.IndexOf('/');
+            var folder = separator < 0 ? path : path[..separator];
+            folderLookup.TryGetValue(folder, out var count);
+            folderLookup[folder] = checked(count + 1);
+            totalBytes = checked(totalBytes + file.Size);
+        }
+
+        var byExtension = extensions
+            .Select(g => new ContainerListing.ExtensionGroup("." + g.Key, g.Value.Count, g.Value.Bytes))
             .OrderByDescending(g => g.Bytes)
             .ToList();
 
-        var folders = files
-            .GroupBy(f => f.Path.Split('/')[0])
-            .Select(g => new ContainerListing.FolderGroup(g.Key, g.Count()))
+        var topFolders = folders
+            .Select(g => new ContainerListing.FolderGroup(g.Key, g.Value))
             .OrderByDescending(g => g.Count)
             .ToList();
 
-        return new ContainerListing(byExtension, folders, files.Count, files.Sum(f => f.Size));
+        return new ContainerListing(byExtension, topFolders, files.Count, totalBytes);
     }
 
     public void PrintListing(IReadOnlyList<GameFile> files)

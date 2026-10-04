@@ -82,6 +82,12 @@ public sealed partial class BrowserRow : ObservableObject
     {
         if (!_syncing) _owner.SetChecked(this, value);
     }
+
+    internal void RefreshLanguage()
+    {
+        OnPropertyChanged(nameof(TypeText));
+        OnPropertyChanged(nameof(SizeText));
+    }
 }
 
 public sealed record FilterChip(string Key, string LabelKey)
@@ -104,7 +110,7 @@ public sealed record ContainerRow(string Name, int FileCount, bool IsLocked)
 /// the focused row, and the selection that becomes the export. Ticked entries are exported; if
 /// nothing is ticked, everything except the exclusion list is.
 /// </summary>
-public sealed partial class BrowserViewModel : ObservableObject
+public sealed partial class BrowserViewModel : ObservableObject, IDisposable
 {
     private const int MaxRows = 5000;
     private static Loc L => Loc.Instance;
@@ -112,10 +118,14 @@ public sealed partial class BrowserViewModel : ObservableObject
     private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _excluded = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<GameFile> _all = [];
+    private int _pageIndex;
+    private int _matchingRowCount;
+    private long _totalBytes;
 
     public ObservableCollection<FolderNode> Roots { get; } = [];
     public ObservableCollection<FolderNode> Breadcrumb { get; } = [];
-    public ObservableCollection<BrowserRow> Rows { get; } = [];
+    private readonly BatchObservableCollection<BrowserRow> _rows = [];
+    public ObservableCollection<BrowserRow> Rows => _rows;
     public ObservableCollection<ExtensionRow> Extensions { get; } = [];
     public ObservableCollection<ContainerRow> Containers { get; } = [];
 
@@ -148,6 +158,12 @@ public sealed partial class BrowserViewModel : ObservableObject
     public string SelectedCountText => L.Format("Browser.SelectedCount", SelectedCount);
     public string SelectedSubText => L.Format("Browser.SelectedSub", ExcludedCount);
     public string ExportButtonText => SelectedCount > 0 ? L["Browser.ExportSelected"] : L["Browser.ExportAll"];
+    public int MatchingRowCount => _matchingRowCount;
+    public int PageNumber => _pageIndex + 1;
+    public int PageCount => Math.Max(1, (_matchingRowCount - 1) / MaxRows + 1);
+    public bool HasPreviousPage => _pageIndex > 0;
+    public bool HasNextPage => (long)(_pageIndex + 1) * MaxRows < _matchingRowCount;
+    public string PagingSummary => L.Format("Browser.Paging.Summary", Rows.Count, MatchingRowCount, PageNumber, PageCount);
 
     // ---------------------------------------------------------------- details
 
@@ -179,12 +195,7 @@ public sealed partial class BrowserViewModel : ObservableObject
     public BrowserViewModel()
     {
         _chip = Chips[0];
-        Loc.Instance.LanguageChanged += () =>
-        {
-            OnPropertyChanged(nameof(Chips));
-            RefreshSelectionTexts();
-            RefreshDetails();
-        };
+        Loc.Instance.LanguageChanged += RefreshLanguage;
     }
 
     // ---------------------------------------------------------------- loading
@@ -198,6 +209,7 @@ public sealed partial class BrowserViewModel : ObservableObject
             Containers.Add(new ContainerRow(c.Name, c.FileCount, c.IsLocked));
 
         var listing = BulkExporter.GetListing(scan.Files);
+        _totalBytes = listing.TotalBytes;
         foreach (var g in listing.ByExtension)
             Extensions.Add(new ExtensionRow(g.Extension, g.Count, g.Bytes));
 
@@ -218,49 +230,59 @@ public sealed partial class BrowserViewModel : ObservableObject
         Containers.Clear();
         _selected.Clear();
         _excluded.Clear();
+        SelectedCount = ExcludedCount = 0;
         _all = [];
+        _totalBytes = 0;
+        _pageIndex = _matchingRowCount = 0;
         HasData = false;
         SelectedFolder = null;
         FocusedRow = null;
         TotalSummary = "";
         RefreshSelectionTexts();
+        NotifyPaging();
     }
 
     private static List<FolderNode> BuildTree(IReadOnlyList<GameFile> files)
     {
-        var roots = new Dictionary<string, FolderNode>(StringComparer.OrdinalIgnoreCase);
+        var roots = new List<FolderNode>();
+        var nodes = new Dictionary<string, FolderNode>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var file in files)
         {
-            var segments = file.Path.Split('/');
-            if (segments.Length == 0) continue;
-
-            if (!roots.TryGetValue(segments[0], out var node))
-                roots[segments[0]] = node = new FolderNode(segments[0], segments[0], null);
-
-            for (var i = 1; i < segments.Length - 1; i++)
+            var separator = file.Path.LastIndexOf('/');
+            var folderPath = separator < 0 ? file.Path : file.Path[..separator];
+            if (!nodes.TryGetValue(folderPath, out var node))
             {
-                var child = node.Children.FirstOrDefault(c => c.Name.Equals(segments[i], StringComparison.OrdinalIgnoreCase));
-                if (child is null)
+                var segments = folderPath.Split('/');
+                FolderNode? parent = null;
+                foreach (var segment in segments)
                 {
-                    child = new FolderNode(segments[i], node.Path + "/" + segments[i], node);
-                    node.Children.Add(child);
+                    var path = parent is null ? segment : parent.Path + "/" + segment;
+                    if (!nodes.TryGetValue(path, out node))
+                    {
+                        nodes[path] = node = new FolderNode(segment, path, parent);
+                        if (parent is null) roots.Add(node);
+                        else parent.Children.Add(node);
+                    }
+                    parent = node;
                 }
-
-                node = child;
             }
 
-            node.Files.Add(file);
+            node!.Files.Add(file);
         }
 
-        SortChildren(roots.Values);
-        return roots.Values.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        SortChildren(roots);
+        return roots.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private static void SortChildren(IEnumerable<FolderNode> nodes)
     {
         foreach (var node in nodes)
         {
+            // Scan data is immutable for this browser session. Sort once, not on every keystroke.
+            var sortedFiles = node.Files.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+            node.Files.Clear();
+            node.Files.AddRange(sortedFiles);
             var sorted = node.Children.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToList();
             node.Children.Clear();
             foreach (var c in sorted) node.Children.Add(c);
@@ -307,32 +329,67 @@ public sealed partial class BrowserViewModel : ObservableObject
         };
     }
 
-    private void RefreshRows()
+    private void RefreshRows(bool resetPage = true)
     {
-        Rows.Clear();
+        if (resetPage) _pageIndex = 0;
+        _matchingRowCount = 0;
         FocusedRow = null;
-        if (SelectedFolder is null) return;
+        if (SelectedFolder is null) { _rows.Clear(); NotifyPaging(); return; }
+        var rows = new List<BrowserRow>(Math.Min(MaxRows, SelectedFolder.Files.Count + SelectedFolder.Children.Count));
 
         var search = Search.Trim();
-        var shown = 0;
+        var first = (long)_pageIndex * MaxRows;
+
+        bool OnPage() => _matchingRowCount >= first && _matchingRowCount < first + MaxRows;
 
         foreach (var child in SelectedFolder.Children)
         {
             if (search.Length > 0 && !child.Name.Contains(search, StringComparison.OrdinalIgnoreCase)) continue;
-            Rows.Add(new BrowserRow(this, child));
+            if (OnPage()) rows.Add(new BrowserRow(this, child));
+            _matchingRowCount++;
         }
 
         IEnumerable<GameFile> files = SelectedFolder.Files;
         if (Chip.Key != "all") files = files.Where(f => CategoryOf(f) == Chip.Key);
         if (search.Length > 0) files = files.Where(f => f.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
 
-        foreach (var f in files.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+        foreach (var f in files)
         {
-            Rows.Add(new BrowserRow(this, f));
-            if (++shown >= MaxRows) break;
+            if (OnPage()) rows.Add(new BrowserRow(this, f));
+            _matchingRowCount++;
         }
 
+        _rows.ReplaceWith(rows);
         SyncRows();
+        NotifyPaging();
+    }
+
+    [RelayCommand(CanExecute = nameof(HasNextPage))]
+    private void NextPage()
+    {
+        if (!HasNextPage) return;
+        _pageIndex++;
+        RefreshRows(resetPage: false);
+    }
+
+    [RelayCommand(CanExecute = nameof(HasPreviousPage))]
+    private void PreviousPage()
+    {
+        if (!HasPreviousPage) return;
+        _pageIndex--;
+        RefreshRows(resetPage: false);
+    }
+
+    private void NotifyPaging()
+    {
+        OnPropertyChanged(nameof(MatchingRowCount));
+        OnPropertyChanged(nameof(PageNumber));
+        OnPropertyChanged(nameof(PageCount));
+        OnPropertyChanged(nameof(HasPreviousPage));
+        OnPropertyChanged(nameof(HasNextPage));
+        OnPropertyChanged(nameof(PagingSummary));
+        NextPageCommand.NotifyCanExecuteChanged();
+        PreviousPageCommand.NotifyCanExecuteChanged();
     }
 
     // ---------------------------------------------------------------- selection
@@ -357,8 +414,16 @@ public sealed partial class BrowserViewModel : ObservableObject
         {
             if (row.Folder is { } folder)
             {
-                var paths = folder.AllFiles.Select(f => f.Path).ToList();
-                row.Sync(paths.Count > 0 && paths.All(_selected.Contains), paths.Count > 0 && paths.All(_excluded.Contains));
+                if (_selected.Count == 0 && _excluded.Count == 0) { row.Sync(false, false); continue; }
+                var selected = folder.TotalCount > 0 && _selected.Count > 0;
+                var excluded = folder.TotalCount > 0 && _excluded.Count > 0;
+                foreach (var file in folder.AllFiles)
+                {
+                    selected &= _selected.Contains(file.Path);
+                    excluded &= _excluded.Contains(file.Path);
+                    if (!selected && !excluded) break;
+                }
+                row.Sync(selected, excluded);
             }
             else
             {
@@ -436,4 +501,16 @@ public sealed partial class BrowserViewModel : ObservableObject
 
     [RelayCommand]
     private void BrowseOutput() => Export?.BrowseOutputCommand.Execute(null);
+
+    private void RefreshLanguage()
+    {
+        OnPropertyChanged(nameof(Chips));
+        foreach (var row in Rows) row.RefreshLanguage();
+        TotalSummary = HasData ? L.Format("Browser.Total", _all.Count, Format.Bytes(_totalBytes)) : "";
+        RefreshSelectionTexts();
+        RefreshDetails();
+        OnPropertyChanged(nameof(PagingSummary));
+    }
+
+    public void Dispose() => Loc.Instance.LanguageChanged -= RefreshLanguage;
 }

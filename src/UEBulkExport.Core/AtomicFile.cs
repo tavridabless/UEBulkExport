@@ -13,13 +13,19 @@ internal static class AtomicFile
         try
         {
             using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write,
-                       FileShare.None, bufferSize: 1024 * 1024, FileOptions.WriteThrough))
+                       FileShare.None, bufferSize: 1, FileOptions.None))
             {
+                // The caller already owns the complete byte array: a per-file 1 MiB buffer
+                // only copies small payloads and allocates memory for each output. One explicit
+                // durable flush is sufficient before publication; WriteThrough would also
+                // force each write fragment to disk before that final barrier.
                 stream.Write(data);
                 stream.Flush(flushToDisk: true);
             }
 
-            Publish(temporary, destination);
+            // Unlike converter output, this temporary file has just been durably flushed.
+            // Do not reopen and flush it a second time. Keep the rename after the closed handle.
+            File.Move(temporary, destination, overwrite: true);
         }
         finally
         {
@@ -38,7 +44,7 @@ internal static class AtomicFile
         // handle before the rename so a journal record can never get ahead of the file data.
         // The handle needs write access: FileStream skips the flush on a read-only stream.
         using (var stream = new FileStream(stagedPath, FileMode.Open, FileAccess.ReadWrite,
-                   FileShare.Read, bufferSize: 1, FileOptions.WriteThrough))
+                   FileShare.Read, bufferSize: 1, FileOptions.None))
             stream.Flush(flushToDisk: true);
 
         File.Move(stagedPath, destination, overwrite: true);

@@ -28,7 +28,7 @@ internal sealed class ResumeJournal : IDisposable
 
         var tornTail = EndsWithoutNewline(path);
         _stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read,
-            bufferSize: 4096, FileOptions.WriteThrough);
+            bufferSize: 4096, FileOptions.None);
         _writer = new StreamWriter(_stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
         // A line cut by a power loss must not swallow the first record of this run.
@@ -101,12 +101,16 @@ internal sealed class ResumeJournal : IDisposable
             .Select(Path.GetFullPath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var missing = requested.FirstOrDefault(path => !File.Exists(path));
-        if (missing is not null)
-            throw new IOException($"Cannot checkpoint a missing output file: {missing}");
-
         var outputs = requested
-            .Select(path => new Artifact(RelativePath(_outputDirectory, path), new FileInfo(path).Length))
+            .Select(path =>
+            {
+                // FileInfo caches the same metadata for Exists and Length; avoid two separate
+                // filesystem queries per artifact, including while loading a large resume index.
+                var info = new FileInfo(path);
+                if (!info.Exists)
+                    throw new IOException($"Cannot checkpoint a missing output file: {path}");
+                return new Artifact(RelativePath(_outputDirectory, path), info.Length);
+            })
             .OrderBy(a => a.Path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -116,6 +120,8 @@ internal sealed class ResumeJournal : IDisposable
         {
             _writer.WriteLine(line);
             _writer.Flush();
+            // MarkDone must not return until this entire record is durable. Buffer ordinary
+            // write fragments, but retain one disk barrier for every completed entry.
             _stream.Flush(flushToDisk: true);
         }
     }
@@ -178,7 +184,9 @@ internal sealed class ResumeJournal : IDisposable
         {
             var path = Path.GetFullPath(Path.Combine(outputDirectory,
                 output.Path.Replace('/', Path.DirectorySeparatorChar)));
-            if (!IsInside(outputDirectory, path) || !File.Exists(path) || new FileInfo(path).Length != output.Length)
+            if (!IsInside(outputDirectory, path)) return false;
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length != output.Length)
                 return false;
         }
 
