@@ -12,6 +12,9 @@ public sealed record ExportProgress(
 {
     public double Fraction => Total == 0 ? 0 : Math.Clamp((double) Processed / Total, 0, 1);
     public double RatePerSecond => Elapsed.TotalSeconds < 1 ? 0 : Processed / Elapsed.TotalSeconds;
+
+    /// <summary>Raw source reservations, not resident memory; null for other modes or a disabled budget.</summary>
+    public RawInputBudgetState? RawInputBudget { get; init; }
 }
 
 /// <summary>What a run achieved. Exit code 0 means clean, 2 means some entries failed.</summary>
@@ -29,6 +32,20 @@ public sealed record ExportSummary(
     bool Cancelled)
 {
     public int ExitCode => FailedEntries + FailedObjects == 0 && !Cancelled ? 0 : 2;
+
+    /// <summary>Raw source reservations, not resident memory; null for other modes or a disabled budget.</summary>
+    public RawInputBudgetState? RawInputBudget { get; init; }
+}
+
+/// <summary>
+/// A raw input-byte gate snapshot based on known metadata sizes, not measured RAM or buffer sizes.
+/// Unknown sizes, provider caches, decompression buffers and GC retention are excluded.
+/// </summary>
+public sealed record RawInputBudgetState(long CapacityBytes, long ReservedBytes, long PeakReservedBytes,
+    int ActiveEntries, int PeakActiveEntries, int WaitingEntries)
+{
+    /// <summary>Unknown-size reads that ran alone. Their sizes are excluded from byte counters.</summary>
+    public int UnknownSizeEntries { get; init; }
 }
 
 /// <summary>One mounted or locked container, as reported after <see cref="BulkExporter.Mount"/>.</summary>
@@ -56,4 +73,14 @@ public sealed record ExportPlan(
     int Packages,
     int LooseFiles,
     int Payloads,
-    int IoStorePackages);
+    int IoStorePackages)
+{
+    /// <summary>Raw source-byte limit; null for other modes, zero when explicitly disabled.</summary>
+    public long? RawInputBudgetBytes { get; init; }
+
+    /// <summary>Raw entries larger than the enabled budget. Each will run alone.</summary>
+    public int RawInputOversizedEntries { get; init; }
+
+    /// <summary>Raw entries with unknown (negative) metadata sizes. Each will run alone.</summary>
+    public int RawInputUnknownSizeEntries { get; init; }
+}

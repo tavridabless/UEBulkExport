@@ -27,6 +27,9 @@ public sealed partial class MigrateView : UserControl
 
         switch (e.PropertyName)
         {
+            case nameof(MigrateViewModel.HasPreflight) when _viewModel.HasPreflight:
+                Dispatcher.UIThread.Post(() => PreflightCard.BringIntoView(), DispatcherPriority.Background);
+                break;
             case nameof(MigrateViewModel.HasSummary) when _viewModel.HasSummary:
                 Dispatcher.UIThread.Post(() => SummaryCard.BringIntoView(), DispatcherPriority.Background);
                 break;

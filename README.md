@@ -119,6 +119,28 @@ an interactive shell or return its exit code there.
 
 ---
 
+## Workflow controls
+
+The Browser can optionally search all subfolders by file name or virtual path. Click the Name,
+Type or Size header to change sorting; **Tick this page** and **Tick all matches** are separate
+actions. Matching byte totals refer to source metadata, not converted output size.
+
+Export resource presets change only worker count and the raw input budget. In raw mode,
+`--max-inflight-mb <MiB>` (default 256, 0 disables) limits concurrent reads using known source
+sizes; larger and unknown-size entries run alone. This is not a total RAM limit and more workers
+do not guarantee higher throughput. Formats, durable writes and checkpoint compatibility are unchanged.
+
+After a cancelled or unsuccessful export, **Continue previous export** uses the saved request and
+file selection, not the current form, with resume enabled. The request lasts for this application
+session only. Keep source files and automatically discovered dependencies unchanged; discovery
+runs again. A GUI dry run with a Browser selection no longer creates the output or `_selection.txt`.
+
+**Check migration plan** reads source metadata and the `.uproject` descriptor without running
+Unreal Editor or external conversion tools, creating working folders or saving target assets.
+It reports incomplete payloads, missing tools, Python plugin requirements and cooked-content
+limitations. A passed requirements check is not proof that conversion or a particular engine
+version works. Actual version migration still needs representative cooked assets and a target editor.
+
 ## Output
 
 <p align="center">
@@ -374,6 +396,7 @@ run `UEBulkExport.Cli --help` for the authoritative command-line reference.
 | `--game <version>` | Engine version, default `GAME_UE5_3`. Accepts `5.3`, `UE5_3`, `GAME_UE5_3` |
 | `--aes 0x…` | AES key for encrypted containers. Repeatable; `--aes <guid>:0x…` ties a key to one container |
 | `--threads <n>` | Worker threads, default = CPU count − 1 |
+| `--max-inflight-mb <MiB>` | Raw source metadata read budget, default 256; 0 disables; not a total RAM limit |
 | `--dry-run` | Report the plan and write nothing |
 | `--retoc <file>` | retoc executable for IoStore legacy conversion; auto-downloaded on Windows x64 if omitted |
 | `--verbose` | Log every file written |

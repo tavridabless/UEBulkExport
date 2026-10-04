@@ -36,7 +36,7 @@ public sealed partial class FolderNode : ObservableObject
     public IEnumerable<GameFile> AllFiles => Files.Concat(Children.SelectMany(c => c.AllFiles));
 }
 
-/// <summary>One line in the file list: a sub-folder or a file of the current folder.</summary>
+/// <summary>One line in the file list: a sub-folder or a file in the current search scope.</summary>
 public sealed partial class BrowserRow : ObservableObject
 {
     private readonly BrowserViewModel _owner;
@@ -105,8 +105,10 @@ public sealed record ContainerRow(string Name, int FileCount, bool IsLocked)
     public string Detail => IsLocked ? Loc.Instance["Browser.Locked"] : $"{FileCount:N0}";
 }
 
+public enum BrowserSortField { Name, Type, Size }
+
 /// <summary>
-/// The container browser: a folder tree, the current folder's rows with tick boxes, details for
+/// The container browser: a folder tree, paged folder/subtree rows with tick boxes, details for
 /// the focused row, and the selection that becomes the export. Ticked entries are exported; if
 /// nothing is ticked, everything except the exclusion list is.
 /// </summary>
@@ -120,7 +122,17 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     private IReadOnlyList<GameFile> _all = [];
     private int _pageIndex;
     private int _matchingRowCount;
+    private int _matchingFileCount;
+    private long _matchingBytes;
     private long _totalBytes;
+    // Only the current scope is cached. Searching/changing type filters scans this array once,
+    // without re-walking the tree or re-sorting on every keystroke.
+    private GameFile[] _scopeFiles = [];
+    private FolderNode[] _scopeFolders = [];
+    private FolderNode? _cachedScopeFolder;
+    private bool _cachedScopeIncludesSubfolders;
+    private bool _scopeDirty = true;
+    private bool _changingSort;
 
     public ObservableCollection<FolderNode> Roots { get; } = [];
     public ObservableCollection<FolderNode> Breadcrumb { get; } = [];
@@ -143,6 +155,10 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     [ObservableProperty] private BrowserRow? _focusedRow;
     [ObservableProperty] private FilterChip _chip;
     [ObservableProperty] private string _search = "";
+    [ObservableProperty] private bool _includeSubfolders;
+    [ObservableProperty] private BrowserSortField _sortField;
+    [ObservableProperty] private bool _sortDescending;
+    [ObservableProperty] private string _clipboardStatus = "";
     [ObservableProperty] private bool _hasData;
     [ObservableProperty] private string _totalSummary = "";
     [ObservableProperty] private int _selectedCount;
@@ -164,6 +180,18 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     public bool HasPreviousPage => _pageIndex > 0;
     public bool HasNextPage => (long)(_pageIndex + 1) * MaxRows < _matchingRowCount;
     public string PagingSummary => L.Format("Browser.Paging.Summary", Rows.Count, MatchingRowCount, PageNumber, PageCount);
+    public int MatchingFileCount => _matchingFileCount;
+    public long MatchingBytes => _matchingBytes;
+    public bool HasFileMatches => MatchingFileCount > 0;
+    public string MatchesSummary => L.Format("Browser.Matches.Summary", MatchingFileCount, Format.Bytes(MatchingBytes));
+    public string VisibleSelectionSummary => L.Format("Browser.Selection.Visible",
+        Rows.Count(r => r.IsChecked), Rows.Count(r => r.IsExcluded));
+    public string NameSortHeader => SortHeader("Browser.Column.Name", BrowserSortField.Name);
+    public string TypeSortHeader => SortHeader("Browser.Column.Type", BrowserSortField.Type);
+    public string SizeSortHeader => SortHeader("Browser.Column.Size", BrowserSortField.Size);
+
+    private string SortHeader(string key, BrowserSortField field) =>
+        L[key] + (SortField == field ? SortDescending ? " ↓" : " ↑" : "");
 
     // ---------------------------------------------------------------- details
 
@@ -234,6 +262,13 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
         _all = [];
         _totalBytes = 0;
         _pageIndex = _matchingRowCount = 0;
+        _matchingFileCount = 0;
+        _matchingBytes = 0;
+        _scopeFiles = [];
+        _scopeFolders = [];
+        _cachedScopeFolder = null;
+        _scopeDirty = true;
+        ClipboardStatus = "";
         HasData = false;
         SelectedFolder = null;
         FocusedRow = null;
@@ -294,6 +329,8 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
 
     partial void OnSelectedFolderChanged(FolderNode? value)
     {
+        _scopeDirty = true;
+        FocusedRow = null;
         Breadcrumb.Clear();
         for (var n = value; n is not null; n = n.Parent) Breadcrumb.Insert(0, n);
         for (var n = value?.Parent; n is not null; n = n.Parent) n.IsExpanded = true;
@@ -302,7 +339,42 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
 
     partial void OnSearchChanged(string value) => RefreshRows();
     partial void OnChipChanged(FilterChip value) => RefreshRows();
-    partial void OnFocusedRowChanged(BrowserRow? value) => RefreshDetails();
+    partial void OnIncludeSubfoldersChanged(bool value) { _scopeDirty = true; RefreshRows(); }
+    partial void OnSortFieldChanged(BrowserSortField value) => RefreshSort();
+    partial void OnSortDescendingChanged(bool value) => RefreshSort();
+    partial void OnFocusedRowChanged(BrowserRow? value) { ClipboardStatus = ""; RefreshDetails(); }
+
+    [RelayCommand] private void SortByName() => ChangeSort(BrowserSortField.Name);
+    [RelayCommand] private void SortByType() => ChangeSort(BrowserSortField.Type);
+    [RelayCommand] private void SortBySize() => ChangeSort(BrowserSortField.Size);
+
+    private void ChangeSort(BrowserSortField field)
+    {
+        if (SortField == field) SortDescending = !SortDescending;
+        else
+        {
+            // Use generated setters, but coalesce the two changes into one rows refresh.
+            _changingSort = true;
+            try { SortField = field; SortDescending = false; }
+            finally { _changingSort = false; }
+            RefreshSort();
+        }
+    }
+
+    private void RefreshSort()
+    {
+        _scopeDirty = true;
+        if (_changingSort) return;
+        RefreshRows();
+        NotifySort();
+    }
+
+    private void NotifySort()
+    {
+        OnPropertyChanged(nameof(NameSortHeader));
+        OnPropertyChanged(nameof(TypeSortHeader));
+        OnPropertyChanged(nameof(SizeSortHeader));
+    }
 
     [RelayCommand]
     private void NavigateTo(FolderNode? node)
@@ -333,35 +405,96 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     {
         if (resetPage) _pageIndex = 0;
         _matchingRowCount = 0;
-        FocusedRow = null;
-        if (SelectedFolder is null) { _rows.Clear(); NotifyPaging(); return; }
-        var rows = new List<BrowserRow>(Math.Min(MaxRows, SelectedFolder.Files.Count + SelectedFolder.Children.Count));
+        _matchingFileCount = 0;
+        _matchingBytes = 0;
+        var focusPath = FocusedRow?.Path;
+        var focusIsFolder = FocusedRow?.IsFolder;
+        if (SelectedFolder is null) { FocusedRow = null; _rows.Clear(); NotifyPaging(); return; }
+        EnsureScope();
+        var rows = new List<BrowserRow>(Math.Min(MaxRows, _scopeFiles.Length + _scopeFolders.Length));
 
         var search = Search.Trim();
         var first = (long)_pageIndex * MaxRows;
 
         bool OnPage() => _matchingRowCount >= first && _matchingRowCount < first + MaxRows;
 
-        foreach (var child in SelectedFolder.Children)
+        foreach (var child in _scopeFolders)
         {
             if (search.Length > 0 && !child.Name.Contains(search, StringComparison.OrdinalIgnoreCase)) continue;
             if (OnPage()) rows.Add(new BrowserRow(this, child));
             _matchingRowCount++;
         }
 
-        IEnumerable<GameFile> files = SelectedFolder.Files;
-        if (Chip.Key != "all") files = files.Where(f => CategoryOf(f) == Chip.Key);
-        if (search.Length > 0) files = files.Where(f => f.Name.Contains(search, StringComparison.OrdinalIgnoreCase));
-
-        foreach (var f in files)
+        foreach (var f in _scopeFiles)
         {
+            if (!MatchesFile(f, search)) continue;
             if (OnPage()) rows.Add(new BrowserRow(this, f));
             _matchingRowCount++;
+            _matchingFileCount++;
+            _matchingBytes += f.Size;
         }
 
         _rows.ReplaceWith(rows);
         SyncRows();
+        FocusedRow = focusPath is null ? null : rows.FirstOrDefault(r => r.IsFolder == focusIsFolder &&
+            string.Equals(r.Path, focusPath, StringComparison.Ordinal));
         NotifyPaging();
+    }
+
+    private bool MatchesFile(GameFile file, string search) =>
+        (Chip.Key == "all" || CategoryOf(file) == Chip.Key) &&
+        (search.Length == 0 || (IncludeSubfolders ? file.Path : file.Name)
+            .Contains(search, StringComparison.OrdinalIgnoreCase));
+
+    private void EnsureScope()
+    {
+        if (!_scopeDirty || SelectedFolder is null) return;
+        if (!ReferenceEquals(_cachedScopeFolder, SelectedFolder) ||
+            _cachedScopeIncludesSubfolders != IncludeSubfolders)
+        {
+            _scopeFolders = IncludeSubfolders ? [] : SelectedFolder.Children.ToArray();
+            if (IncludeSubfolders)
+            {
+                var files = new List<GameFile>();
+                var folders = new Stack<FolderNode>();
+                folders.Push(SelectedFolder);
+                while (folders.TryPop(out var folder))
+                {
+                    files.AddRange(folder.Files);
+                    foreach (var child in folder.Children) folders.Push(child);
+                }
+                _scopeFiles = files.ToArray();
+            }
+            else _scopeFiles = SelectedFolder.Files.ToArray();
+            _cachedScopeFolder = SelectedFolder;
+            _cachedScopeIncludesSubfolders = IncludeSubfolders;
+        }
+        // Column/order changes sort the same reference array: no duplicate subtree traversal.
+        Array.Sort(_scopeFolders, CompareFolders);
+        Array.Sort(_scopeFiles, CompareFiles);
+        _scopeDirty = false;
+    }
+
+    private int CompareFiles(GameFile left, GameFile right)
+    {
+        var primary = SortField switch
+        {
+            BrowserSortField.Size => left.Size.CompareTo(right.Size),
+            BrowserSortField.Type => StringComparer.OrdinalIgnoreCase.Compare(left.Extension, right.Extension),
+            _ => StringComparer.OrdinalIgnoreCase.Compare(left.Name, right.Name)
+        };
+        if (primary != 0) return SortDescending ? -primary : primary;
+        var name = StringComparer.OrdinalIgnoreCase.Compare(left.Name, right.Name);
+        return name != 0 ? name : StringComparer.Ordinal.Compare(left.Path, right.Path);
+    }
+
+    private int CompareFolders(FolderNode left, FolderNode right)
+    {
+        var primary = SortField == BrowserSortField.Size
+            ? left.TotalBytes.CompareTo(right.TotalBytes)
+            : StringComparer.OrdinalIgnoreCase.Compare(left.Name, right.Name);
+        if (primary != 0) return SortDescending ? -primary : primary;
+        return StringComparer.Ordinal.Compare(left.Path, right.Path);
     }
 
     [RelayCommand(CanExecute = nameof(HasNextPage))]
@@ -388,8 +521,14 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasPreviousPage));
         OnPropertyChanged(nameof(HasNextPage));
         OnPropertyChanged(nameof(PagingSummary));
+        OnPropertyChanged(nameof(MatchingFileCount));
+        OnPropertyChanged(nameof(MatchingBytes));
+        OnPropertyChanged(nameof(HasFileMatches));
+        OnPropertyChanged(nameof(MatchesSummary));
+        OnPropertyChanged(nameof(VisibleSelectionSummary));
         NextPageCommand.NotifyCanExecuteChanged();
         PreviousPageCommand.NotifyCanExecuteChanged();
+        SelectAllMatchesCommand.NotifyCanExecuteChanged();
     }
 
     // ---------------------------------------------------------------- selection
@@ -446,6 +585,7 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(SelectedCountText));
         OnPropertyChanged(nameof(SelectedSubText));
         OnPropertyChanged(nameof(ExportButtonText));
+        OnPropertyChanged(nameof(VisibleSelectionSummary));
     }
 
     private void RefreshDetails()
@@ -467,6 +607,39 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
         foreach (var row in Rows)
             foreach (var path in PathsOf(row)) { _selected.Add(path); _excluded.Remove(path); }
         AfterSelectionChanged();
+    }
+
+    /// <summary>Select matching files across every page, not entire matching navigation folders.</summary>
+    [RelayCommand(CanExecute = nameof(HasFileMatches))]
+    private void SelectAllMatches()
+    {
+        EnsureScope();
+        var search = Search.Trim();
+        foreach (var file in _scopeFiles)
+            if (MatchesFile(file, search)) { _selected.Add(file.Path); _excluded.Remove(file.Path); }
+        AfterSelectionChanged();
+    }
+
+    internal async Task CopyFocusedPathAsync(Func<string, Task>? copy)
+    {
+        var path = DetailPath;
+        if (string.IsNullOrEmpty(path)) return;
+        try
+        {
+            if (copy is null)
+            {
+                ClipboardStatus = L["Browser.CopyPath.Failed"];
+                return;
+            }
+            await copy(path);
+            // Completion of an old request must not overwrite a newly focused entry's status.
+            if (DetailPath == path) ClipboardStatus = L["Browser.CopyPath.Success"];
+        }
+        catch (Exception exception)
+        {
+            Log.Warn($"could not copy browser path: {exception.Message}");
+            if (DetailPath == path) ClipboardStatus = L["Browser.CopyPath.Failed"];
+        }
     }
 
     [RelayCommand]
@@ -504,12 +677,15 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
 
     private void RefreshLanguage()
     {
+        ClipboardStatus = "";
         OnPropertyChanged(nameof(Chips));
         foreach (var row in Rows) row.RefreshLanguage();
         TotalSummary = HasData ? L.Format("Browser.Total", _all.Count, Format.Bytes(_totalBytes)) : "";
         RefreshSelectionTexts();
         RefreshDetails();
         OnPropertyChanged(nameof(PagingSummary));
+        OnPropertyChanged(nameof(MatchesSummary));
+        NotifySort();
     }
 
     public void Dispose() => Loc.Instance.LanguageChanged -= RefreshLanguage;

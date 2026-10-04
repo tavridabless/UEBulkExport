@@ -36,6 +36,13 @@ public sealed class Options
     public List<string> AesKeys { get; set; } = [];
     public int Threads { get; set; } = Math.Max(1, Environment.ProcessorCount - 1);
 
+    /// <summary>
+    /// Raw mode only: maximum metadata source bytes reserved across concurrent reads/writes. Zero disables
+    /// the budget. An oversized or unknown-size entry runs alone. This is not a total RAM limit:
+    /// decompression buffers, provider caches and arrays awaiting collection are not included.
+    /// </summary>
+    public long MaxInFlightBytes { get; set; } = 256L * 1024 * 1024;
+
     public string? IncludeRegex { get; set; }
     public string? ExcludeRegex { get; set; }
 
@@ -126,6 +133,9 @@ public sealed class Options
           --aes <0x...>         AES key for encrypted containers. Repeatable.
                                 Use --aes <guid>:<0x...> to tie a key to one container.
           --threads <n>         Worker threads, default = CPU count - 1.
+          --max-inflight-mb <n>  Raw source-byte budget in MiB, default 256; 0 disables it.
+                                Independent of threads. Oversized/unknown-size entries run alone.
+                                Not a total RAM limit; ignored by full/json/legacy modes.
           --dry-run             Report what would be exported and write nothing.
           --retoc <file>        retoc executable for IoStore-to-legacy conversion. On Windows
                                 x64, a verified copy is downloaded if one is not supplied.

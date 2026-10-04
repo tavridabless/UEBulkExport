@@ -211,6 +211,13 @@
           </Expander.Header>
 
           <StackPanel Margin="4,6,4,4">
+            <TextBlock Classes="Label" Text="{loc:Tr Export.Profile.Label}" />
+            <WrapPanel>
+              <Button Content="{loc:Tr Export.Profile.Quiet}" Command="{Binding UseQuietProfileCommand}" Margin="0,0,8,8" />
+              <Button Content="{loc:Tr Export.Profile.Balanced}" Command="{Binding UseBalancedProfileCommand}" Margin="0,0,8,8" />
+              <Button Content="{loc:Tr Export.Profile.Parallel}" Command="{Binding UseParallelProfileCommand}" Margin="0,0,8,8" />
+            </WrapPanel>
+            <TextBlock Classes="Hint" Text="{loc:Tr Export.Profile.Hint}" />
             <TextBlock Classes="Label" Text="{loc:Tr Export.Threads}" Margin="0,0,0,4" />
             <Grid ColumnDefinitions="*,56" ColumnSpacing="12">
               <Slider Grid.Column="0" Minimum="1" Maximum="{Binding MaxThreads}" Value="{Binding Threads}"
@@ -218,6 +225,14 @@
               <TextBlock Grid.Column="1" Text="{Binding Threads}" VerticalAlignment="Center" FontWeight="SemiBold"
                          HorizontalAlignment="Right" />
             </Grid>
+
+            <StackPanel IsVisible="{Binding IsRawMode}" Margin="0,8,0,0">
+              <TextBlock Classes="Label" Text="{loc:Tr Export.Budget.Label}" />
+              <NumericUpDown Value="{Binding MaxInFlightMiB}" Minimum="0" Maximum="1048576" Increment="16"
+                             FormatString="0" HorizontalAlignment="Left" Width="160"
+                             AutomationProperties.AutomationId="RawInputBudget" />
+              <TextBlock Classes="Hint" Text="{loc:Tr Export.Budget.Hint}" />
+            </StackPanel>
 
             <Separator />
 
@@ -367,22 +382,30 @@
         <!-- Outcome: summary / plan -->
         <Border x:Name="SummaryCard" Classes="Card" IsVisible="{Binding HasSummary}">
           <StackPanel>
-            <TextBlock Classes="CardTitle" Text="{Binding SummaryTitle}" Margin="0,0,0,10" />
+            <TextBlock Classes="CardTitle" Text="{Binding SummaryTitle}" TextWrapping="Wrap" Margin="0,0,0,10" />
             <ItemsControl ItemsSource="{Binding Summary}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:SummaryLine">
-                  <Grid ColumnDefinitions="260,*" Margin="0,3">
-                    <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="Muted" />
+                  <Grid ColumnDefinitions="2*,3*" ColumnSpacing="12" Margin="0,3">
+                    <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="Muted" TextWrapping="Wrap" />
                     <TextBlock Grid.Column="1" Text="{Binding Value}" FontWeight="SemiBold" TextWrapping="Wrap" />
                   </Grid>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,14,0,0" IsVisible="{Binding CanOpenOutput}">
-              <Button Content="{loc:Tr Export.OpenOutput}" Command="{Binding OpenOutputCommand}" />
-              <Button Content="{loc:Tr Export.OpenErrors}" Command="{Binding OpenErrorsCommand}" IsVisible="{Binding HasErrorsFile}" />
-              <Button Content="{loc:Tr Export.OpenLog}" Command="{Binding OpenLogCommand}" IsVisible="{Binding CanOpenLog}" />
-            </StackPanel>
+            <WrapPanel Margin="0,14,0,0" IsVisible="{Binding CanOpenOutput}">
+              <Button Content="{loc:Tr Export.OpenOutput}" Command="{Binding OpenOutputCommand}" Margin="0,0,8,8" />
+              <Button Content="{loc:Tr Export.OpenErrors}" Command="{Binding OpenErrorsCommand}" IsVisible="{Binding HasErrorsFile}" Margin="0,0,8,8" />
+              <Button Content="{loc:Tr Export.OpenLog}" Command="{Binding OpenLogCommand}" IsVisible="{Binding CanOpenLog}" Margin="0,0,8,8" />
+            </WrapPanel>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="Card" IsVisible="{Binding ShowPreviousRun}">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Continue.Title}" />
+            <TextBlock Classes="Hint" Text="{loc:Tr Export.Continue.Hint}" />
+            <TextBlock Classes="Mono" Text="{Binding PreviousRunText}" TextWrapping="Wrap" />
           </StackPanel>
         </Border>
 
@@ -393,9 +416,9 @@
     <!-- Action bar: whether the export can start, and why not -->
     <Border Grid.Row="1" Background="{DynamicResource Brush.Card}"
             BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,1,0,0" Padding="28,14">
-      <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
+      <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="10">
 
-        <Grid Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="10" VerticalAlignment="Center"
+        <Grid Grid.Row="0" Grid.ColumnSpan="4" ColumnDefinitions="Auto,*" ColumnSpacing="10" VerticalAlignment="Center"
               IsVisible="{Binding ShowReadiness}">
           <Panel Grid.Column="0">
             <Ellipse Classes="Dot Error" IsVisible="{Binding IsReadinessBlocked}" />
@@ -406,8 +429,8 @@
                      TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ReadinessText}" />
         </Grid>
 
-        <Grid Grid.Column="0" Margin="0,0,18,0" VerticalAlignment="Center" IsVisible="{Binding ShowProgress}"
-              RowDefinitions="Auto,Auto" RowSpacing="6">
+        <Grid Grid.Row="0" Grid.ColumnSpan="4" VerticalAlignment="Center" IsVisible="{Binding ShowProgress}"
+              RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
           <ProgressBar Grid.Row="0" Value="{Binding ProgressFraction}" Maximum="1"
                        IsIndeterminate="{Binding ProgressIndeterminate}" />
           <WrapPanel Grid.Row="1">
@@ -436,13 +459,16 @@
               <TextBlock Text="{Binding ProgressEta}" FontSize="12" FontWeight="SemiBold" />
             </StackPanel>
           </WrapPanel>
+          <TextBlock Grid.Row="2" Text="{Binding ProgressRawBudget}" Classes="Hint" IsVisible="{Binding HasRawBudgetProgress}" />
         </Grid>
 
-        <Button Grid.Column="1" AutomationProperties.AutomationId="CancelButton" Classes="Danger" Content="{loc:Tr Export.Cancel}"
+        <Button Grid.Row="1" Grid.Column="0" Content="{loc:Tr Export.Continue.Button}" Command="{Binding ContinuePreviousCommand}"
+                IsVisible="{Binding ShowPreviousRun}" AutomationProperties.AutomationId="ContinuePreviousButton" HorizontalAlignment="Left" />
+        <Button Grid.Row="1" Grid.Column="1" AutomationProperties.AutomationId="CancelButton" Classes="Danger" Content="{loc:Tr Export.Cancel}"
                 Command="{Binding CancelCommand}" IsVisible="{Binding CanCancel}" />
-        <Button Grid.Column="2" AutomationProperties.AutomationId="DryRunButton" Content="{loc:Tr Export.DryRun}"
+        <Button Grid.Row="1" Grid.Column="2" AutomationProperties.AutomationId="DryRunButton" Content="{loc:Tr Export.DryRun}"
                 Command="{Binding DryRunCommand}" ToolTip.Tip="{loc:Tr Export.DryRun.Hint}" IsVisible="{Binding !IsRunning}" />
-        <Button Grid.Column="3" AutomationProperties.AutomationId="StartButton" Classes="Primary" Content="{loc:Tr Export.Start}"
+        <Button Grid.Row="1" Grid.Column="3" AutomationProperties.AutomationId="StartButton" Classes="Primary" Content="{loc:Tr Export.Start}"
                 Command="{Binding StartCommand}" />
       </Grid>
     </Border>

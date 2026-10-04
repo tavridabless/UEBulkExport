@@ -12,11 +12,21 @@ public sealed record ScanResult(
 /// Runs the exporter off the UI thread. One operation at a time; progress comes back through
 /// events raised on whatever thread produced them - the view model marshals to the UI.
 /// </summary>
-public sealed class ExportService
+public interface IExportService
 {
+    event Action<ExportProgress>? ProgressChanged;
+    Task<ScanResult> ScanAsync(Options options);
+    Task<ExportPlan> DryRunAsync(Options options);
+    Task<ExportSummary> ExportAsync(Options options);
+    void Cancel();
+}
+
+public sealed class ExportService : IExportService
+{
+    private readonly object _sync = new();
     private CancellationTokenSource? _cancellation;
 
-    public bool IsBusy => _cancellation is not null;
+    public bool IsBusy { get { lock (_sync) return _cancellation is not null; } }
 
     public event Action<ExportProgress>? ProgressChanged;
 
@@ -100,27 +110,36 @@ public sealed class ExportService
         }
     });
 
-    public void Cancel() => _cancellation?.Cancel();
+    public void Cancel()
+    {
+        lock (_sync) _cancellation?.Cancel();
+    }
 
     private async Task<T> Run<T>(Func<CancellationToken, Task<T>> work)
     {
-        if (_cancellation is not null)
-            throw new InvalidOperationException("an operation is already running");
-
-        _cancellation = new CancellationTokenSource();
+        CancellationTokenSource cancellation;
+        lock (_sync)
+        {
+            if (_cancellation is not null)
+                throw new InvalidOperationException("an operation is already running");
+            _cancellation = cancellation = new CancellationTokenSource();
+        }
         try
         {
-            return await work(_cancellation.Token);
+            return await work(cancellation.Token);
         }
         finally
         {
-            _cancellation.Dispose();
-            _cancellation = null;
+            lock (_sync)
+            {
+                _cancellation = null;
+                cancellation.Dispose();
+            }
         }
     }
 
     /// <summary>Prepare() rewrites paths in place; work on a copy so the form keeps what the user typed.</summary>
-    private static Options Clone(Options o) => new()
+    internal static Options Clone(Options o) => new()
     {
         PaksDirectory = o.PaksDirectory,
         OutputDirectory = o.OutputDirectory,
@@ -134,10 +153,11 @@ public sealed class ExportService
         Mode = o.Mode,
         AesKeys = [.. o.AesKeys],
         Threads = o.Threads,
+        MaxInFlightBytes = o.MaxInFlightBytes,
         IncludeRegex = o.IncludeRegex,
         ExcludeRegex = o.ExcludeRegex,
         PathsFile = o.PathsFile,
-        SelectedPaths = o.SelectedPaths,
+        SelectedPaths = o.SelectedPaths?.ToHashSet(StringComparer.OrdinalIgnoreCase),
         WriteJson = o.WriteJson,
         WriteAssets = o.WriteAssets,
         WriteRawMisc = o.WriteRawMisc,

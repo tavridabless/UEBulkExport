@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using CUE4Parse.UE4.Assets.Exports.Texture;
@@ -57,6 +58,7 @@ public static class Cli
                 case "--mode": o.Mode = ParseEnum<ExportMode>(Next(a), a); break;
                 case "--aes": o.AesKeys.Add(Next(a)); break;
                 case "--threads": o.Threads = ParseThreads(Next(a)); break;
+                case "--max-inflight-mb": o.MaxInFlightBytes = ParseInFlightBytes(Next(a)); break;
                 case "--include": o.IncludeRegex = Next(a); break;
                 case "--exclude": o.ExcludeRegex = Next(a); break;
                 case "--paths-file": o.PathsFile = Next(a); break;
@@ -100,6 +102,10 @@ public static class Cli
 
     private static void Validate(Options o)
     {
+        if (o.MaxInFlightBytes < 0)
+            throw new UserFacingException("--max-inflight-mb cannot be negative.",
+                "Use 0 to disable the raw source-byte budget.");
+
         if (string.IsNullOrWhiteSpace(o.PaksDirectory))
             throw new UserFacingException("--paks is required.",
                 "Point it at the game's Paks folder, at the game's root, or at a single .utoc file.");
@@ -234,6 +240,8 @@ public static class Cli
         Add("--usmap", o.UsmapPath);
         foreach (var key in o.AesKeys) Add("--aes", key);
         if (o.Threads != d.Threads) Add("--threads", o.Threads.ToString());
+        if (o.MaxInFlightBytes != d.MaxInFlightBytes)
+            Add("--max-inflight-mb", FormatInFlightMiB(o.MaxInFlightBytes));
         Add("--include", o.IncludeRegex);
         Add("--exclude", o.ExcludeRegex);
         Add("--paths-file", o.PathsFile);
@@ -298,6 +306,38 @@ public static class Cli
             throw new UserFacingException($"--threads expects a positive number, got '{value}'.");
 
         return threads;
+    }
+
+    private static long ParseInFlightBytes(string value)
+    {
+        const long bytesPerMiB = 1048576;
+        var parts = value.Split('.');
+        if (parts.Length > 2 || !long.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture,
+                out var wholeMiB) || wholeMiB > long.MaxValue / bytesPerMiB)
+            throw new UserFacingException($"--max-inflight-mb expects a non-negative size in MiB, got '{value}'.",
+                "The default is 256 MiB. Use 0 to disable the raw source-byte budget.");
+
+        // A binary MiB fraction terminates in at most 20 decimal places. Parse it separately:
+        // combining a large whole size and the fraction would exceed decimal's precision and
+        // break an Options -> CLI -> Options round-trip close to long.MaxValue.
+        var fractionText = parts.Length == 2 ? parts[1].TrimEnd('0') : "";
+        if (fractionText.Length > 20 || !decimal.TryParse("0." + fractionText,
+                NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var fraction))
+            throw new UserFacingException($"--max-inflight-mb is not a valid size: '{value}'.");
+
+        var fractionBytes = fraction * bytesPerMiB;
+        if (fractionBytes != decimal.Truncate(fractionBytes))
+            throw new UserFacingException("--max-inflight-mb must correspond to a whole number of bytes.");
+
+        return wholeMiB * bytesPerMiB + (long)fractionBytes;
+    }
+
+    private static string FormatInFlightMiB(long bytes)
+    {
+        var whole = (bytes / 1048576).ToString(CultureInfo.InvariantCulture);
+        var remainder = bytes % 1048576;
+        return remainder == 0 ? whole : whole +
+            (remainder / 1048576m).ToString("0.####################", CultureInfo.InvariantCulture)[1..];
     }
 
     private static T ParseEnum<T>(string value, string argument) where T : struct, Enum

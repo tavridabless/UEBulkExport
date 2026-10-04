@@ -36,6 +36,7 @@ public sealed class BulkExporter : IDisposable
     private bool _indexLoaded;
     private string? _stagingRun;
     private FileStream? _outputLock;
+    private RawInputByteBudget? _rawInputBudget;
 
     private int _processed, _exported, _skipped, _failed, _failedObjects, _written, _unsupported, _retocPackages;
 
@@ -273,7 +274,16 @@ public sealed class BulkExporter : IDisposable
             work.Count(f => f.IsUePackage),
             work.Count(f => !f.IsUePackage && !f.IsUePackagePayload),
             work.Count(f => f.IsUePackagePayload),
-            work.Count(f => f.IsUePackage && f is FIoStoreEntry));
+            work.Count(f => f.IsUePackage && f is FIoStoreEntry))
+        {
+            RawInputBudgetBytes = _options.Mode == ExportMode.Raw ? _options.MaxInFlightBytes : null,
+            RawInputOversizedEntries = _options.Mode == ExportMode.Raw && _options.MaxInFlightBytes > 0
+                ? work.Count(f => f.Size > _options.MaxInFlightBytes)
+                : 0,
+            RawInputUnknownSizeEntries = _options.Mode == ExportMode.Raw && _options.MaxInFlightBytes > 0
+                ? work.Count(f => f.Size < 0)
+                : 0
+        };
     }
 
     public void PrintPlan(IReadOnlyList<GameFile> files)
@@ -286,6 +296,15 @@ public sealed class BulkExporter : IDisposable
         Log.Raw($"  mode                 {plan.Mode.ToString().ToLowerInvariant()}");
         Log.Raw($"  output               {plan.OutputDirectory}");
         Log.Raw($"  mappings             {plan.MappingsPath ?? "(none)"}");
+        if (plan.RawInputBudgetBytes is { } budget)
+        {
+            Log.Raw(budget == 0 ? "  raw input budget     disabled" :
+                $"  raw input budget     {budget / 1048576.0:N1} MiB (source bytes, not total RAM)");
+            if (plan.RawInputOversizedEntries > 0)
+                Log.Raw($"  oversized entries    {plan.RawInputOversizedEntries} (each runs alone)");
+            if (plan.RawInputUnknownSizeEntries > 0)
+                Log.Raw($"  unknown-size entries {plan.RawInputUnknownSizeEntries} (each runs alone)");
+        }
         Log.Raw("");
         Log.Raw($"  entries selected     {plan.Selected}");
         Log.Raw($"  already done         {plan.AlreadyDone}");
@@ -319,6 +338,13 @@ public sealed class BulkExporter : IDisposable
 
     public async Task<ExportSummary> RunAsync(IReadOnlyList<GameFile> files, CancellationToken ct = default)
     {
+        if (_options.MaxInFlightBytes < 0)
+            throw new UserFacingException("The raw source-byte budget cannot be negative.",
+                "Use 0 to disable it.");
+        _rawInputBudget = _options.Mode == ExportMode.Raw && _options.MaxInFlightBytes > 0
+            ? new RawInputByteBudget(_options.MaxInFlightBytes)
+            : null;
+
         Directory.CreateDirectory(_options.OutputDirectory);
         OpenStagingRun();
         OpenIndex();
@@ -329,6 +355,8 @@ public sealed class BulkExporter : IDisposable
             Log.Warn("parallel material export may contend on shared dependencies; rerun with --threads 1 to resume only incomplete packages");
 
         Log.Info($"{work.Count} entries to process ({preSkipped} skipped by mode/resume), {_options.Threads} threads");
+        if (_rawInputBudget is not null)
+            Log.Info($"raw source-byte budget: {_options.MaxInFlightBytes / 1048576.0:N1} MiB; oversized entries run alone (not a total RAM limit)");
 
         var clock = Stopwatch.StartNew();
         var cancelled = false;
@@ -391,7 +419,10 @@ public sealed class BulkExporter : IDisposable
         var summary = new ExportSummary(
             clock.Elapsed, _processed, _exported, _written, _retocPackages,
             _skipped + preSkipped, _unsupported, _failed, _failedObjects,
-            Path.GetFullPath(_options.OutputDirectory), cancelled);
+            Path.GetFullPath(_options.OutputDirectory), cancelled)
+        {
+            RawInputBudget = _rawInputBudget?.Snapshot()
+        };
 
         ProgressChanged?.Invoke(Snapshot(work.Count, clock, "done"));
         PrintSummary(summary);
@@ -492,6 +523,12 @@ public sealed class BulkExporter : IDisposable
         Log.Info($"  entries exported  : {s.Exported}");
         Log.Info($"  files written     : {s.Written}" +
                  (s.IoStoreConverted > 0 ? " (plus files written by retoc)" : ""));
+        if (s.RawInputBudget is { } budget)
+        {
+            Log.Info($"  peak known input  : {budget.PeakReservedBytes / 1048576.0:N1} MiB reserved, {budget.PeakActiveEntries} concurrent entries (metadata sizes, not total RAM)");
+            if (budget.UnknownSizeEntries > 0)
+                Log.Info($"  unknown-size reads: {budget.UnknownSizeEntries} (each ran alone; excluded from byte counters)");
+        }
         if (s.IoStoreConverted > 0)
             Log.Info($"  IoStore converted : {s.IoStoreConverted}");
         Log.Info($"  nothing to do     : {s.NothingToDo}");
@@ -526,6 +563,12 @@ public sealed class BulkExporter : IDisposable
     {
         if (_options.Mode == ExportMode.Raw)
         {
+            using var reservation = _rawInputBudget is { } budget
+                ? file.Size < 0
+                    ? await budget.AcquireUnknownSizeAsync(ct).ConfigureAwait(false)
+                    : await budget.AcquireAsync(file.Size, ct).ConfigureAwait(false)
+                : null;
+            ct.ThrowIfCancellationRequested();
             var path = OutputPath(file.Path);
             return new WorkResult(WriteBytes(path, file.Read()), false, [path]);
         }
@@ -969,7 +1012,10 @@ public sealed class BulkExporter : IDisposable
             : TimeSpan.FromSeconds(Math.Min((total - done) / Math.Max(0.001, rate), TimeSpan.MaxValue.TotalSeconds / 2));
 
         return new ExportProgress(done, total, Volatile.Read(ref _written),
-            Volatile.Read(ref _failed) + Volatile.Read(ref _failedObjects), clock.Elapsed, eta, phase);
+            Volatile.Read(ref _failed) + Volatile.Read(ref _failedObjects), clock.Elapsed, eta, phase)
+        {
+            RawInputBudget = _rawInputBudget?.Snapshot()
+        };
     }
 
     private Timer StartProgressReporter(int total, Stopwatch clock)

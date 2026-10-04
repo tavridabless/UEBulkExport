@@ -37,8 +37,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public string Version => $"v{Cli.Version}";
     // Export and migration run independently; the status line follows whichever is working.
-    public string StatusText => Migrate.IsBusy && !Export.IsRunning ? Migrate.StatusText : Export.StatusText;
-    public bool IsBusy => Export.IsBusy || Migrate.IsBusy;
+    public string StatusText => (Migrate.IsBusy || Migrate.IsPreviewing) && !Export.IsRunning ? Migrate.StatusText : Export.StatusText;
+    public bool IsBusy => Export.IsBusy || Migrate.IsBusy || Migrate.IsPreviewing || Migrate.IsConfirming;
     public double ProgressFraction => Export.IsRunning || !Migrate.IsBusy ? Export.ProgressFraction : Migrate.Progress;
     public bool ShowProgress => Export.ShowProgress || Migrate.IsBusy;
 
@@ -128,6 +128,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             {
                 case nameof(MigrateViewModel.StatusText):
                 case nameof(MigrateViewModel.IsBusy):
+                case nameof(MigrateViewModel.IsPreviewing):
+                case nameof(MigrateViewModel.IsConfirming):
                     OnPropertyChanged(nameof(StatusText));
                     OnPropertyChanged(nameof(IsBusy));
                     OnPropertyChanged(nameof(ShowProgress));
@@ -139,17 +141,22 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
         };
 
-        Loc.Instance.LanguageChanged += () =>
-        {
-            OnPropertyChanged(nameof(Pages));
-            OnPropertyChanged(nameof(StatusText));
-        };
+        Loc.Instance.LanguageChanged += OnLanguageChanged;
     }
 
     public void Navigate(string key) => SelectedPage = Pages.First(p => p.Key == key);
 
+    private void OnLanguageChanged()
+    {
+        OnPropertyChanged(nameof(Pages));
+        OnPropertyChanged(nameof(StatusText));
+    }
+
     public void Dispose()
     {
+        Loc.Instance.LanguageChanged -= OnLanguageChanged;
+        Export.Dispose();
+        Migrate.Dispose();
         Browser.Dispose();
         Log.Dispose();
         Plugins.Dispose();

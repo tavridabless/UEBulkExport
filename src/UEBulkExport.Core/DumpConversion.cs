@@ -37,6 +37,154 @@ public sealed class DumpConversionService
     private readonly object _processLock = new();
     private Process? _activeProcess;
 
+    /// <summary>
+    /// Reads source metadata and the target descriptor to build a plan. It never creates work
+    /// folders, recovers hidden files, downloads tools or starts Unreal Editor / UE Viewer.
+    /// </summary>
+    public Task<DumpConversionPreflight> PreflightAsync(DumpConversionOptions options, CancellationToken ct = default) =>
+        Task.Run(() => InspectPreflight(options, ct), ct);
+
+    private static DumpConversionPreflight InspectPreflight(DumpConversionOptions options, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var diagnostics = new List<DumpConversionDiagnostic>();
+        void Error(string code, string? detail = null) => diagnostics.Add(new(DumpConversionDiagnosticLevel.Error, code, detail));
+        void Warning(string code, string? detail = null) => diagnostics.Add(new(DumpConversionDiagnosticLevel.Warning, code, detail));
+
+        var source = options.SourceDirectory.Trim().Trim('"');
+        var project = options.TargetProject.Trim().Trim('"');
+        var editor = options.UnrealEditorPath.Trim().Trim('"');
+        var packages = 0;
+        var maps = 0;
+        var payloads = 0;
+        var emptyPayloads = 0;
+        var importable = 0;
+        var actorX = 0;
+        var hidden = 0;
+        long bytes = 0;
+        var targetVersion = DetectTargetVersion(project, editor);
+        var workingDirectory = "";
+        var destination = options.DestinationPath.Trim();
+
+        if (!OperatingSystem.IsWindows()) Error("PlatformUnsupported");
+        var ue5 = false;
+        try
+        {
+            ue5 = IsUE5Source(options.SourceVersion);
+            if (ue5) _ = Cli.ParseGame(options.SourceVersion);
+        }
+        catch (UserFacingException) { Error("SourceVersionInvalid", options.SourceVersion); }
+
+        try { destination = NormalizeDestination(options.DestinationPath); }
+        catch (UserFacingException) { Error("DestinationInvalid"); }
+
+        if (!Directory.Exists(source)) Error("SourceMissing");
+        else
+        {
+            try
+            {
+                var enumeration = new EnumerationOptions
+                {
+                    RecurseSubdirectories = true,
+                    IgnoreInaccessible = false,
+                    AttributesToSkip = FileAttributes.ReparsePoint
+                };
+                foreach (var file in Directory.EnumerateFiles(source, "*", enumeration))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var extension = Path.GetExtension(file);
+                    var length = new FileInfo(file).Length;
+                    bytes = checked(bytes + length);
+                    if (extension.Equals(".uasset", StringComparison.OrdinalIgnoreCase)) packages++;
+                    else if (extension.Equals(".umap", StringComparison.OrdinalIgnoreCase)) maps++;
+                    else if (extension.Equals(".uexp", StringComparison.OrdinalIgnoreCase) ||
+                             extension.Equals(".ubulk", StringComparison.OrdinalIgnoreCase))
+                    {
+                        payloads++;
+                        if (length == 0) emptyPayloads++;
+                    }
+                    if (ImportableExtensions.Contains(extension)) importable++;
+                    if (extension.Equals(".psk", StringComparison.OrdinalIgnoreCase) ||
+                        extension.Equals(".pskx", StringComparison.OrdinalIgnoreCase) ||
+                        extension.Equals(".psa", StringComparison.OrdinalIgnoreCase)) actorX++;
+                    if (file.EndsWith(".uasset.uebskip", StringComparison.OrdinalIgnoreCase)) hidden++;
+                }
+                if (packages == 0 && importable == 0 && hidden == 0) Error("NoImportableSource");
+                if (emptyPayloads > 0) Warning("EmptyPayloads", emptyPayloads.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                if (actorX > 0) Warning("ActorXUnsupported", actorX.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                if (hidden > 0) Warning("HiddenPackages", hidden.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or OverflowException)
+            {
+                Error("SourceUnreadable", e.Message);
+            }
+        }
+
+        if (!File.Exists(project) || !Path.GetExtension(project).Equals(".uproject", StringComparison.OrdinalIgnoreCase))
+            Error("ProjectMissing");
+        else
+        {
+            try
+            {
+                ct.ThrowIfCancellationRequested();
+                using var document = JsonDocument.Parse(File.ReadAllText(project));
+                if (document.RootElement.ValueKind != JsonValueKind.Object) Error("ProjectInvalid");
+                else
+                {
+                    bool? pythonEnabled = null;
+                    if (document.RootElement.TryGetProperty("Plugins", out var plugins) && plugins.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var plugin in plugins.EnumerateArray())
+                        {
+                            if (plugin.ValueKind != JsonValueKind.Object ||
+                                !plugin.TryGetProperty("Name", out var name) || name.ValueKind != JsonValueKind.String ||
+                                !string.Equals(name.GetString(), "PythonScriptPlugin", StringComparison.OrdinalIgnoreCase)) continue;
+                            if (plugin.TryGetProperty("Enabled", out var enabled) && enabled.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                                pythonEnabled = enabled.GetBoolean();
+                        }
+                    }
+                    if (pythonEnabled == false) Error("PythonDisabled");
+                    else if (pythonEnabled is null) Warning("PythonUnconfirmed");
+                }
+            }
+            catch (Exception e) when (e is IOException or JsonException or UnauthorizedAccessException)
+            {
+                Error("ProjectUnreadable", e.Message);
+            }
+        }
+
+        if (!File.Exists(editor)) Error("EditorMissing");
+        if (!ue5 && !File.Exists(options.UModelPath.Trim().Trim('"'))) Error("UModelMissing");
+        if (ue5)
+        {
+            if (string.IsNullOrWhiteSpace(options.MappingsPath)) Warning("MappingsUnconfirmed");
+            else if (!File.Exists(options.MappingsPath.Trim().Trim('"'))) Error("MappingsMissing");
+        }
+        if (targetVersion == "unknown") Warning("TargetVersionUnknown");
+        // A recognized version routes the parsers; it is not evidence that this particular cooked
+        // dump can be rebuilt. The plan never claims verification of newer or game-specific formats.
+        Warning("VersionCompatibilityUnverified");
+        if (packages > 0 || maps > 0 || hidden > 0) Warning("CookedLimitations");
+        if (options.Overwrite) Warning("Overwrite", destination);
+
+        try
+        {
+            if (File.Exists(project) && Directory.Exists(source))
+            {
+                workingDirectory = string.IsNullOrWhiteSpace(options.WorkingDirectory)
+                    ? DefaultWorkingDirectory(Path.GetDirectoryName(Path.GetFullPath(project))!, source, options.SourceVersion)
+                    : Path.GetFullPath(options.WorkingDirectory.Trim());
+            }
+        }
+        catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            Error("WorkingPathInvalid", e.Message);
+        }
+        ct.ThrowIfCancellationRequested();
+        return new DumpConversionPreflight(packages, maps, payloads, emptyPayloads, importable, actorX,
+            hidden, bytes, targetVersion, destination, workingDirectory, diagnostics.AsReadOnly());
+    }
+
     public async Task<DumpConversionSummary> RunAsync(
         DumpConversionOptions options,
         IProgress<DumpConversionProgress>? progress = null,
@@ -231,14 +379,7 @@ public sealed class DumpConversionService
     {
         lock (_processLock)
         {
-            try
-            {
-                if (_activeProcess is { HasExited: false }) _activeProcess.Kill(entireProcessTree: true);
-            }
-            catch (InvalidOperationException)
-            {
-                // The process exited between HasExited and Kill.
-            }
+            if (_activeProcess is { } process) Kill(process);
         }
     }
 
@@ -354,7 +495,8 @@ public sealed class DumpConversionService
     internal static string NormalizeDestination(string destination)
     {
         var value = destination.Trim().Replace('\\', '/').TrimEnd('/');
-        if (!value.StartsWith("/Game", StringComparison.OrdinalIgnoreCase))
+        if (!value.Equals("/Game", StringComparison.OrdinalIgnoreCase) &&
+            !value.StartsWith("/Game/", StringComparison.OrdinalIgnoreCase))
             throw new UserFacingException("The target content path must start with /Game.");
         return value.Length == 5 ? "/Game" : value;
     }
@@ -366,7 +508,9 @@ public sealed class DumpConversionService
             if (File.Exists(projectPath))
             {
                 using var document = JsonDocument.Parse(File.ReadAllText(projectPath));
-                if (document.RootElement.TryGetProperty("EngineAssociation", out var association))
+                if (document.RootElement.ValueKind == JsonValueKind.Object &&
+                    document.RootElement.TryGetProperty("EngineAssociation", out var association) &&
+                    association.ValueKind == JsonValueKind.String)
                 {
                     var value = association.GetString();
                     if (!string.IsNullOrWhiteSpace(value) && Regex.IsMatch(value, @"^\d+\.\d+")) return value;
@@ -697,6 +841,7 @@ public sealed class DumpConversionService
     {
         try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
         catch (InvalidOperationException) { }
+        catch (Win32Exception e) { Log.Warn($"Could not stop the conversion process: {e.Message}"); }
     }
 
     private static Task DrainAsync(Task pumps) => Task.WhenAny(pumps, Task.Delay(TimeSpan.FromSeconds(10)));
@@ -944,6 +1089,28 @@ public sealed record DumpConversionOptions(
     string? VgmStreamPath = null);
 
 public sealed record DumpConversionProgress(string Stage, double Fraction, string Message);
+
+public enum DumpConversionDiagnosticLevel { Warning, Error }
+
+/// <summary>Semantic read-only check, localized by the desktop presentation layer.</summary>
+public sealed record DumpConversionDiagnostic(DumpConversionDiagnosticLevel Level, string Code, string? Detail = null);
+
+public sealed record DumpConversionPreflight(
+    int CookedPackages,
+    int MapPackages,
+    int PayloadFiles,
+    int EmptyPayloadFiles,
+    int ImportableFiles,
+    int ActorXFiles,
+    int HiddenPackages,
+    long SourceBytes,
+    string TargetVersion,
+    string DestinationPath,
+    string WorkingDirectory,
+    IReadOnlyList<DumpConversionDiagnostic> Diagnostics)
+{
+    public bool CanProceed => Diagnostics.All(item => item.Level != DumpConversionDiagnosticLevel.Error);
+}
 
 public sealed record DumpConversionIssue(string SourceFile, string Headline, string Details);
 

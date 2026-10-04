@@ -51,10 +51,18 @@ public sealed record EngineVersionOption(string Version)
 /// result, the destination. The engine version, encryption and mappings are worked out from the
 /// source, and everything else waits in collapsed sections that say what state they are in.
 /// </summary>
-public sealed partial class ExportViewModel : ObservableObject
+public sealed partial class ExportViewModel : ObservableObject, IDisposable
 {
     private readonly AppSettings _settings;
-    private readonly ExportService _service = new();
+    private readonly IExportService _service;
+    private readonly Action<Action> _post;
+    private readonly bool _autoScan;
+    private readonly bool _persistPreferences;
+    private readonly bool _trackPerformance;
+    private bool _disposed;
+    private bool _exportActive;
+    private int _progressGeneration;
+    private Options? _previousRun;
     private readonly DispatcherTimer _scanTimer = new();
     private static Loc L => Loc.Instance;
 
@@ -109,10 +117,12 @@ public sealed partial class ExportViewModel : ObservableObject
     public bool NeedsMappings => SelectedMode.Mode is ExportMode.Full or ExportMode.Json;
     public bool IsFullMode => SelectedMode.Mode == ExportMode.Full;
     public bool IsLegacyMode => SelectedMode.Mode == ExportMode.Legacy;
+    public bool IsRawMode => SelectedMode.Mode == ExportMode.Raw;
 
     // ---------------------------------------------------------------- options
 
     [ObservableProperty] private int _threads;
+    [ObservableProperty] private int _maxInFlightMiB = 256;
     [ObservableProperty] private string _includeRegex = "";
     [ObservableProperty] private string _excludeRegex = "";
     [ObservableProperty] private bool _skipWorlds;
@@ -206,6 +216,7 @@ public sealed partial class ExportViewModel : ObservableObject
     [ObservableProperty] private string _progressRate = "";
     [ObservableProperty] private string _progressEta = "";
     [ObservableProperty] private string _progressElapsed = "";
+    [ObservableProperty] private string _progressRawBudget = "";
     [ObservableProperty] private string _errorHeadline = "";
     [ObservableProperty] private string _errorHint = "";
     [ObservableProperty] private string _summaryTitle = "";
@@ -227,8 +238,16 @@ public sealed partial class ExportViewModel : ObservableObject
     public bool IsBusy => State is RunState.Scanning or RunState.Preparing or RunState.Running or RunState.Cancelling;
     /// <summary>A scan runs by itself and is quick; only a real run shows progress and blocks the form.</summary>
     public bool IsRunning => State is RunState.Preparing or RunState.Running or RunState.Cancelling;
-    public bool CanRun => !IsBusy;
-    public bool CanStart => !IsBusy && ReadinessState.Level != Readiness.Blocked;
+    public bool CanRun => !_disposed && !IsBusy;
+    public bool CanStart => CanRun && ReadinessState.Level != Readiness.Blocked;
+    public bool HasPreviousRun => _previousRun is not null;
+    public bool ShowPreviousRun => HasPreviousRun && !IsRunning;
+    public bool CanContinuePrevious => CanRun && HasPreviousRun;
+    public string PreviousRunText => _previousRun is { } o
+        ? L.Format("Export.Continue.Snapshot", o.Mode.ToString().ToLowerInvariant(), o.Threads,
+            o.SelectedPaths?.Count.ToString("N0") ?? L["Export.Continue.All"], o.OutputDirectory,
+            o.PaksDirectory, o.Game.ToString(), Format.Bytes(o.MaxInFlightBytes)) : "";
+    public bool HasRawBudgetProgress => !string.IsNullOrEmpty(ProgressRawBudget);
     public bool CanCancel => State is RunState.Scanning or RunState.Running or RunState.Preparing;
     public bool HasError => !string.IsNullOrEmpty(ErrorHeadline);
     public bool HasSummary => Summary.Count > 0;
@@ -261,9 +280,18 @@ public sealed partial class ExportViewModel : ObservableObject
     /// <summary>Set by the view: copies text to the clipboard.</summary>
     public Func<string, Task>? CopyToClipboard { get; set; }
 
-    public ExportViewModel(AppSettings settings)
+    public ExportViewModel(AppSettings settings) : this(settings, new ExportService(),
+        action => Dispatcher.UIThread.Post(action)) { }
+
+    internal ExportViewModel(AppSettings settings, IExportService service, Action<Action> post,
+        bool autoScan = true, bool persistPreferences = true, bool trackPerformance = true)
     {
         _settings = settings;
+        _service = service;
+        _post = post;
+        _autoScan = autoScan;
+        _persistPreferences = persistPreferences;
+        _trackPerformance = trackPerformance;
 
         _selectedGame = Games.FirstOrDefault(g => g.Value == EGame.GAME_UE5_3) ?? Games[0];
         _selectedMode = Modes[0];
@@ -276,22 +304,12 @@ public sealed partial class ExportViewModel : ObservableObject
         _platform = Platforms[0];
         _threads = Math.Max(1, settings.DefaultThreads);
 
-        _scanTimer.Tick += (_, _) =>
-        {
-            _scanTimer.Stop();
-            _ = AutoScanAsync();
-        };
+        _scanTimer.Tick += OnScanTick;
 
         LoadFromSettings();
 
-        _service.ProgressChanged += p => Dispatcher.UIThread.Post(() => ApplyProgress(p));
-        Loc.Instance.LanguageChanged += () =>
-        {
-            OnPropertyChanged(nameof(StatusText));
-            OnPropertyChanged(nameof(Modes));
-            RefreshSourceStatus();
-            RefreshSummaries();
-        };
+        _service.ProgressChanged += OnProgress;
+        Loc.Instance.LanguageChanged += OnLanguageChanged;
 
         RefreshCommandLine();
     }
@@ -317,6 +335,72 @@ public sealed partial class ExportViewModel : ObservableObject
         OnPropertyChanged(nameof(HasRecent));
     }
 
+    private void OnScanTick(object? sender, EventArgs e)
+    {
+        _scanTimer.Stop();
+        if (!_disposed) _ = AutoScanAsync();
+    }
+
+    private void OnLanguageChanged()
+    {
+        if (_disposed) return;
+        OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(Modes));
+        OnPropertyChanged(nameof(PreviousRunText));
+        RefreshSourceStatus();
+        RefreshSummaries();
+    }
+
+    private void OnProgress(ExportProgress progress)
+    {
+        if (_disposed || !_exportActive) return;
+        var generation = _progressGeneration;
+        _post(() =>
+        {
+            if (!_disposed && _exportActive && generation == _progressGeneration) ApplyProgress(progress);
+        });
+    }
+
+    private void RefreshPreviousRun()
+    {
+        OnPropertyChanged(nameof(HasPreviousRun));
+        OnPropertyChanged(nameof(ShowPreviousRun));
+        OnPropertyChanged(nameof(CanContinuePrevious));
+        OnPropertyChanged(nameof(PreviousRunText));
+        ContinuePreviousCommand.NotifyCanExecuteChanged();
+    }
+
+    // Explicit actions, not a claimed hardware auto-tuner. File formats are left unchanged.
+    [RelayCommand(CanExecute = nameof(CanRun))]
+    private void UseQuietProfile() { if (!CanRun) return; Threads = 1; MaxInFlightMiB = 64; }
+
+    [RelayCommand(CanExecute = nameof(CanRun))]
+    private void UseBalancedProfile() { if (!CanRun) return; Threads = Math.Min(4, Math.Max(1, Environment.ProcessorCount)); MaxInFlightMiB = 256; }
+
+    [RelayCommand(CanExecute = nameof(CanRun))]
+    private void UseParallelProfile() { if (!CanRun) return; Threads = Math.Min(MaxThreads, Math.Max(1, Environment.ProcessorCount - 1)); MaxInFlightMiB = 512; }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _scanGeneration++;
+        _progressGeneration++;
+        _scanQueued = false;
+        _scanTimer.Stop();
+        _scanTimer.Tick -= OnScanTick;
+        _service.ProgressChanged -= OnProgress;
+        Loc.Instance.LanguageChanged -= OnLanguageChanged;
+        _service.Cancel();
+        Performance.Dispose();
+        _previousRun = null;
+        CopyToClipboard = null;
+        Scanned = null;
+        NotificationRequested = null;
+        RefreshReadiness();
+        RefreshPreviousRun();
+    }
+
     // ---------------------------------------------------------------- change tracking
 
     private static readonly HashSet<string> OptionProperties =
@@ -325,7 +409,7 @@ public sealed partial class ExportViewModel : ObservableObject
         nameof(RawPackages), nameof(SkipJson), nameof(SkipAssets), nameof(SkipRawMisc), nameof(SkipAudioConvert),
         nameof(AllMips), nameof(SkipMorphs), nameof(Overwrite), nameof(Verbose), nameof(MeshFormat),
         nameof(AnimFormat), nameof(TextureFormat), nameof(MeshQuality), nameof(NaniteFormat), nameof(SocketFormat),
-        nameof(Platform)
+        nameof(Platform), nameof(MaxInFlightMiB)
     ];
 
     private static readonly HashSet<string> ToolProperties =
@@ -339,7 +423,8 @@ public sealed partial class ExportViewModel : ObservableObject
         nameof(EngineEditorOpen), nameof(AesRequested), nameof(ProgressFraction), nameof(ProgressIndeterminate),
         nameof(ProgressProcessed), nameof(ProgressWritten), nameof(ProgressFailed), nameof(ProgressRate),
         nameof(ProgressEta), nameof(ProgressElapsed), nameof(ErrorHeadline), nameof(ErrorHint),
-        nameof(SummaryTitle), nameof(LastOutputDirectory)
+        nameof(SummaryTitle), nameof(LastOutputDirectory), nameof(ProgressRawBudget),
+        nameof(HasRawBudgetProgress), nameof(HasPreviousRun), nameof(ShowPreviousRun), nameof(CanContinuePrevious), nameof(PreviousRunText)
     ];
 
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
@@ -357,9 +442,13 @@ public sealed partial class ExportViewModel : ObservableObject
                 OnPropertyChanged(nameof(ShowProgress));
                 OnPropertyChanged(nameof(ShowReadiness));
                 OnPropertyChanged(nameof(StatusText));
+                RefreshPreviousRun();
                 RefreshReadiness();
                 CancelCommand.NotifyCanExecuteChanged();
                 RescanCommand.NotifyCanExecuteChanged();
+                UseQuietProfileCommand.NotifyCanExecuteChanged();
+                UseBalancedProfileCommand.NotifyCanExecuteChanged();
+                UseParallelProfileCommand.NotifyCanExecuteChanged();
                 break;
 
             case nameof(PaksPath):
@@ -385,12 +474,16 @@ public sealed partial class ExportViewModel : ObservableObject
                 OnPropertyChanged(nameof(NeedsMappings));
                 OnPropertyChanged(nameof(IsFullMode));
                 OnPropertyChanged(nameof(IsLegacyMode));
+                OnPropertyChanged(nameof(IsRawMode));
                 RefreshSourceStatus();
                 RefreshReadiness();
                 break;
 
             case nameof(ErrorHeadline):
                 OnPropertyChanged(nameof(HasError));
+                break;
+            case nameof(ProgressRawBudget):
+                OnPropertyChanged(nameof(HasRawBudgetProgress));
                 break;
 
             case nameof(LastOutputDirectory):
@@ -459,6 +552,7 @@ public sealed partial class ExportViewModel : ObservableObject
 
     private void ScheduleScan(TimeSpan delay)
     {
+        if (_disposed || !_autoScan) return;
         _scanGeneration++;
         _scanTimer.Stop();
 
@@ -485,7 +579,7 @@ public sealed partial class ExportViewModel : ObservableObject
     /// </summary>
     private async Task AutoScanAsync()
     {
-        if (!SourceExists) return;
+        if (_disposed || !SourceExists) return;
         if (IsBusy)
         {
             _scanQueued = true;
@@ -585,7 +679,7 @@ public sealed partial class ExportViewModel : ObservableObject
         finally
         {
             // A finished run keeps its outcome on the status line; a scan is not news.
-            State = previous is RunState.Done or RunState.DoneWithErrors or RunState.Failed or RunState.Cancelled
+            if (!_disposed) State = previous is RunState.Done or RunState.DoneWithErrors or RunState.Failed or RunState.Cancelled
                 ? previous
                 : RunState.Idle;
             if (generation != _scanGeneration) ScheduleScan(TimeSpan.FromMilliseconds(100));
@@ -621,7 +715,7 @@ public sealed partial class ExportViewModel : ObservableObject
     /// <summary>A run that had to wait for the form to settle; checked once it is over.</summary>
     private void RunQueuedScan()
     {
-        if (!_scanQueued) return;
+        if (_disposed || !_scanQueued) return;
         _scanQueued = false;
         ScheduleScan(TimeSpan.FromMilliseconds(100));
     }
@@ -734,6 +828,7 @@ public sealed partial class ExportViewModel : ObservableObject
         new[]
         {
             Threads != Math.Max(1, _settings.DefaultThreads),
+            MaxInFlightMiB != 256,
             !string.IsNullOrWhiteSpace(IncludeRegex), !string.IsNullOrWhiteSpace(ExcludeRegex),
             SkipWorlds, ExportMaterials, RawPackages, SkipJson, SkipAssets, SkipRawMisc, SkipAudioConvert,
             AllMips, SkipMorphs, Overwrite, Verbose,
@@ -812,9 +907,10 @@ public sealed partial class ExportViewModel : ObservableObject
         Mode = SelectedMode.Mode,
         AesKeys = AesText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
         Threads = Math.Max(1, Threads),
+        MaxInFlightBytes = checked((long)Math.Max(0, MaxInFlightMiB) * 1024 * 1024),
         IncludeRegex = NullIfEmpty(IncludeRegex),
         ExcludeRegex = NullIfEmpty(ExcludeRegex),
-        SelectedPaths = SelectedPaths,
+        SelectedPaths = SelectedPaths?.ToHashSet(StringComparer.OrdinalIgnoreCase),
         PathsFile = SelectedPaths is null || string.IsNullOrWhiteSpace(OutputPath) ? null : SelectionFilePath,
         ExportWorlds = !SkipWorlds,
         ExportMaterials = ExportMaterials,
@@ -850,17 +946,17 @@ public sealed partial class ExportViewModel : ObservableObject
 
     private string SelectionFilePath => Path.Combine(OutputPath.Trim(), "_selection.txt");
 
-    public void SetSelection(IReadOnlySet<string>? paths) => SelectedPaths = paths;
+    public void SetSelection(IReadOnlySet<string>? paths) => SelectedPaths = paths?.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     [RelayCommand]
     private void ClearSelection() => SelectedPaths = null;
 
     /// <summary>The selection is persisted next to the output, so the run is reproducible from the command line.</summary>
-    private void WriteSelectionFile()
+    private static void WriteSelectionFile(Options options)
     {
-        if (SelectedPaths is null || string.IsNullOrWhiteSpace(OutputPath)) return;
-        Directory.CreateDirectory(OutputPath.Trim());
-        File.WriteAllLines(SelectionFilePath, SelectedPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
+        if (options.SelectedPaths is null || options.PathsFile is null) return;
+        Directory.CreateDirectory(options.OutputDirectory);
+        File.WriteAllLines(options.PathsFile, options.SelectedPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
     }
 
     public void SetFilter(string? include, string? exclude)
@@ -958,7 +1054,7 @@ public sealed partial class ExportViewModel : ObservableObject
     {
         if (game is null) return;
         _settings.Recent.Remove(game);
-        _settings.Save();
+        if (_persistPreferences) _settings.Save();
         Recent.Remove(game);
         OnPropertyChanged(nameof(HasRecent));
     }
@@ -968,13 +1064,18 @@ public sealed partial class ExportViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task DryRun()
     {
+        if (!CanStart) return;
         ClearOutcome();
         State = RunState.Preparing;
         ProgressIndeterminate = true;
         try
         {
-            WriteSelectionFile();
-            var plan = await _service.DryRunAsync(ToOptions());
+            var options = ToOptions();
+            // The inline selection is sufficient. A preview must not create an output folder
+            // or a paths file just to satisfy CLI validation.
+            options.PathsFile = null;
+            var plan = await _service.DryRunAsync(options);
+            if (_disposed) return;
             ShowPlan(plan);
             State = RunState.Idle;
             Notify("Notification.Plan.Title",
@@ -982,31 +1083,52 @@ public sealed partial class ExportViewModel : ObservableObject
         }
         catch (Exception e)
         {
-            Fail(e);
+            if (!_disposed) Fail(e);
         }
         finally
         {
-            ProgressIndeterminate = false;
-            RunQueuedScan();
+            if (!_disposed) { ProgressIndeterminate = false; RunQueuedScan(); }
         }
     }
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task Start()
     {
+        if (!CanStart) return;
+        var options = ToOptions();
+        await RunExport(options, remember: true);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanContinuePrevious))]
+    private async Task ContinuePrevious()
+    {
+        if (!CanContinuePrevious || _previousRun is null) return;
+        var options = ExportService.Clone(_previousRun);
+        options.Resume = true;
+        await RunExport(options, remember: false);
+    }
+
+    private async Task RunExport(Options options, bool remember)
+    {
         ClearOutcome();
-        RememberRun();
+        // Even a preparation failure belongs to this request, not an older cancelled job.
+        _previousRun = ExportService.Clone(options);
         State = RunState.Preparing;
-        Performance.Start();
+        _exportActive = true;
+        _progressGeneration++;
+        if (_trackPerformance) Performance.Start();
         ProgressIndeterminate = true;
         LastOutputDirectory = "";
 
         try
         {
-            WriteSelectionFile();
-            var summary = await _service.ExportAsync(ToOptions());
+            if (remember && _persistPreferences) RememberRun();
+            WriteSelectionFile(options);
+            var summary = await _service.ExportAsync(options);
+            if (_disposed) return;
             LastOutputDirectory = summary.OutputDirectory;
-            ShowSummary(summary);
+            ShowSummary(summary, options.Mode);
+            if (summary.ExitCode == 0) _previousRun = null;
             State = summary.Cancelled ? RunState.Cancelled
                 : summary.ExitCode == 0 ? RunState.Done
                 : RunState.DoneWithErrors;
@@ -1014,20 +1136,27 @@ public sealed partial class ExportViewModel : ObservableObject
         }
         catch (Exception e)
         {
-            Fail(e);
+            if (!_disposed) Fail(e);
         }
         finally
         {
-            Performance.Stop();
-            ProgressIndeterminate = false;
-            OnPropertyChanged(nameof(HasErrorsFile));
-            RunQueuedScan();
+            _exportActive = false;
+            _progressGeneration++;
+            if (_trackPerformance) Performance.Stop();
+            if (!_disposed)
+            {
+                ProgressIndeterminate = false;
+                OnPropertyChanged(nameof(HasErrorsFile));
+                RefreshPreviousRun();
+                RunQueuedScan();
+            }
         }
     }
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel()
     {
+        if (_disposed || !CanCancel) return;
         State = RunState.Cancelling;
         _service.Cancel();
     }
@@ -1042,7 +1171,7 @@ public sealed partial class ExportViewModel : ObservableObject
         Summary.Clear();
         OnPropertyChanged(nameof(HasSummary));
         ProgressFraction = 0;
-        ProgressProcessed = ProgressWritten = ProgressFailed = ProgressRate = ProgressEta = ProgressElapsed = "";
+        ProgressProcessed = ProgressWritten = ProgressFailed = ProgressRate = ProgressEta = ProgressElapsed = ProgressRawBudget = "";
     }
 
     private void Fail(Exception e)
@@ -1112,9 +1241,11 @@ public sealed partial class ExportViewModel : ObservableObject
         ProgressRate = L.Format("Progress.PerSecond", p.RatePerSecond);
         ProgressEta = p.Eta is { } eta ? Format.Duration(eta) : "—";
         ProgressElapsed = Format.Duration(p.Elapsed);
+        ProgressRawBudget = p.RawInputBudget is { } b
+            ? L.Format("Export.Budget.Progress", Format.Bytes(b.ReservedBytes), Format.Bytes(b.CapacityBytes), b.WaitingEntries) : "";
     }
 
-    private void ShowSummary(ExportSummary s)
+    private void ShowSummary(ExportSummary s, ExportMode mode)
     {
         SummaryTitle = s.Cancelled
             ? L.Format("Summary.Cancelled", Format.Duration(s.Elapsed))
@@ -1126,9 +1257,11 @@ public sealed partial class ExportViewModel : ObservableObject
         Summary.Add(new SummaryLine(L["Summary.Written"], s.Written.ToString("N0")));
         if (s.IoStoreConverted > 0) Summary.Add(new SummaryLine(L["Summary.IoStore"], s.IoStoreConverted.ToString("N0")));
         Summary.Add(new SummaryLine(L["Summary.NothingToDo"], s.NothingToDo.ToString("N0")));
-        if (IsFullMode) Summary.Add(new SummaryLine(L["Summary.NoConverter"], s.NoConverter.ToString("N0")));
+        if (mode == ExportMode.Full) Summary.Add(new SummaryLine(L["Summary.NoConverter"], s.NoConverter.ToString("N0")));
         if (s.FailedEntries > 0) Summary.Add(new SummaryLine(L["Summary.FailedEntries"], s.FailedEntries.ToString("N0")));
         if (s.FailedObjects > 0) Summary.Add(new SummaryLine(L["Summary.FailedObjects"], s.FailedObjects.ToString("N0")));
+        if (s.RawInputBudget is { } b)
+            Summary.Add(new SummaryLine(L["Export.Budget.Peak"], Format.Bytes(b.PeakReservedBytes)));
         Summary.Add(new SummaryLine(L["Summary.Output"], s.OutputDirectory));
         OnPropertyChanged(nameof(HasSummary));
     }
@@ -1145,6 +1278,14 @@ public sealed partial class ExportViewModel : ObservableObject
         if (p.Mode != ExportMode.Legacy) Summary.Add(new SummaryLine(L["Plan.Payloads"], p.Payloads.ToString("N0")));
         if (p.Mode == ExportMode.Legacy) Summary.Add(new SummaryLine(L["Plan.IoStore"], p.IoStorePackages.ToString("N0")));
         Summary.Add(new SummaryLine(L["Plan.Mappings"], p.MappingsPath ?? L["Common.None"]));
+        if (p.RawInputBudgetBytes is { } bytes)
+        {
+            Summary.Add(new SummaryLine(L["Export.Budget.Label"], bytes == 0 ? L["Export.Budget.Disabled"] : Format.Bytes(bytes)));
+            if (p.RawInputOversizedEntries > 0)
+                Summary.Add(new SummaryLine(L["Export.Budget.Oversized"], p.RawInputOversizedEntries.ToString("N0")));
+            if (p.RawInputUnknownSizeEntries > 0)
+                Summary.Add(new SummaryLine(L["Export.Budget.Unknown"], p.RawInputUnknownSizeEntries.ToString("N0")));
+        }
         Summary.Add(new SummaryLine(L["Summary.Output"], p.OutputDirectory));
         OnPropertyChanged(nameof(HasSummary));
     }

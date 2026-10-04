@@ -39,7 +39,7 @@
               <TextBlock Classes="CardTitle" Text="{loc:Tr Migrate.Source.Title}" />
               <Border Classes="Help" ToolTip.Tip="{loc:Tr Migrate.Source.Help}"><TextBlock /></Border>
             </StackPanel>
-            <Grid ColumnDefinitions="*,Auto,200" ColumnSpacing="8">
+            <Grid ColumnDefinitions="*,Auto,200" ColumnSpacing="8" IsEnabled="{Binding CanEditInputs}">
               <TextBox Grid.Column="0" Text="{Binding SourcePath}" Watermark="D:\Dump\MyGame\Content" />
               <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFolder}" Command="{Binding BrowseSourceCommand}" />
               <ComboBox Grid.Column="2" ItemsSource="{Binding SourceVersions}" SelectedItem="{Binding SourceVersion}"
@@ -53,7 +53,7 @@
         <Border Classes="Card">
           <StackPanel>
             <TextBlock Classes="CardTitle" Text="{loc:Tr Migrate.Target.Title}" Margin="0,0,0,10" />
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsEnabled="{Binding CanEditInputs}">
               <TextBox Grid.Column="0" Text="{Binding TargetProjectPath}" Watermark="D:\Projects\MyProject\MyProject.uproject" />
               <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseTargetProjectCommand}" />
               <Button Grid.Column="2" Content="{loc:Tr Migrate.Detect}" Command="{Binding DetectCommand}"
@@ -67,7 +67,7 @@
             <TextBlock Classes="Hint" Text="{Binding DetectionNote}"
                        IsVisible="{Binding DetectionNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="20" Margin="0,8,0,0">
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="20" Margin="0,8,0,0" IsEnabled="{Binding CanEditInputs}">
               <StackPanel Grid.Column="0">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <TextBlock Classes="Label" Text="{loc:Tr Migrate.Destination.Label}" />
@@ -94,7 +94,7 @@
                          Classes.Attention="{Binding ToolsMissing}" HorizontalAlignment="Right" />
             </Grid>
           </Expander.Header>
-          <StackPanel Margin="4,6,4,4">
+          <StackPanel Margin="4,6,4,4" IsEnabled="{Binding CanEditInputs}">
             <TextBlock Classes="Hint" Text="{loc:Tr Migrate.Tools.Hint}" Margin="0,0,0,4" />
 
             <TextBlock Classes="Label" Text="{loc:Tr Migrate.UModel.Label}" IsVisible="{Binding !IsUE5Source}" />
@@ -125,6 +125,33 @@
             <TextBlock Classes="Hint" Text="{loc:Tr Migrate.Editor.Hint}" />
           </StackPanel>
         </Expander>
+
+        <Border x:Name="PreflightCard" Classes="Card" IsVisible="{Binding HasPreflight}">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="CardTitle" Text="{Binding PreflightTitle}" TextWrapping="Wrap" />
+            <TextBlock Classes="Hint" Text="{loc:Tr Migrate.Preflight.ReadOnly}" TextWrapping="Wrap" />
+            <ItemsControl ItemsSource="{Binding PreflightSummary}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:SummaryLine">
+                  <Grid ColumnDefinitions="260,*" Margin="0,3">
+                    <TextBlock Classes="Muted" Text="{Binding Label}" TextWrapping="Wrap" />
+                    <TextBlock Grid.Column="1" Text="{Binding Value}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <ItemsControl ItemsSource="{Binding PreflightDiagnostics}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:MigrationDiagnosticViewModel">
+                  <TextBlock Classes.Error="{Binding IsError}" Classes.Warning="{Binding !IsError}"
+                             Text="{Binding Text}" TextWrapping="Wrap" Margin="0,3" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+        <TextBlock Classes="Hint" Text="{Binding PreflightNote}" TextWrapping="Wrap"
+                   IsVisible="{Binding PreflightNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
         <!-- Hardware load while the run goes on, kept afterwards for a look back -->
         <Panel IsVisible="{Binding Performance.IsVisible}">
@@ -179,7 +206,7 @@
     <!-- Action bar -->
     <Border Grid.Row="1" Background="{DynamicResource Brush.Card}"
             BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,1,0,0" Padding="28,14">
-      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10">
 
         <Grid Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="10" VerticalAlignment="Center"
               IsVisible="{Binding ShowReadiness}">
@@ -199,9 +226,16 @@
                      Foreground="{DynamicResource Brush.Text}" />
         </Grid>
 
+        <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center" IsVisible="{Binding IsPreviewing}">
+          <ProgressBar IsIndeterminate="True" />
+          <TextBlock Classes="Status" Text="{loc:Tr Migrate.Preflight.Checking}" TextWrapping="Wrap" />
+        </StackPanel>
+
         <Button Grid.Column="1" Classes="Danger" Content="{loc:Tr Export.Cancel}" Command="{Binding CancelCommand}"
-                IsVisible="{Binding IsBusy}" />
-        <Button Grid.Column="2" Classes="Primary" Content="{loc:Tr Migrate.Start}" Command="{Binding StartCommand}" />
+                IsVisible="{Binding CanCancel}" />
+        <Button Grid.Column="2" Content="{loc:Tr Migrate.Preflight.Check}" Command="{Binding PreviewCommand}"
+                ToolTip.Tip="{loc:Tr Migrate.Preflight.ReadOnly}" />
+        <Button Grid.Column="3" Classes="Primary" Content="{loc:Tr Migrate.Start}" Command="{Binding StartCommand}" />
       </Grid>
     </Border>
   </Grid>

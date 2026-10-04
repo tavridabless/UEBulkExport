@@ -41,7 +41,7 @@
 
     <!-- Toolbar: breadcrumb · search · type chips -->
     <Border Grid.Row="1" Classes="Card" Padding="14,10" Margin="0,0,0,12" IsVisible="{Binding HasData}">
-      <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="14" RowSpacing="8">
+      <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="14" RowSpacing="8">
         <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
           <ItemsControl ItemsSource="{Binding Breadcrumb}" VerticalAlignment="Center">
             <ItemsControl.ItemsPanel>
@@ -77,10 +77,15 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
+        <WrapPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal">
+          <CheckBox Content="{loc:Tr Browser.Search.Descendants}" IsChecked="{Binding IncludeSubfolders}"
+                    Margin="0,0,16,0" ToolTip.Tip="{loc:Tr Browser.Search.Descendants.Hint}" />
+          <TextBlock Text="{Binding MatchesSummary}" Classes="Muted" FontSize="12" VerticalAlignment="Center" />
+        </WrapPanel>
       </Grid>
     </Border>
 
-    <Grid Grid.Row="2" ColumnDefinitions="160,10,*,10,190" IsVisible="{Binding HasData}">
+    <Grid x:Name="BrowserPanes" Grid.Row="2" ColumnDefinitions="160,10,*,10,190" IsVisible="{Binding HasData}">
 
       <!-- Folder tree -->
       <Border Grid.Column="0" Classes="Card" Padding="0">
@@ -104,9 +109,12 @@
       <Border Grid.Column="2" Classes="Card" Padding="0">
         <Grid RowDefinitions="Auto,*,Auto">
           <Grid Grid.Row="0" ColumnDefinitions="34,22,*,60,90" Margin="18,12,18,6">
-            <TextBlock Grid.Column="2" Text="{loc:Tr Browser.Column.Name}" Classes="Muted" FontSize="11" />
-            <TextBlock Grid.Column="3" Text="{loc:Tr Browser.Column.Type}" Classes="Muted" FontSize="11" />
-            <TextBlock Grid.Column="4" Text="{loc:Tr Browser.Column.Size}" Classes="Muted" FontSize="11" HorizontalAlignment="Right" />
+            <Button Grid.Column="2" Classes="Crumb" Padding="0" MinHeight="0" Content="{Binding NameSortHeader}" FontSize="11"
+                    HorizontalAlignment="Left" Command="{Binding SortByNameCommand}" ToolTip.Tip="{loc:Tr Browser.Sort.Hint}" />
+            <Button Grid.Column="3" Classes="Crumb" Padding="0" MinHeight="0" Content="{Binding TypeSortHeader}" FontSize="11"
+                    HorizontalAlignment="Left" Command="{Binding SortByTypeCommand}" ToolTip.Tip="{loc:Tr Browser.Sort.Hint}" />
+            <Button Grid.Column="4" Classes="Crumb" Padding="0" MinHeight="0" Content="{Binding SizeSortHeader}" FontSize="11"
+                    HorizontalAlignment="Right" Command="{Binding SortBySizeCommand}" ToolTip.Tip="{loc:Tr Browser.Sort.Hint}" />
           </Grid>
 
           <ListBox Grid.Row="1" Classes="Rows" ItemsSource="{Binding Rows}" SelectedItem="{Binding FocusedRow}"
@@ -143,7 +151,7 @@
       </Border>
 
       <!-- Details -->
-      <Border Grid.Column="4" Classes="Card" Padding="18,16">
+      <Border x:Name="DetailsCard" Grid.Column="4" Classes="Card" Padding="18,16">
         <Grid>
           <TextBlock Text="{loc:Tr Browser.Details.Empty}" Classes="Muted" TextWrapping="Wrap" TextAlignment="Center"
                      VerticalAlignment="Center" IsVisible="{Binding !HasDetail}" />
@@ -174,6 +182,7 @@
                         Data="M9 9 L9 5 A1 1 0 0 1 10 4 L19 4 A1 1 0 0 1 20 5 L20 14 A1 1 0 0 1 19 15 L15 15 M5 9 L14 9 A1 1 0 0 1 15 10 L15 19 A1 1 0 0 1 14 20 L5 20 A1 1 0 0 1 4 19 L4 10 A1 1 0 0 1 5 9 Z" />
                 </Button>
               </Grid>
+              <TextBlock Text="{Binding ClipboardStatus}" Classes="Muted" FontSize="12" TextWrapping="Wrap" />
 
               <TextBlock Classes="Label" Text="{loc:Tr Browser.Details.Container}" Margin="0,4,0,4" />
               <TextBox Text="{Binding DetailContainer}" IsReadOnly="True" />
@@ -201,9 +210,12 @@
         <StackPanel Grid.Column="1" VerticalAlignment="Center">
           <TextBlock Text="{Binding SelectedCountText}" FontWeight="SemiBold" FontSize="14" />
           <TextBlock Text="{Binding SelectedSubText}" Classes="Muted" FontSize="12" />
+          <TextBlock Text="{Binding VisibleSelectionSummary}" Classes="Muted" FontSize="12" />
         </StackPanel>
         <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Right">
         <Button Margin="0,0,8,4" Content="{loc:Tr Browser.SelectAll}" Command="{Binding SelectAllShownCommand}" />
+        <Button Margin="0,0,8,4" Content="{loc:Tr Browser.SelectMatches}" Command="{Binding SelectAllMatchesCommand}"
+                ToolTip.Tip="{loc:Tr Browser.SelectMatches.Hint}" />
         <Button Margin="0,0,8,4" Content="{loc:Tr Browser.ClearSelection}" Command="{Binding ClearSelectionCommand}" IsEnabled="{Binding HasSelection}" />
         <Button Margin="0,0,8,4" AutomationProperties.AutomationId="ExcludeButton" Command="{Binding ExcludeCheckedCommand}" ToolTip.Tip="{loc:Tr Browser.Exclude.Hint}"
                 IsEnabled="{Binding SelectedCount}">
