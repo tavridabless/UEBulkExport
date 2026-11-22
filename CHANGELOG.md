@@ -39,6 +39,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Build the portable desktop target on Linux and keep the Windows notification target on Windows.
 - Catch selective Legacy IoStore requests before output creation and offer the Exact copy mode.
 
 - Try AES candidates in order so repeated keys for a container cannot race to mount it.

@@ -3,7 +3,8 @@
   <PropertyGroup>
     <!-- The ordinary target keeps the Avalonia application portable. The Windows target adds
          the WinRT projection used for real Action Center notifications in Windows installers. -->
-    <TargetFrameworks>net10.0;net10.0-windows10.0.18362.0</TargetFrameworks>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('Windows'))">net10.0;net10.0-windows10.0.18362.0</TargetFrameworks>
     <TargetFramework></TargetFramework>
     <TargetPlatformMinVersion Condition="'$(TargetFramework)' == 'net10.0-windows10.0.18362.0'">10.0.14393.0</TargetPlatformMinVersion>
     <!-- WinExe: no console window when the executable is double-clicked. -->
