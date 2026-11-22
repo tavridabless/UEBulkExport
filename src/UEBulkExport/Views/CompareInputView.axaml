@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:UEBulkExport.Gui.ViewModels"
+             xmlns:loc="using:UEBulkExport.Gui.Localization"
+             x:Class="UEBulkExport.Gui.Views.CompareInputView"
+             x:DataType="vm:CompareInputViewModel">
+  <StackPanel Spacing="7">
+    <TextBox Text="{Binding Path}"
+             Watermark="{loc:Tr Compare.Source.Placeholder}"
+             AutomationProperties.Name="{loc:Tr Compare.Source.Label}" />
+    <StackPanel Orientation="Horizontal" Spacing="8">
+      <Button Content="{loc:Tr Common.BrowseFolder}" Command="{Binding BrowseFolderCommand}" />
+      <Button Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseContainerCommand}" />
+    </StackPanel>
+    <Expander Header="{loc:Tr Compare.Source.Options}" HorizontalAlignment="Stretch"
+              HorizontalContentAlignment="Stretch">
+      <StackPanel Spacing="5">
+        <TextBlock Classes="Label" Text="{loc:Tr Compare.Engine}" IsVisible="{Binding AllowEngineSelection}" />
+        <ComboBox ItemsSource="{Binding Games}" SelectedItem="{Binding Game}" MaxDropDownHeight="340"
+                  IsVisible="{Binding AllowEngineSelection}"
+                  HorizontalAlignment="Stretch" AutomationProperties.Name="{loc:Tr Compare.Engine}" />
+        <TextBlock Classes="Label" Text="{loc:Tr Compare.Aes}" />
+        <TextBox Text="{Binding Aes}" PasswordChar="●" ToolTip.Tip="{loc:Tr Compare.Aes.Hint}"
+                 AutomationProperties.Name="{loc:Tr Compare.Aes}" />
+      </StackPanel>
+    </Expander>
+  </StackPanel>
+</UserControl>

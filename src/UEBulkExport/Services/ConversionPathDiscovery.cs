@@ -143,13 +143,15 @@ public static class ConversionPathDiscovery
         return null;
     }
 
-    private static string ReadEngineAssociation(string? project)
+    internal static string ReadEngineAssociation(string? project)
     {
         if (!File.Exists(project)) return "";
         try
         {
             using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(project));
-            return document.RootElement.TryGetProperty("EngineAssociation", out var property)
+            return document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                   document.RootElement.TryGetProperty("EngineAssociation", out var property) &&
+                   property.ValueKind == System.Text.Json.JsonValueKind.String
                 ? property.GetString()?.Trim() ?? ""
                 : "";
         }

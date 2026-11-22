@@ -1,0 +1,101 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:UEBulkExport.Gui.ViewModels"
+             xmlns:views="using:UEBulkExport.Gui.Views"
+             xmlns:loc="using:UEBulkExport.Gui.Localization"
+             x:Class="UEBulkExport.Gui.Views.CompareView"
+             x:DataType="vm:CompareViewModel">
+  <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="12" Margin="28,24,28,18">
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <TextBlock Classes="PageTitle" Text="{loc:Tr Compare.Title}" VerticalAlignment="Center" />
+      <Button Grid.Column="1" Content="{loc:Tr Compare.Manifest.Open}" Command="{Binding LoadManifestCommand}" />
+    </Grid>
+
+    <Expander Grid.Row="1" Header="{loc:Tr Compare.Sources}" IsExpanded="{Binding InputsExpanded}"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="12" IsEnabled="{Binding CanEdit}">
+        <Border Classes="Card" Padding="15,12">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Compare.Before}" />
+            <views:CompareInputView DataContext="{Binding Before}" />
+          </StackPanel>
+        </Border>
+        <Border Grid.Column="1" Classes="Card" Padding="15,12">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="CardTitle" Text="{loc:Tr Compare.After}" />
+            <views:CompareInputView DataContext="{Binding After}" />
+          </StackPanel>
+        </Border>
+      </Grid>
+    </Expander>
+
+    <StackPanel Grid.Row="2" Spacing="6">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <CheckBox Grid.Column="0" Content="{loc:Tr Compare.Hash}" IsChecked="{Binding HashContents}"
+                  IsEnabled="{Binding CanChangeHash}" IsVisible="{Binding !HasPendingManifest}" VerticalAlignment="Center"
+                  ToolTip.Tip="{loc:Tr Compare.Hash.Hint}" />
+        <Button Grid.Column="0" Classes="Link" Content="{loc:Tr Compare.Manifest.Close}"
+                Command="{Binding CloseManifestCommand}" IsVisible="{Binding HasPendingManifest}"
+                IsEnabled="{Binding CanEdit}" HorizontalAlignment="Left" />
+        <Button Grid.Column="1" Content="{loc:Tr Compare.Cancel}" Command="{Binding CancelCommand}"
+                IsVisible="{Binding IsBusy}" />
+        <Button Grid.Column="2" Classes="Primary" Content="{Binding RunLabel}" Command="{Binding CompareCommand}" />
+      </Grid>
+      <TextBlock Classes="Hint" Text="{Binding ManifestMessage}" IsVisible="{Binding HasManifestMessage}" TextWrapping="Wrap" />
+      <ProgressBar Value="{Binding Progress}" Maximum="1" IsVisible="{Binding IsBusy}"
+                   IsIndeterminate="{Binding IsSavingManifest}" AutomationProperties.Name="{Binding StatusText}" />
+      <TextBlock Classes="Warning" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
+      <TextBlock Classes="Hint" Text="{loc:Tr Compare.Cancelled}" IsVisible="{Binding WasCancelled}" />
+    </StackPanel>
+
+    <Border Grid.Row="3" Classes="Card" Padding="12" IsVisible="{Binding HasResult}">
+      <Grid RowDefinitions="Auto,Auto,*" RowSpacing="6">
+        <Grid ColumnDefinitions="*,158,150" ColumnSpacing="8">
+          <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" TextWrapping="Wrap" />
+          <TextBox Grid.Column="1" Text="{Binding Search}" Watermark="{loc:Tr Compare.Search}"
+                   AutomationProperties.Name="{loc:Tr Compare.Search}" />
+          <ComboBox Grid.Column="2" ItemsSource="{Binding Filters}" SelectedItem="{Binding Filter}"
+                    AutomationProperties.Name="{loc:Tr Compare.Filter.Label}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:CompareFilter">
+                <TextBlock Text="{Binding Label}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+        </Grid>
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="10" IsVisible="{Binding HasChecked}">
+          <TextBlock Text="{Binding CheckSummary}" Classes="Hint" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Content="{loc:Tr Compare.Selection.Clear}" Classes="Link" Command="{Binding ClearChecksCommand}" />
+        </Grid>
+        <ListBox Grid.Row="2" ItemsSource="{Binding Rows}" Focusable="False" IsVisible="{Binding HasRows}">
+          <ListBox.Styles>
+            <Style Selector="ListBoxItem">
+              <Setter Property="Focusable" Value="False" />
+            </Style>
+          </ListBox.Styles>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:CompareRow">
+              <Grid ColumnDefinitions="Auto,96,*" ColumnSpacing="9">
+                <CheckBox IsChecked="{Binding IsSelected}" AutomationProperties.Name="{Binding Path}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding Change}" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" ToolTip.Tip="{Binding Path}">
+                  <TextBlock Text="{Binding Path}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Detail}" Classes="Hint" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"
+                             ToolTip.Tip="{Binding Detail}" />
+                </StackPanel>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock Grid.Row="2" Classes="Hint" Text="{loc:Tr Compare.Empty}" IsVisible="{Binding ShowEmptyResults}" />
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="4" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8" IsVisible="{Binding HasResult}">
+      <TextBlock Classes="Hint" Text="{loc:Tr Compare.ExportLimit}" TextWrapping="Wrap"
+                 IsVisible="{Binding ShowExportLimit}" VerticalAlignment="Center" />
+      <Button Grid.Column="1" Content="{loc:Tr Compare.Manifest.Save}" Command="{Binding SaveManifestCommand}" />
+      <Button Grid.Column="2" Classes="Primary" Content="{Binding ReviewLabel}" Command="{Binding ReviewCommand}" />
+    </Grid>
+  </Grid>
+</UserControl>

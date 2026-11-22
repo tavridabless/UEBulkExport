@@ -73,7 +73,8 @@ The pages:
   collapsed sections that show their state, such as *Recommended defaults*. The bar at the bottom
   says whether the export is ready and, if not, why; **Dry run** previews the plan. Live progress
   includes throughput and ETA, followed by a result summary and shortcuts to the output, log and
-  `errors.csv`. Recent games are one click away.
+  `errors.csv`. **Select failed files** lets you adjust the current settings and export those
+  inputs again. Recent games are one click away.
 - **Performance** — while an export or a migration runs, a panel on its page charts disk read
   and write speed and the processor, memory and graphics load of the whole computer, second by
   second, and names what holds the run back (for example *Disk-bound · busy 96 %*). Hover over a
@@ -87,7 +88,10 @@ The pages:
   sizes, select individual files or folders, export only the selection, or add it to the exclusion
   list. Locked containers are identified when an AES key is missing or incorrect.
   Large folders use pages of 5000 rows with a total match count and Previous/Next navigation;
-  checked files remain selected across pages and filters.
+  checked files remain selected across pages and filters until the source changes.
+  Select a folder row and press Enter or use **Open folder** in the details panel.
+  **Review export** transfers the selection and exclusions to the Export page so you can check
+  the mode, destination and dry run before starting. Quick export remains available.
 - **Log** — everything the exporter reports, filtered by level, with copy, clear and follow.
   The window retains the latest 20,000 entries, with a bounded pending queue; the export's file
   log is not truncated. Follow also scrolls to the latest records when opening the page or enabling it.
@@ -121,6 +125,32 @@ an interactive shell or return its exit code there.
 
 ## Workflow controls
 
+The Export page keeps the source, mode and destination together. Recipes have their own menu.
+Open **Advanced options** for formats, filters, helper paths and the equivalent command line.
+When whole-container IoStore conversion conflicts with a selection, **Use Exact copy** keeps
+the selection and changes the mode before export.
+
+In **Full** mode, **Asset sample** converts a small selection of textures, meshes, animations,
+audio, levels or materials. The separate report shows requested, tested and converted counts
+for each type, plus candidates that produced no file or failed. The search continues for
+working candidates within its package limit. The CLI returns 2 if coverage remains incomplete
+or a read or conversion failed. Output from successful probes is kept.
+
+Use **Compare** to find added, removed or changed packages and files. The fast check compares
+paths and sizes. Enable SHA-256 to detect same-size edits. Each package lists the files that
+changed, and checked rows survive path and change-type filters. When the newer source is a
+folder with unique paths, review can include all addressable files of each selected package.
+For ambiguous package layouts the comparison shows the affected files individually.
+
+**Save changes** records the chosen changes and fingerprints of both archive sets. Open that
+manifest on another computer, choose local sources and supply each build's AES keys as needed.
+After verification, additions and changes can be exported with their files from the new build.
+Removed groups remain available for review.
+
+Use **Save recipe** and **Open recipe** on the Export page to reuse formats, filters, the engine
+profile and optional virtual path selections. Choose local paths and enter any AES keys on the
+Export page after opening a recipe.
+
 The Browser can optionally search all subfolders by file name or virtual path. Click the Name,
 Type or Size header to change sorting; **Tick this page** and **Tick all matches** are separate
 actions. Matching byte totals refer to source metadata, not converted output size.
@@ -140,6 +170,8 @@ Unreal Editor or external conversion tools, creating working folders or saving t
 It reports incomplete payloads, missing tools, Python plugin requirements and cooked-content
 limitations. A passed requirements check is not proof that conversion or a particular engine
 version works. Actual version migration still needs representative cooked assets and a target editor.
+With an existing import record, a later run reports source changes as stale by default.
+Choose **Replace changed assets** to reimport the changed assets and keep unchanged results.
 
 ## Output
 
@@ -366,12 +398,11 @@ Copy the package and every associated payload into the matching `Content` path. 
 asset editors and many classes remain unsupported; this does not make the package editable.
 
 
-**Engine versions newer than retoc knows.** The automatically downloaded retoc 0.1.5 supports
-IoStore games through UE5.7. For a newer engine, such as UE5.8, UEBulkExport does not force a
-version and lets retoc read it from the containers, but retoc 0.1.5 cannot convert UE5.8 IoStore
-packages. The Export page warns about this before the run starts. Choose **Exact copy** (`raw`) or
-**Converted files** (`full`) instead, or point **Helper tools** (`--retoc`) at a newer retoc build
-once one supports that version.
+**Newer engine versions.** retoc 0.1.5 accepts explicit Unreal Engine versions through UE5.7.
+For UE5.8 and later, UEBulkExport lets retoc infer the version from the containers. This worked on
+the tested UE5.8 fixture. Compatibility depends on the container. If conversion fails, use
+**Exact copy** (`raw`), **Converted files** (`full`), or a compatible retoc build via
+**Helper tools** (`--retoc`).
 
 ---
 
@@ -473,12 +504,37 @@ UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Textures" ^
 UEBulkExport.Cli --paks "D:\Games\MyGame" --out "D:\Meshes" --mode full --mesh actorx --no-json
 ```
 
-**Diff two builds** — property dumps only, then compare the folders with any diff tool:
+**Check texture conversion before a bulk export:**
 
 ```bat
-UEBulkExport.Cli --paks "D:\Games\MyGame-1.0" --out "D:\diff\1.0" --mode json --usmap "1.0.usmap"
-UEBulkExport.Cli --paks "D:\Games\MyGame-1.1" --out "D:\diff\1.1" --mode json --usmap "1.1.usmap"
+UEBulkExport.Cli sample --type texture --per-type 2 --paks "D:\Games\MyGame" --out "D:\Checks"
 ```
+
+**Compare two builds and verify same-size files:**
+
+```bat
+UEBulkExport.Cli compare --before "D:\Games\MyGame-1.0" --after "D:\Games\MyGame-1.1" --hash --json
+```
+
+Add `--groups --save-manifest "changes.json"` to save the grouped comparison. To verify
+and preview the recorded export scope on another machine:
+
+```bat
+UEBulkExport.Cli compare --apply-manifest "changes.json" --before "D:\Builds\Old" --after "D:\Builds\New" --out "D:\Changes" --dry-run
+```
+
+Use the same command without `--dry-run` to export the recorded scope.
+
+**Save a portable recipe and run it with local inputs:**
+
+```bat
+UEBulkExport.Cli recipe save textures.json --mode full --include "/Textures?/" --texture tga
+UEBulkExport.Cli recipe run textures.json --paks "D:\Games\MyGame" --out "D:\Textures"
+```
+
+For encrypted sources, add `--aes <key>` to `recipe run`, or pass separately scoped
+`--before-aes <key>` and `--after-aes <key>` to `compare`. Recipe JSON holds portable options
+and virtual paths. Local mappings, helper tools, paths and AES credentials are supplied at run time.
 
 **Encrypted containers:**
 

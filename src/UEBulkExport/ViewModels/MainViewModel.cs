@@ -8,6 +8,8 @@ namespace UEBulkExport.Gui.ViewModels;
 public sealed record NavItem(string Key, string LabelKey, string IconData, string? LiteralLabel = null)
 {
     public string Label => LiteralLabel ?? Loc.Instance[LabelKey];
+    public override string ToString() => Label;
+
     public Geometry Icon
     {
         get
@@ -24,6 +26,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public ExportViewModel Export { get; }
     public MigrateViewModel Migrate { get; }
     public BrowserViewModel Browser { get; } = new();
+    public CompareViewModel Compare { get; }
     public LogViewModel Log { get; }
     public PluginsViewModel Plugins { get; }
     public SettingsViewModel Settings { get; }
@@ -37,16 +40,20 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public string Version => $"v{Cli.Version}";
     // Export and migration run independently; the status line follows whichever is working.
-    public string StatusText => (Migrate.IsBusy || Migrate.IsPreviewing) && !Export.IsRunning ? Migrate.StatusText : Export.StatusText;
-    public bool IsBusy => Export.IsBusy || Migrate.IsBusy || Migrate.IsPreviewing || Migrate.IsConfirming;
-    public double ProgressFraction => Export.IsRunning || !Migrate.IsBusy ? Export.ProgressFraction : Migrate.Progress;
-    public bool ShowProgress => Export.ShowProgress || Migrate.IsBusy;
+    public string StatusText => Export.IsRunning ? Export.StatusText
+        : Migrate.IsBusy || Migrate.IsPreviewing ? Migrate.StatusText
+        : Compare.IsBusy ? Compare.StatusText : Export.StatusText;
+    public bool IsBusy => Export.IsBusy || Migrate.IsBusy || Migrate.IsPreviewing || Migrate.IsConfirming || Compare.IsBusy;
+    public double ProgressFraction => Export.IsRunning ? Export.ProgressFraction
+        : Migrate.IsBusy ? Migrate.Progress : Compare.IsBusy ? Compare.Progress : Export.ProgressFraction;
+    public bool ShowProgress => Export.ShowProgress || Migrate.IsBusy || Compare.IsBusy;
 
     /// <summary>Stops whatever is running, before the window closes or restarts.</summary>
     public void CancelAll()
     {
         if (Export.CancelCommand.CanExecute(null)) Export.CancelCommand.Execute(null);
         if (Migrate.CancelCommand.CanExecute(null)) Migrate.CancelCommand.Execute(null);
+        if (Compare.CancelCommand.CanExecute(null)) Compare.CancelCommand.Execute(null);
     }
 
     /// <summary>
@@ -65,6 +72,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         AppSettings = settings;
         Export = new ExportViewModel(settings);
         Migrate = new MigrateViewModel(settings);
+        Compare = new CompareViewModel(settings, Export.Games, () => Export.CanRun);
         Log = new LogViewModel(App.LogSink);
         Plugins = new PluginsViewModel(settings);
         Settings = new SettingsViewModel(settings, notifications);
@@ -73,6 +81,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             new("export", "Nav.Export", Icons.Export),
             new("migrate", "Nav.Migrate", Icons.Migrate),
             new("browser", "Nav.Browser", Icons.Browser),
+            new("compare", "Nav.Compare", Icons.Compare),
             new("log", "Nav.Log", Icons.Log)
         };
         pages.AddRange(Plugins.Catalog.Plugins.Where(plugin => plugin.IsLoaded).Select(plugin =>
@@ -84,6 +93,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _selectedPage = Pages[0];
 
         Export.Scanned += Browser.Load;
+        Export.SourceChanged += Browser.Clear;
         Export.NotificationRequested += notification =>
         {
             if (AppSettings.NotificationsEnabled) notifications.Show(notification);
@@ -93,10 +103,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             if (AppSettings.NotificationsEnabled) notifications.Show(notification);
         };
         Browser.Export = Export;
+        Browser.ExportReviewRequested += ReviewBrowserExport;
+        Compare.ReviewExportRequested += (result, source, paths) =>
+        {
+            if (Export.PrepareComparedExport(result, source, paths)) Navigate("export");
+        };
         Browser.ExportRequested += paths =>
         {
-            Export.SetSelection(paths);
-            Navigate("export");
+            ReviewBrowserExport(paths);
             if (Export.StartCommand.CanExecute(null)) Export.StartCommand.Execute(null);
         };
         Settings.SettingsReset += Export.LoadFromSettings;
@@ -115,6 +129,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     break;
                 case nameof(ExportViewModel.IsBusy):
                     OnPropertyChanged(nameof(IsBusy));
+                    Compare.RefreshExportAvailability();
                     break;
                 case nameof(ExportViewModel.ProgressFraction):
                     OnPropertyChanged(nameof(ProgressFraction));
@@ -141,10 +156,32 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             }
         };
 
+        Compare.PropertyChanged += (_, e) =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(CompareViewModel.IsBusy):
+                    OnPropertyChanged(nameof(IsBusy));
+                    OnPropertyChanged(nameof(ShowProgress));
+                    OnPropertyChanged(nameof(ProgressFraction));
+                    OnPropertyChanged(nameof(StatusText));
+                    break;
+                case nameof(CompareViewModel.Progress):
+                    OnPropertyChanged(nameof(ProgressFraction));
+                    break;
+            }
+        };
+
         Loc.Instance.LanguageChanged += OnLanguageChanged;
     }
 
     public void Navigate(string key) => SelectedPage = Pages.First(p => p.Key == key);
+
+    private void ReviewBrowserExport(IReadOnlySet<string>? paths)
+    {
+        Export.SetSelection(paths);
+        Navigate("export");
+    }
 
     private void OnLanguageChanged()
     {
@@ -158,6 +195,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Export.Dispose();
         Migrate.Dispose();
         Browser.Dispose();
+        Compare.Dispose();
         Log.Dispose();
         Plugins.Dispose();
     }
@@ -174,6 +212,8 @@ internal static class Icons
 
     public const string Browser =
         "M3 6 A2 2 0 0 1 5 4 L9 4 L11 6 L19 6 A2 2 0 0 1 21 8 L21 18 A2 2 0 0 1 19 20 L5 20 A2 2 0 0 1 3 18 Z M3 10 L21 10";
+
+    public const string Compare = "M4 7 L20 7 M16 3 L20 7 L16 11 M20 17 L4 17 M8 13 L4 17 L8 21";
 
     public const string Log =
         "M6 3 L15 3 L20 8 L20 21 L6 21 Z M15 3 L15 8 L20 8 M9 12 L17 12 M9 16 L17 16";

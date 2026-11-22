@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using UEBulkExport.Gui.ViewModels;
 
 namespace UEBulkExport.Gui.Views;
@@ -73,8 +74,22 @@ public sealed partial class BrowserView : UserControl
 
     private void OnRowDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (DataContext is BrowserViewModel vm && vm.FocusedRow is { IsFolder: true } row)
+        if (DataContext is BrowserViewModel vm && e.Source is Visual source &&
+            source.FindAncestorOfType<CheckBox>(includeSelf: true) is null &&
+            source.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is BrowserRow { IsFolder: true } row)
+        {
             vm.OpenRowCommand.Execute(row);
+            e.Handled = true;
+        }
+    }
+
+    private void OnRowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && DataContext is BrowserViewModel { FocusedRow: { IsFolder: true } row } vm)
+        {
+            vm.OpenRowCommand.Execute(row);
+            e.Handled = true;
+        }
     }
 
     private async void OnCopyPath(object? sender, RoutedEventArgs e)

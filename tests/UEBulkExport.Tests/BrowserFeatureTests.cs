@@ -175,6 +175,38 @@ public sealed class BrowserFeatureTests
     }
 
     [Fact]
+    public void Filtered_paging_preserves_folder_rows_file_order_and_whole_scope_totals()
+    {
+        using var vm = new BrowserViewModel();
+        var files = Enumerable.Range(0, 5002).SelectMany(i => new GameFile[]
+        {
+            new SyntheticGameFile($"Root/Needle{i:D5}.ini", 2),
+            new SyntheticGameFile($"Root/Needle{i:D5}.bin", 100)
+        });
+        vm.Load(Scan([.. files, new SyntheticGameFile("Root/NeedleA/a.bin"),
+            new SyntheticGameFile("Root/NeedleZ/z.bin"), new SyntheticGameFile("Root/unmatched.ini")]));
+        vm.Search = "Needle";
+        vm.Chip = vm.Chips.Single(c => c.Key == "config");
+
+        Assert.Equal(["NeedleA", "NeedleZ"], vm.Rows.Take(2).Select(row => row.Name));
+        Assert.Equal("Needle04997.ini", vm.Rows[^1].Name);
+        vm.NextPageCommand.Execute(null);
+        Assert.Equal(["Needle04998.ini", "Needle04999.ini", "Needle05000.ini", "Needle05001.ini"],
+            vm.Rows.Select(row => row.Name));
+        Assert.Equal(5004, vm.MatchingRowCount);
+        Assert.Equal(5002, vm.MatchingFileCount);
+        Assert.Equal(10004, vm.MatchingBytes);
+        Assert.False(vm.HasNextPage);
+
+        vm.PreviousPageCommand.Execute(null);
+        Assert.Equal("NeedleA", vm.Rows[0].Name);
+        vm.SortByNameCommand.Execute(null);
+        vm.NextPageCommand.Execute(null);
+        Assert.Equal(["Needle00003.ini", "Needle00002.ini", "Needle00001.ini", "Needle00000.ini"],
+            vm.Rows.Select(row => row.Name));
+    }
+
+    [Fact]
     public void Selecting_matches_does_not_expand_matching_navigation_folders()
     {
         using var vm = new BrowserViewModel();
@@ -187,6 +219,38 @@ public sealed class BrowserFeatureTests
         Assert.Equal(1, vm.SelectedCount);
         Assert.False(vm.Rows.Single(r => r.IsFolder).IsChecked);
         Assert.True(vm.Rows.Single(r => !r.IsFolder).IsChecked);
+    }
+
+    [Fact]
+    public void Review_transfers_the_exact_scope_without_requesting_quick_export()
+    {
+        using var vm = new BrowserViewModel();
+        var reviewed = new List<IReadOnlySet<string>?>();
+        var started = new List<IReadOnlySet<string>?>();
+        vm.ExportReviewRequested += reviewed.Add;
+        vm.ExportRequested += started.Add;
+        Assert.False(vm.ReviewExportCommand.CanExecute(null));
+        vm.ReviewExportCommand.Execute(null);
+        Assert.Empty(reviewed);
+
+        vm.Load(Scan(new SyntheticGameFile("Root/a.bin"), new SyntheticGameFile("Root/b.bin"),
+            new SyntheticGameFile("Root/c.bin")));
+        Assert.True(vm.ReviewExportCommand.CanExecute(null));
+        vm.ReviewExportCommand.Execute(null);
+        Assert.Null(Assert.Single(reviewed));
+
+        vm.Rows.Single(row => row.Name == "b.bin").IsChecked = true;
+        vm.ExcludeCheckedCommand.Execute(null);
+        Assert.Equal(Loc.Instance["Browser.ExportRemaining"], vm.ExportButtonText);
+        vm.ReviewExportCommand.Execute(null);
+        vm.Rows.Single(row => row.Name == "a.bin").IsChecked = true;
+        vm.ReviewExportCommand.Execute(null);
+
+        Assert.Empty(started);
+        Assert.True(reviewed[1]!.SetEquals(["Root/a.bin", "Root/c.bin"]));
+        Assert.Equal("Root/a.bin", Assert.Single(reviewed[2]!));
+        vm.ExportSelectedCommand.Execute(null);
+        Assert.True(Assert.Single(started)!.SetEquals(reviewed[2]!));
     }
 
     [Fact]

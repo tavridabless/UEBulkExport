@@ -63,6 +63,10 @@ public static class Audio
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(60));
 
+            // vgmstream writes progress and diagnostics before exit. Drain both redirected pipes
+            // so an otherwise successful conversion cannot block waiting for buffer space.
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
             await process.WaitForExitAsync(timeout.Token);
             if (process.ExitCode != 0 || !File.Exists(temporary))
             {

@@ -44,6 +44,7 @@ public sealed partial class MigrateViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _unrealEditorPath = "";
     [ObservableProperty] private string _destinationPath = "/Game/ConvertedDump";
     [ObservableProperty] private bool _overwrite;
+    [ObservableProperty] private bool _replaceChanged;
 
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _isDetecting;
@@ -119,7 +120,8 @@ public sealed partial class MigrateViewModel : ObservableObject, IDisposable
     private bool MappingsProvided => !string.IsNullOrWhiteSpace(MappingsPath);
     private bool MappingsFound => File.Exists(MappingsPath.Trim());
     private bool EditorFound => File.Exists(UnrealEditorPath.Trim());
-    private bool ProjectFound => File.Exists(TargetProjectPath.Trim());
+    private bool ProjectFound => File.Exists(TargetProjectPath.Trim()) &&
+                                 Path.GetExtension(TargetProjectPath.Trim()).Equals(".uproject", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Cached descriptor/path hint. Path changes and a fresh preflight refresh it.</summary>
     public string? TargetVersion => _targetVersion;
@@ -143,8 +145,10 @@ public sealed partial class MigrateViewModel : ObservableObject, IDisposable
                                 (IsUE5Source ? MappingsProvided && !MappingsFound : !UModelFound);
     public bool ShowUModelHelp => !IsUE5Source && !UModelFound;
 
-    public bool OverwriteWarningVisible => Overwrite;
-    public string OverwriteWarning => L.Format("Migrate.Overwrite.Warning", DestinationPath.Trim());
+    public bool CanChooseReplaceChanged => !Overwrite;
+    public bool OverwriteWarningVisible => Overwrite || ReplaceChanged;
+    public string OverwriteWarning => L.Format(Overwrite ? "Migrate.Overwrite.Warning" : "Migrate.ReplaceChanged.Warning",
+        DestinationPath.Trim());
 
     public (Readiness Level, string Text) ReadinessState
     {
@@ -154,9 +158,7 @@ public sealed partial class MigrateViewModel : ObservableObject, IDisposable
             if (!Directory.Exists(SourcePath.Trim())) return (Readiness.Blocked, L["Migrate.Ready.SourceMissing"]);
             if (string.IsNullOrWhiteSpace(TargetProjectPath)) return (Readiness.Blocked, L["Migrate.Ready.NoProject"]);
             if (!ProjectFound) return (Readiness.Blocked, L["Migrate.Ready.ProjectMissing"]);
-            var destination = DestinationPath.Trim().Replace('\\', '/').TrimEnd('/');
-            if (!destination.Equals("/Game", StringComparison.OrdinalIgnoreCase) &&
-                !destination.StartsWith("/Game/", StringComparison.OrdinalIgnoreCase))
+            if (!DumpConversionService.IsValidDestination(DestinationPath))
                 return (Readiness.Blocked, L["Migrate.Ready.BadDestination"]);
             if (!EditorFound) return (Readiness.Blocked, L["Migrate.Ready.NoEditor"]);
             if (IsUE5Source && MappingsProvided && !MappingsFound)
@@ -166,7 +168,7 @@ public sealed partial class MigrateViewModel : ObservableObject, IDisposable
                 return (Readiness.Blocked, DiagnosticText(error));
             // Overwriting target assets is the more costly surprise, so it wins the single line;
             // missing mappings are still reported in the Tools summary.
-            if (Overwrite) return (Readiness.Warning, OverwriteWarning);
+            if (OverwriteWarningVisible) return (Readiness.Warning, OverwriteWarning);
             if (IsUE5Source && !MappingsProvided) return (Readiness.Warning, L["Migrate.Ready.NoMappings"]);
             return (Readiness.Ready, L.Format("Migrate.Ready.Ok",
                 Path.GetFileNameWithoutExtension(TargetProjectPath.Trim()), DestinationPath.Trim()));
@@ -215,6 +217,7 @@ public sealed partial class MigrateViewModel : ObservableObject, IDisposable
             case nameof(UModelPath):
             case nameof(DestinationPath):
             case nameof(Overwrite):
+            case nameof(ReplaceChanged):
                 InvalidatePreflight();
                 RefreshDerived();
                 break;
@@ -252,6 +255,7 @@ public sealed partial class MigrateViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsUE5Source));
         OnPropertyChanged(nameof(OverwriteWarningVisible));
         OnPropertyChanged(nameof(OverwriteWarning));
+        OnPropertyChanged(nameof(CanChooseReplaceChanged));
         OnPropertyChanged(nameof(ReadinessText));
         OnPropertyChanged(nameof(IsReadinessBlocked));
         OnPropertyChanged(nameof(IsReadinessWarning));
@@ -459,7 +463,12 @@ public sealed partial class MigrateViewModel : ObservableObject, IDisposable
     private DumpConversionOptions BuildOptions() => new(
         SourcePath.Trim(), SourceVersion.Version, UModelPath.Trim(), TargetProjectPath.Trim(), UnrealEditorPath.Trim(),
         DestinationPath.Trim(), Overwrite: Overwrite, MappingsPath: IsUE5Source ? MappingsPath.Trim() : null,
-        VgmStreamPath: IsUE5Source ? _settings.VgmStreamPath : null);
+        VgmStreamPath: IsUE5Source ? _settings.VgmStreamPath : null, ReplaceChanged: ReplaceChanged);
+
+    partial void OnOverwriteChanged(bool value)
+    {
+        if (value) ReplaceChanged = false;
+    }
 
     // ---------------------------------------------------------------- run
 
@@ -477,8 +486,12 @@ public sealed partial class MigrateViewModel : ObservableObject, IDisposable
         IsConfirming = true;
         try
         {
+            var replacement = options.Overwrite || options.ReplaceChanged
+                ? L.Format(options.Overwrite ? "Migrate.Overwrite.Warning" : "Migrate.ReplaceChanged.Warning",
+                    options.DestinationPath) + "\n\n"
+                : "";
             var accepted = Confirm is null || await Confirm(L["Migrate.Confirm.Title"],
-                L.Format("Migrate.Confirm.Message", options.TargetProject, options.DestinationPath))
+                L.Format("Migrate.Confirm.Message", options.TargetProject, options.DestinationPath, replacement))
                 .WaitAsync(cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             if (accepted && !_disposed && revision == _inputRevision)
@@ -673,9 +686,12 @@ public sealed partial class MigrateViewModel : ObservableObject, IDisposable
         Summary.Add(new SummaryLine(L["Migrate.Summary.Imported"], s.ImportedFiles.ToString("N0")));
         if (s.AlreadyPresent > 0)
             Summary.Add(new SummaryLine(L["Migrate.Summary.AlreadyPresent"], s.AlreadyPresent.ToString("N0")));
+        if (s.StaleFiles > 0)
+            Summary.Add(new SummaryLine(L["Migrate.Summary.Stale"], s.StaleFiles.ToString("N0")));
         Summary.Add(new SummaryLine(L["Migrate.Summary.Failed"], s.FailedFiles.ToString("N0")));
-        if (s.SkippedFiles > 0)
-            Summary.Add(new SummaryLine(L["Migrate.Summary.Skipped"], s.SkippedFiles.ToString("N0")));
+        var otherSkipped = s.SkippedFiles - s.StaleFiles;
+        if (otherSkipped > 0)
+            Summary.Add(new SummaryLine(L["Migrate.Summary.Skipped"], otherSkipped.ToString("N0")));
         if (s.UnsupportedActorXFiles > 0)
             Summary.Add(new SummaryLine(L["Migrate.Summary.ActorX"], s.UnsupportedActorXFiles.ToString("N0")));
         Summary.Add(new SummaryLine(L["Migrate.Summary.TargetVersion"], s.TargetVersion));

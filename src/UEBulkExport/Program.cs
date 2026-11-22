@@ -31,7 +31,7 @@ internal static class Program
     private static int RunCommandLine(string[] args)
     {
         var attached = ConsoleAttach.TryAttach();
-        Log.AddSink(new PlainConsoleLogSink());
+        Log.AddSink(new PlainConsoleLogSink(CompareCommand.WritesJson(args)));
 
         using var cancellation = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) =>
@@ -100,12 +100,16 @@ internal static class ConsoleAttach
 }
 
 /// <summary>Console output without colours: the attached console may not be ours to recolour.</summary>
-internal sealed class PlainConsoleLogSink : ILogSink
+internal sealed class PlainConsoleLogSink(bool diagnosticsToStderr) : ILogSink
 {
     private readonly Lock _gate = new();
 
     public void Write(in LogEntry entry)
     {
-        lock (_gate) Console.WriteLine(entry.Format());
+        lock (_gate)
+        {
+            var writer = diagnosticsToStderr && entry.Level != LogLevel.Raw ? Console.Error : Console.Out;
+            writer.WriteLine(entry.Format());
+        }
     }
 }

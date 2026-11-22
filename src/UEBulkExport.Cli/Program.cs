@@ -4,7 +4,7 @@ using UEBulkExport.CommandLine;
 var launchedFromExplorer = args.Length == 0 && !Console.IsOutputRedirected;
 
 RunningMarker.Announce();
-Log.AddSink(new ConsoleLogSink());
+Log.AddSink(new ConsoleLogSink(CompareCommand.WritesJson(args)));
 
 // Ctrl+C asks the exporter to stop; it then flushes the resume index and prints a summary, so
 // the next run continues where this one was interrupted instead of losing the tail.

@@ -66,7 +66,10 @@ public static class Discovery
             if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory)) continue;
 
             try { candidates.AddRange(Directory.EnumerateFiles(directory, "*.usmap", SearchOption.TopDirectoryOnly)); }
-            catch (UnauthorizedAccessException) { /* not ours to read, keep looking */ }
+            catch (Exception e) when (e is UnauthorizedAccessException or DirectoryNotFoundException)
+            {
+                // Another candidate directory may still be readable.
+            }
         }
 
         var unique = candidates
@@ -120,7 +123,7 @@ public static class Discovery
                 .EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly)
                 .Any(f => ContainerExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase));
         }
-        catch (UnauthorizedAccessException)
+        catch (Exception e) when (e is UnauthorizedAccessException or DirectoryNotFoundException)
         {
             return false;
         }
@@ -135,8 +138,6 @@ public static class Discovery
         while (queue.Count > 0)
         {
             var (current, depth) = queue.Dequeue();
-            if (depth > MaxSearchDepth) continue;
-
             if (depth > 0 && HasContainers(current))
             {
                 // Containers never nest, so stop descending this branch.
@@ -144,12 +145,17 @@ public static class Discovery
                 continue;
             }
 
-            IEnumerable<string> children;
-            try { children = Directory.EnumerateDirectories(current); }
-            catch (UnauthorizedAccessException) { continue; }
-            catch (DirectoryNotFoundException) { continue; }
+            if (depth == MaxSearchDepth) continue;
 
-            foreach (var child in children) queue.Enqueue((child, depth + 1));
+            try
+            {
+                foreach (var child in Directory.EnumerateDirectories(current))
+                    queue.Enqueue((child, depth + 1));
+            }
+            catch (Exception e) when (e is UnauthorizedAccessException or DirectoryNotFoundException)
+            {
+                // Directory enumeration is lazy; access may fail while reading its children.
+            }
         }
     }
 }

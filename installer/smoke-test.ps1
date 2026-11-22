@@ -26,6 +26,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Installer = (Resolve-Path $Installer).Path
+$Directory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Directory)
+if (Test-Path -LiteralPath $Directory) {
+    throw "The smoke test requires a fresh destination: $Directory"
+}
 $log = Join-Path ([System.IO.Path]::GetTempPath()) "uebulkexport-smoke-$([guid]::NewGuid().ToString('N')).log"
 $failures = [System.Collections.Generic.List[string]]::new()
 
@@ -39,12 +43,20 @@ $expectedVersion = if ((Split-Path $Installer -Leaf) -match 'UEBulkExport-(?<v>\
 
 Write-Host "==> Install $(Split-Path $Installer -Leaf) into $Directory"
 $process = Start-Process -FilePath $Installer -Wait -PassThru -ArgumentList @(
-    '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/TASKS=""',
+    '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/TYPE=full', '/TASKS=""',
     "/DIR=`"$Directory`"", "/LOG=`"$log`"")
 Check "installer exits with 0 (got $($process.ExitCode))" ($process.ExitCode -eq 0)
 
-foreach ($file in 'UEBulkExport.exe', 'UEBulkExport.Cli.exe', 'installer.json', 'unins000.exe', 'docs\mappings.md', 'LICENSE') {
-    Check "installed $file" (Test-Path (Join-Path $Directory $file))
+foreach ($file in 'UEBulkExport.exe', 'UEBulkExport.Cli.exe', 'UEBulkExport.Core.dll', 'CUE4Parse-Natives.dll',
+    'SixLabors.ImageSharp.dll', 'installer.json', 'unins000.exe', 'docs\mappings.md', 'LICENSE') {
+    Check "installed $file" (Test-Path -LiteralPath (Join-Path $Directory $file) -PathType Leaf)
+}
+$imageSharp = Join-Path $Directory 'SixLabors.ImageSharp.dll'
+if (Test-Path -LiteralPath $imageSharp -PathType Leaf) {
+    $fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($imageSharp).FileVersion
+    $imageVersion = $null
+    $patched = [version]::TryParse($fileVersion, [ref] $imageVersion) -and $imageVersion -ge [version]'3.2.0'
+    Check "installed ImageSharp is 3.2.0 or later (got $fileVersion)" $patched
 }
 if ($ExpectedPluginId) {
     Check "installed plugin $ExpectedPluginId" (Test-Path (Join-Path $Directory "plugins\$ExpectedPluginId\plugin.json"))
@@ -77,6 +89,10 @@ if ($failures.Count -gt 0) {
     throw "Smoke test failed: $($failures -join '; ')"
 }
 
-if (Test-Path $Directory) { Remove-Item $Directory -Recurse -Force -ErrorAction SilentlyContinue }
+if (Test-Path -LiteralPath $Directory) {
+    $leftovers = @(Get-ChildItem -LiteralPath $Directory -Force)
+    if ($leftovers.Count -gt 0) { throw "Uninstall left files in $Directory" }
+    Remove-Item -LiteralPath $Directory
+}
 Remove-Item $log -Force -ErrorAction SilentlyContinue
 Write-Host '==> Smoke test passed'

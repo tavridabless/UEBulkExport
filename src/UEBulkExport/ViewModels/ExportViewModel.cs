@@ -18,7 +18,7 @@ public enum RunState { Idle, Scanning, Preparing, Running, Cancelling, Done, Don
 public enum EngineSource { None, Detecting, Detected, Unsupported, Manual, NotDetected }
 
 /// <summary>What the automatic look at the source has found so far.</summary>
-public enum ScanPhase { None, Missing, Pending, Ready, Failed }
+public enum ScanPhase { None, Missing, Pending, Ready, Failed, Cancelled }
 
 public sealed record GameOption(EGame Value, string Label)
 {
@@ -32,6 +32,7 @@ public sealed record ModeOption(ExportMode Mode, string Key)
     public string Description => Loc.Instance[$"Mode.{Key}.Desc"];
     public string Details => Loc.Instance[$"Mode.{Key}.Details"];
     public string CliName => "--mode " + Mode.ToString().ToLowerInvariant();
+    public override string ToString() => Title;
 }
 
 public sealed record EnumOption<T>(T Value, string Label) where T : struct, Enum
@@ -63,6 +64,7 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
     private bool _exportActive;
     private int _progressGeneration;
     private Options? _previousRun;
+    private IReadOnlyList<string> _failedInputPaths = [];
     private readonly DispatcherTimer _scanTimer = new();
     private static Loc L => Loc.Instance;
 
@@ -243,6 +245,8 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
     public bool HasPreviousRun => _previousRun is not null;
     public bool ShowPreviousRun => HasPreviousRun && !IsRunning;
     public bool CanContinuePrevious => CanRun && HasPreviousRun;
+    public bool CanPrepareFailedSelection => CanRun && !IsLegacyMode && _failedInputPaths.Count > 0;
+    public string FailedSelectionText => L.Format("Export.FailedSelection.Action", _failedInputPaths.Count);
     public string PreviousRunText => _previousRun is { } o
         ? L.Format("Export.Continue.Snapshot", o.Mode.ToString().ToLowerInvariant(), o.Threads,
             o.SelectedPaths?.Count.ToString("N0") ?? L["Export.Continue.All"], o.OutputDirectory,
@@ -274,6 +278,7 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
 
     /// <summary>Raised after a successful scan; the shell hands the result to the Browser tab.</summary>
     public event Action<ScanResult>? Scanned;
+    internal event Action? SourceChanged;
     /// <summary>Raised for a completed run or an error that deserves the user's attention.</summary>
     public event Action<AppNotification>? NotificationRequested;
 
@@ -347,6 +352,8 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(Modes));
         OnPropertyChanged(nameof(PreviousRunText));
+        OnPropertyChanged(nameof(FailedSelectionText));
+        RefreshSampleResult();
         RefreshSourceStatus();
         RefreshSummaries();
     }
@@ -396,6 +403,7 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
         _previousRun = null;
         CopyToClipboard = null;
         Scanned = null;
+        SourceChanged = null;
         NotificationRequested = null;
         RefreshReadiness();
         RefreshPreviousRun();
@@ -424,7 +432,11 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
         nameof(ProgressProcessed), nameof(ProgressWritten), nameof(ProgressFailed), nameof(ProgressRate),
         nameof(ProgressEta), nameof(ProgressElapsed), nameof(ErrorHeadline), nameof(ErrorHint),
         nameof(SummaryTitle), nameof(LastOutputDirectory), nameof(ProgressRawBudget),
-        nameof(HasRawBudgetProgress), nameof(HasPreviousRun), nameof(ShowPreviousRun), nameof(CanContinuePrevious), nameof(PreviousRunText)
+        nameof(HasRawBudgetProgress), nameof(HasPreviousRun), nameof(ShowPreviousRun), nameof(CanContinuePrevious),
+        nameof(PreviousRunText), nameof(CanPrepareFailedSelection), nameof(FailedSelectionText),
+        nameof(CanSample), nameof(HasSample), nameof(SampleStatus), nameof(SampleCoverage), nameof(SampleCoverageRows), nameof(SampleRows),
+        nameof(SampleError), nameof(SelectedSampleType), nameof(SamplesPerType),
+        nameof(CanSwitchToRaw)
     ];
 
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
@@ -443,6 +455,7 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(ShowReadiness));
                 OnPropertyChanged(nameof(StatusText));
                 RefreshPreviousRun();
+                RefreshFailedSelection();
                 RefreshReadiness();
                 CancelCommand.NotifyCanExecuteChanged();
                 RescanCommand.NotifyCanExecuteChanged();
@@ -466,6 +479,8 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
             case nameof(DetectedEngine):
             case nameof(EngineEditorOpen):
             case nameof(SelectedPaths):
+            case nameof(IncludeRegex):
+            case nameof(ExcludeRegex):
                 RefreshSourceStatus();
                 RefreshReadiness();
                 break;
@@ -475,6 +490,7 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(IsFullMode));
                 OnPropertyChanged(nameof(IsLegacyMode));
                 OnPropertyChanged(nameof(IsRawMode));
+                RefreshFailedSelection();
                 RefreshSourceStatus();
                 RefreshReadiness();
                 break;
@@ -499,6 +515,8 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(SelectionText));
         }
 
+        if (name is nameof(State) or nameof(SelectedMode) or nameof(SkipAssets) or nameof(PaksPath))
+            RefreshSampleAvailability();
         if (OptionProperties.Contains(name) || ToolProperties.Contains(name)) RefreshSummaries();
         if (name == nameof(Overwrite)) RefreshReadiness();
         if (!PresentationProperties.Contains(name)) RefreshCommandLine();
@@ -517,6 +535,13 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
 
     partial void OnPaksPathChanged(string value)
     {
+        SelectedPaths = null;
+        _sampleResult = null;
+        SampleError = "";
+        RefreshSampleResult();
+        _failedInputPaths = [];
+        RefreshFailedSelection();
+        SourceChanged?.Invoke();
         _detectedFor = null;
         _autoMappings = null;
         _mappingsAmbiguous = false;
@@ -577,7 +602,7 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
     /// Resolves the container folder, reads the engine version from the game, looks for mappings and
     /// mounts the containers, so the user sees what they pointed at before deciding anything.
     /// </summary>
-    private async Task AutoScanAsync()
+    internal async Task AutoScanAsync()
     {
         if (_disposed || !SourceExists) return;
         if (IsBusy)
@@ -592,69 +617,53 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
         var paks = PaksPath.Trim().Trim('"');
         var output = NullIfEmpty(OutputPath);
         ScanPhase = ScanPhase.Pending;
+        RunState? previous = null;
 
-        string resolved;
         try
         {
-            resolved = await Task.Run(() => Discovery.ResolvePaksDirectory(paks));
-        }
-        catch (UserFacingException e)
-        {
-            if (generation == _scanGeneration)
+            var resolved = await Task.Run(() => Discovery.ResolvePaksDirectory(paks));
+            if (generation != _scanGeneration) return;
+
+            if (!string.Equals(_detectedFor, resolved, StringComparison.OrdinalIgnoreCase))
             {
-                FailScan(e.Headline);
-                if (notifyFailure) Notify("Notification.Scan.Failed.Title", e.Headline,
-                    AppNotificationSeverity.Error);
+                if (_gameChosenFor is null)
+                {
+                    EngineSource = EngineSource.Detecting;
+                    var version = await Task.Run(() => EngineDetection.DetectFromContainers(resolved));
+                    if (generation != _scanGeneration) return;
+                    ApplyDetectedEngine(version);
+                }
+                _detectedFor = resolved;
             }
-            return;
-        }
 
-        if (generation != _scanGeneration) return;
+            var hasIoStore = await Task.Run(() => Discovery.HasIoStoreContainers(resolved));
+            if (generation != _scanGeneration) return;
 
-        if (!string.Equals(_detectedFor, resolved, StringComparison.OrdinalIgnoreCase))
-        {
-            _detectedFor = resolved;
-            if (_gameChosenFor is null)
+            string? mappings;
+            var mappingsAmbiguous = false;
+            try
             {
-                EngineSource = EngineSource.Detecting;
-                var version = await Task.Run(() => EngineDetection.DetectFromContainers(resolved));
-                if (generation != _scanGeneration) return;
-                ApplyDetectedEngine(version);
+                mappings = await Task.Run(() => Discovery.FindMappings(resolved, output));
             }
-        }
+            catch (UserFacingException)
+            {
+                mappings = null;
+                mappingsAmbiguous = true;
+            }
 
-        try
-        {
-            _hasIoStore = await Task.Run(() => Discovery.HasIoStoreContainers(resolved));
-        }
-        catch (UserFacingException)
-        {
-            _hasIoStore = false;
-        }
+            if (generation != _scanGeneration) return;
+            _hasIoStore = hasIoStore;
+            _autoMappings = mappings;
+            _mappingsAmbiguous = mappingsAmbiguous;
+            if (IsBusy)
+            {
+                _scanQueued = true;
+                return;
+            }
 
-        try
-        {
-            _autoMappings = await Task.Run(() => Discovery.FindMappings(resolved, output));
-            _mappingsAmbiguous = false;
-        }
-        catch (UserFacingException)
-        {
-            _autoMappings = null;
-            _mappingsAmbiguous = true;
-        }
-
-        if (generation != _scanGeneration) return;
-        if (IsBusy)
-        {
-            _scanQueued = true;
-            return;
-        }
-
-        var previous = State;
-        State = RunState.Scanning;
-        try
-        {
-            var result = await _service.ScanAsync(ToOptions());
+            previous = State;
+            State = RunState.Scanning;
+            var result = await _service.ScanAsync(BuildOptions(includeSelection: false));
             if (generation == _scanGeneration)
             {
                 ContainerCount = result.Containers.Count(c => !c.IsLocked);
@@ -664,6 +673,10 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
                 ScanPhase = ScanPhase.Ready;
                 Scanned?.Invoke(result);
             }
+        }
+        catch (OperationCanceledException) when (State == RunState.Cancelling)
+        {
+            if (generation == _scanGeneration) ScanPhase = ScanPhase.Cancelled;
         }
         catch (Exception e)
         {
@@ -678,11 +691,14 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            // A finished run keeps its outcome on the status line; a scan is not news.
-            if (!_disposed) State = previous is RunState.Done or RunState.DoneWithErrors or RunState.Failed or RunState.Cancelled
-                ? previous
-                : RunState.Idle;
-            if (generation != _scanGeneration) ScheduleScan(TimeSpan.FromMilliseconds(100));
+            if (!_disposed && previous is { } previousState)
+            {
+                // A background scan shouldn't replace the last completed export's status.
+                State = previousState is RunState.Done or RunState.DoneWithErrors or RunState.Failed or RunState.Cancelled
+                    ? previousState
+                    : RunState.Idle;
+                RunQueuedScan();
+            }
         }
     }
 
@@ -761,6 +777,7 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
         ScanPhase.Missing => L["Export.Scan.Missing"],
         ScanPhase.Pending => L["Export.Scan.Running"],
         ScanPhase.Failed => ScanError,
+        ScanPhase.Cancelled => L["Status.Cancelled"],
         ScanPhase.Ready => L.Format("Export.Scan.Result", ContainerCount + LockedCount, EntryCount,
             LockedCount > 0 ? L.Format("Export.Scan.Locked", LockedCount) : L["Export.Scan.NoneLocked"]),
         _ => ""
@@ -768,9 +785,9 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
 
     public bool ShowScanLine => ScanPhase != ScanPhase.None;
     public bool ScanIsProblem => ScanPhase is ScanPhase.Missing or ScanPhase.Failed;
-    public bool ScanIsWarning => ScanPhase == ScanPhase.Ready && LockedCount > 0;
+    public bool ScanIsWarning => ScanPhase == ScanPhase.Cancelled || (ScanPhase == ScanPhase.Ready && LockedCount > 0);
     public bool ScanIsNormal => !ScanIsProblem && !ScanIsWarning;
-    public bool CanRescan => ScanPhase is ScanPhase.Ready or ScanPhase.Failed;
+    public bool CanRescan => ScanPhase is ScanPhase.Ready or ScanPhase.Failed or ScanPhase.Cancelled;
 
     /// <summary>AES keys are asked for only when the source turned out to be encrypted, or on request.</summary>
     public bool ShowAes => LockedCount > 0 || AesRequested || !string.IsNullOrWhiteSpace(AesText);
@@ -865,12 +882,17 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
             if (string.IsNullOrWhiteSpace(PaksPath)) return (Readiness.Blocked, L["Export.Ready.NoSource"]);
             if (ScanPhase == ScanPhase.Missing) return (Readiness.Blocked, L["Export.Scan.Missing"]);
             if (string.IsNullOrWhiteSpace(OutputPath)) return (Readiness.Blocked, L["Export.Ready.NoOutput"]);
+            var modeIssue = ModeIssue;
+            if (modeIssue == LegacyIoStoreIssue.FilteredSelection)
+                return (Readiness.Blocked, L["Export.Ready.IoStoreSelection"]);
+            if (modeIssue == LegacyIoStoreIssue.MultipleKeys)
+                return (Readiness.Blocked, L["Export.Ready.IoStoreKeys"]);
             if (ScanPhase == ScanPhase.Pending) return (Readiness.Warning, L["Export.Scan.Running"]);
             if (ScanPhase == ScanPhase.Failed) return (Readiness.Warning, L.Format("Export.Ready.ScanFailed", ScanError));
             if (LockedCount > 0) return (Readiness.Warning, L.Format("Export.Ready.Locked", LockedCount));
             if (EngineNeedsAttention) return (Readiness.Warning, L["Export.Ready.Engine"]);
             if (IsLegacyMode && _hasIoStore && !Retoc.SupportsEngine(SelectedGame.Value.ToString()))
-                return (Readiness.Warning, L.Format("Export.Ready.RetocUnsupported", SelectedGame.Label));
+                return (Readiness.Warning, L.Format("Export.Ready.RetocAutoDetect", SelectedGame.Label));
             if (MappingsProblem) return (Readiness.Warning, L["Export.Ready.Mappings"]);
             if (Overwrite) return (Readiness.Warning, OverwriteWarning);
             if (SelectedPaths is { } selected) return (Readiness.Ready, L.Format("Export.Ready.Selection", selected.Count));
@@ -884,6 +906,13 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
     public bool IsReadinessBlocked => ReadinessState.Level == Readiness.Blocked;
     public bool IsReadinessWarning => ReadinessState.Level == Readiness.Warning;
     public bool IsReadinessOk => ReadinessState.Level == Readiness.Ready;
+    private LegacyIoStoreIssue ModeIssue => Cli.CheckLegacyIoStore(SelectedMode.Mode, _hasIoStore,
+        SelectedPaths is not null || !string.IsNullOrEmpty(IncludeRegex) || !string.IsNullOrEmpty(ExcludeRegex),
+        IsLegacyMode && _hasIoStore ? ReadAesKeys().Count : 0);
+    public bool CanSwitchToRaw => CanRun && ModeIssue != LegacyIoStoreIssue.None;
+
+    [RelayCommand(CanExecute = nameof(CanSwitchToRaw))]
+    private void SwitchToRaw() => SelectedMode = Modes.First(mode => mode.Mode == ExportMode.Raw);
 
     private void RefreshReadiness()
     {
@@ -892,25 +921,29 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsReadinessWarning));
         OnPropertyChanged(nameof(IsReadinessOk));
         OnPropertyChanged(nameof(CanStart));
+        OnPropertyChanged(nameof(CanSwitchToRaw));
+        SwitchToRawCommand.NotifyCanExecuteChanged();
         StartCommand.NotifyCanExecuteChanged();
         DryRunCommand.NotifyCanExecuteChanged();
     }
 
     // ---------------------------------------------------------------- options <-> form
 
-    public Options ToOptions() => new()
+    public Options ToOptions() => BuildOptions(includeSelection: true);
+
+    private Options BuildOptions(bool includeSelection) => new()
     {
         PaksDirectory = PaksPath.Trim(),
         OutputDirectory = OutputPath.Trim(),
         UsmapPath = NullIfEmpty(UsmapPath),
         Game = SelectedGame.Value,
         Mode = SelectedMode.Mode,
-        AesKeys = AesText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
+        AesKeys = ReadAesKeys(),
         Threads = Math.Max(1, Threads),
         MaxInFlightBytes = checked((long)Math.Max(0, MaxInFlightMiB) * 1024 * 1024),
-        IncludeRegex = NullIfEmpty(IncludeRegex),
-        ExcludeRegex = NullIfEmpty(ExcludeRegex),
-        SelectedPaths = SelectedPaths?.ToHashSet(StringComparer.OrdinalIgnoreCase),
+        IncludeRegex = string.IsNullOrEmpty(IncludeRegex) ? null : IncludeRegex,
+        ExcludeRegex = string.IsNullOrEmpty(ExcludeRegex) ? null : ExcludeRegex,
+        SelectedPaths = includeSelection ? SelectedPaths?.ToHashSet(StringComparer.OrdinalIgnoreCase) : null,
         PathsFile = SelectedPaths is null || string.IsNullOrWhiteSpace(OutputPath) ? null : SelectionFilePath,
         ExportWorlds = !SkipWorlds,
         ExportMaterials = ExportMaterials,
@@ -938,9 +971,12 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
 
     private static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 
+    private List<string> ReadAesKeys() =>
+        AesText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
     private void RefreshCommandLine()
     {
-        try { CommandLine = Cli.FormatCommand(ToOptions()); }
+        try { CommandLine = Cli.FormatCommand(BuildOptions(includeSelection: false)); }
         catch { CommandLine = ""; }
     }
 
@@ -948,16 +984,25 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
 
     public void SetSelection(IReadOnlySet<string>? paths) => SelectedPaths = paths?.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    internal bool PrepareComparedExport(CompareResult result, CompareSource source, IReadOnlySet<string> paths)
+    {
+        if (!CanRun || !result.CanExportAfter || paths.Count == 0) return false;
+        var game = Games.FirstOrDefault(option => option.Value == result.AfterGame);
+        if (game is null) return false;
+
+        PaksPath = result.AfterDirectory;
+        SetGame(game);
+        _gameChosenFor = PaksPath.Trim();
+        EngineSource = EngineSource.Manual;
+        AesText = string.Join(Environment.NewLine, source.AesKeys ?? []);
+        SelectedMode = Modes.First(mode => mode.Mode == ExportMode.Raw);
+        IncludeRegex = ExcludeRegex = UsmapPath = "";
+        SetSelection(paths);
+        return true;
+    }
+
     [RelayCommand]
     private void ClearSelection() => SelectedPaths = null;
-
-    /// <summary>The selection is persisted next to the output, so the run is reproducible from the command line.</summary>
-    private static void WriteSelectionFile(Options options)
-    {
-        if (options.SelectedPaths is null || options.PathsFile is null) return;
-        Directory.CreateDirectory(options.OutputDirectory);
-        File.WriteAllLines(options.PathsFile, options.SelectedPaths.OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
-    }
 
     public void SetFilter(string? include, string? exclude)
     {
@@ -1108,6 +1153,20 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
         await RunExport(options, remember: false);
     }
 
+    [RelayCommand(CanExecute = nameof(CanPrepareFailedSelection))]
+    private void PrepareFailedSelection()
+    {
+        if (!CanPrepareFailedSelection) return;
+        SelectedPaths = _failedInputPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void RefreshFailedSelection()
+    {
+        OnPropertyChanged(nameof(CanPrepareFailedSelection));
+        OnPropertyChanged(nameof(FailedSelectionText));
+        PrepareFailedSelectionCommand.NotifyCanExecuteChanged();
+    }
+
     private async Task RunExport(Options options, bool remember)
     {
         ClearOutcome();
@@ -1123,11 +1182,12 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
         try
         {
             if (remember && _persistPreferences) RememberRun();
-            WriteSelectionFile(options);
             var summary = await _service.ExportAsync(options);
             if (_disposed) return;
             LastOutputDirectory = summary.OutputDirectory;
             ShowSummary(summary, options.Mode);
+            if (!summary.Cancelled && options.PaksDirectory == PaksPath.Trim())
+                _failedInputPaths = summary.FailedInputPaths;
             if (summary.ExitCode == 0) _previousRun = null;
             State = summary.Cancelled ? RunState.Cancelled
                 : summary.ExitCode == 0 ? RunState.Done
@@ -1165,6 +1225,8 @@ public sealed partial class ExportViewModel : ObservableObject, IDisposable
 
     private void ClearOutcome()
     {
+        _failedInputPaths = [];
+        RefreshFailedSelection();
         ErrorHeadline = "";
         ErrorHint = "";
         SummaryTitle = "";

@@ -33,6 +33,9 @@ public sealed record ExportSummary(
 {
     public int ExitCode => FailedEntries + FailedObjects == 0 && !Cancelled ? 0 : 2;
 
+    /// <summary>Exact container paths for failures tied to an individual input entry.</summary>
+    public IReadOnlyList<string> FailedInputPaths { get; init; } = [];
+
     /// <summary>Raw source reservations, not resident memory; null for other modes or a disabled budget.</summary>
     public RawInputBudgetState? RawInputBudget { get; init; }
 }

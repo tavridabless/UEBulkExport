@@ -20,13 +20,25 @@
       <Grid Width="{Binding $parent[ScrollViewer].Viewport.Width}">
       <StackPanel Margin="28,24,28,16" Spacing="14" MaxWidth="980" HorizontalAlignment="Stretch">
 
-        <TextBlock Classes="PageTitle" Text="{loc:Tr Export.Title}" Margin="0,0,0,4" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+          <TextBlock Classes="PageTitle" Text="{loc:Tr Export.Title}" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Content="{loc:Tr Export.Recipe.Menu}" IsEnabled="{Binding CanRun}">
+            <Button.Flyout>
+              <MenuFlyout>
+                <MenuItem Header="{loc:Tr Export.Recipe.Load}" Command="{Binding LoadRecipeCommand}"
+                          AutomationProperties.AutomationId="LoadRecipe" />
+                <MenuItem Header="{loc:Tr Export.Recipe.Save}" Command="{Binding SaveRecipeCommand}"
+                          AutomationProperties.AutomationId="SaveRecipe" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </Grid>
+        <TextBlock Classes="Hint" Text="{Binding RecipeStatus}" TextWrapping="Wrap"
+                   IsVisible="{Binding RecipeStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
         <!-- Recent games -->
-        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" IsVisible="{Binding HasRecent}">
-        <TextBlock Grid.Column="0" Classes="Muted" FontSize="13" Text="{loc:Tr Recent.Title}" Margin="0,8,0,0"
-                   VerticalAlignment="Top" />
-        <ItemsControl Grid.Column="1" ItemsSource="{Binding Recent}">
+        <Expander Header="{loc:Tr Recent.Title}" IsVisible="{Binding HasRecent}">
+        <ItemsControl ItemsSource="{Binding Recent}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
               <WrapPanel />
@@ -46,6 +58,7 @@
                   </Button>
                   <Button Grid.Column="1" Background="Transparent" Padding="8" MinHeight="0"
                           VerticalAlignment="Center" ToolTip.Tip="{loc:Tr Recent.Remove}"
+                          AutomationProperties.Name="{loc:Tr Recent.Remove}"
                           Command="{Binding $parent[ItemsControl].((vm:ExportViewModel)DataContext).RemoveRecentCommand}"
                           CommandParameter="{Binding}">
                     <Path Data="M6 6 L18 18 M18 6 L6 18" Width="9" Height="9" Stretch="Uniform"
@@ -56,14 +69,14 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-        </Grid>
+        </Expander>
 
-        <!-- Selection made in the Browser -->
-        <Border Classes="Card" IsVisible="{Binding HasSelection}" Padding="20,14" BorderBrush="{DynamicResource Brush.Accent}">
+        <Border x:Name="SelectionCard" Classes="Card" IsVisible="{Binding HasSelection}"
+                Padding="20,14" BorderBrush="{DynamicResource Brush.Accent}">
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
             <StackPanel Grid.Column="0">
               <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Selection.Title}" FontSize="14" />
-              <TextBlock Classes="Hint" Text="{Binding SelectionText}" />
+              <TextBlock Classes="Hint" Text="{Binding SelectionText}" TextWrapping="Wrap" />
             </StackPanel>
             <Button Grid.Column="1" Content="{loc:Tr Export.Selection.Clear}" Command="{Binding ClearSelectionCommand}" VerticalAlignment="Center" />
           </Grid>
@@ -78,6 +91,8 @@
             </StackPanel>
             <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
               <TextBox Grid.Column="0" AutomationProperties.AutomationId="PaksPath" Text="{Binding PaksPath}"
+                       AutomationProperties.Name="{loc:Tr Export.Source.Title}"
+                       AutomationProperties.HelpText="{loc:Tr Export.Source.Help}"
                        Watermark="{loc:Tr Export.Paks.Placeholder}" />
               <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFolder}" Command="{Binding BrowsePaksFolderCommand}" />
               <Button Grid.Column="2" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowsePaksFileCommand}" />
@@ -126,6 +141,7 @@
                 <Border Classes="Help" ToolTip.Tip="{loc:Tr Export.Game.Help}" Margin="0,5,0,0"><TextBlock /></Border>
               </StackPanel>
               <ComboBox ItemsSource="{Binding Games}" SelectedItem="{Binding SelectedGame}" MaxDropDownHeight="360"
+                        AutomationProperties.Name="{loc:Tr Export.Game.Label}"
                         MaxWidth="360" HorizontalAlignment="Left" />
             </StackPanel>
 
@@ -137,6 +153,8 @@
               </StackPanel>
               <TextBlock Classes="Warning" Text="{Binding AesPrompt}" IsVisible="{Binding HasAesPrompt}" Margin="0,0,0,6" />
               <TextBox Classes="Mono" Text="{Binding AesText}" AcceptsReturn="True" MinHeight="64" MaxHeight="120"
+                       AutomationProperties.Name="{loc:Tr Export.Aes.Label}"
+                       AutomationProperties.HelpText="{loc:Tr Export.Aes.Help}"
                        Watermark="0x0123456789ABCDEF…" TextWrapping="NoWrap" />
             </StackPanel>
           </StackPanel>
@@ -146,34 +164,26 @@
         <Border Classes="Card">
           <StackPanel>
             <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Mode.Title}" Margin="0,0,0,12" />
-            <ListBox Classes="Modes" ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}" AutoScrollToSelectedItem="False"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     ScrollViewer.VerticalScrollBarVisibility="Disabled">
-              <ListBox.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <UniformGrid Columns="4" />
-                </ItemsPanelTemplate>
-              </ListBox.ItemsPanel>
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:ModeOption">
-                  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="6" ToolTip.Tip="{Binding Details}" ToolTip.ShowDelay="400"
-                        Background="Transparent">
-                    <TextBlock Grid.Row="0" Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap" />
-                    <TextBlock Grid.Row="1" Text="{Binding Description}" FontSize="12" TextWrapping="Wrap" Classes="Muted" />
-                    <TextBlock Grid.Row="2" Text="{Binding CliName}" Classes="Caption Muted" Margin="0,4,0,0" />
-                  </Grid>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+            <Grid ColumnDefinitions="210,*" ColumnSpacing="14">
+              <ComboBox ItemsSource="{Binding Modes}" SelectedItem="{Binding SelectedMode}"
+                        AutomationProperties.AutomationId="ExportMode" AutomationProperties.Name="{loc:Tr Export.Mode.Title}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ModeOption">
+                    <TextBlock Text="{Binding Title}" ToolTip.Tip="{Binding Details}" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock Grid.Column="1" Classes="Hint" Text="{Binding SelectedMode.Description}"
+                         TextWrapping="Wrap" VerticalAlignment="Center" />
+            </Grid>
 
             <!-- Mappings: only for results that read properties -->
-            <StackPanel IsVisible="{Binding NeedsMappings}" Margin="0,16,0,0">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Classes="Label" Text="{loc:Tr Export.Usmap.Label}" Margin="0,0,0,5" />
-                <Border Classes="Help" ToolTip.Tip="{loc:Tr Export.Usmap.Help}" Margin="0,0,0,5"><TextBlock /></Border>
-              </StackPanel>
+            <Expander IsVisible="{Binding NeedsMappings}" Header="{loc:Tr Export.Usmap.Label}" Margin="0,10,0,0"
+                      ToolTip.Tip="{loc:Tr Export.Usmap.Help}">
+              <StackPanel Spacing="5">
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                <TextBox Grid.Column="0" Text="{Binding UsmapPath}" Watermark="{loc:Tr Common.Auto}" />
+                <TextBox Grid.Column="0" Text="{Binding UsmapPath}" Watermark="{loc:Tr Common.Auto}"
+                         AutomationProperties.Name="{loc:Tr Export.Usmap.Label}" />
                 <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseUsmapCommand}" />
               </Grid>
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14" Margin="2,8,0,0">
@@ -182,7 +192,8 @@
                 <Button Grid.Column="1" Classes="Link" Content="{loc:Tr Export.Usmap.Guide}" Command="{Binding OpenMappingsGuideCommand}"
                         VerticalAlignment="Center" />
               </Grid>
-            </StackPanel>
+              </StackPanel>
+            </Expander>
           </StackPanel>
         </Border>
 
@@ -192,6 +203,7 @@
             <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Out.Title}" Margin="0,0,0,10" />
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
               <TextBox Grid.Column="0" AutomationProperties.AutomationId="OutputPath" Text="{Binding OutputPath}"
+                       AutomationProperties.Name="{loc:Tr Export.Out.Title}"
                        Watermark="{loc:Tr Export.Out.Placeholder}" />
               <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFolder}" Command="{Binding BrowseOutputCommand}" />
             </Grid>
@@ -200,174 +212,227 @@
           </StackPanel>
         </Border>
 
-        <!-- Export options -->
-        <Expander>
-          <Expander.Header>
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Margin="4,2">
-              <TextBlock Grid.Column="0" Classes="CardTitle" FontSize="15" Text="{loc:Tr Export.Options.Title}" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Classes="SectionState" Text="{Binding OptionsSummary}"
-                         Classes.Changed="{Binding OptionsChanged}" HorizontalAlignment="Right" />
-            </Grid>
-          </Expander.Header>
-
-          <StackPanel Margin="4,6,4,4">
-            <TextBlock Classes="Label" Text="{loc:Tr Export.Profile.Label}" />
+        <!-- Small converted sample, independent of the bulk destination -->
+        <Expander x:Name="SampleSection" Header="{loc:Tr Export.Sample.Title}" IsVisible="{Binding IsFullMode}">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="Hint" Text="{loc:Tr Export.Sample.Hint}" TextWrapping="Wrap" />
             <WrapPanel>
-              <Button Content="{loc:Tr Export.Profile.Quiet}" Command="{Binding UseQuietProfileCommand}" Margin="0,0,8,8" />
-              <Button Content="{loc:Tr Export.Profile.Balanced}" Command="{Binding UseBalancedProfileCommand}" Margin="0,0,8,8" />
-              <Button Content="{loc:Tr Export.Profile.Parallel}" Command="{Binding UseParallelProfileCommand}" Margin="0,0,8,8" />
+              <ComboBox ItemsSource="{Binding SampleTypes}" SelectedItem="{Binding SelectedSampleType}"
+                        MinWidth="165" Margin="0,0,10,6" AutomationProperties.Name="{loc:Tr Export.Sample.TypeLabel}" />
+              <NumericUpDown Value="{Binding SamplesPerType}" Minimum="1" Maximum="5" Increment="1"
+                             MinWidth="110" Margin="0,0,10,6"
+                             AutomationProperties.Name="{loc:Tr Export.Sample.Quantity}"
+                             ToolTip.Tip="{loc:Tr Export.Sample.Quantity}" />
+              <Button Content="{loc:Tr Export.Sample.Run}" Command="{Binding RunSampleCommand}"
+                      Margin="0,0,10,6" AutomationProperties.AutomationId="RunAssetSampleButton" />
             </WrapPanel>
-            <TextBlock Classes="Hint" Text="{loc:Tr Export.Profile.Hint}" />
-            <TextBlock Classes="Label" Text="{loc:Tr Export.Threads}" Margin="0,0,0,4" />
-            <Grid ColumnDefinitions="*,56" ColumnSpacing="12">
-              <Slider Grid.Column="0" Minimum="1" Maximum="{Binding MaxThreads}" Value="{Binding Threads}"
-                      TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Text="{Binding Threads}" VerticalAlignment="Center" FontWeight="SemiBold"
-                         HorizontalAlignment="Right" />
-            </Grid>
-
-            <StackPanel IsVisible="{Binding IsRawMode}" Margin="0,8,0,0">
-              <TextBlock Classes="Label" Text="{loc:Tr Export.Budget.Label}" />
-              <NumericUpDown Value="{Binding MaxInFlightMiB}" Minimum="0" Maximum="1048576" Increment="16"
-                             FormatString="0" HorizontalAlignment="Left" Width="160"
-                             AutomationProperties.AutomationId="RawInputBudget" />
-              <TextBlock Classes="Hint" Text="{loc:Tr Export.Budget.Hint}" />
+            <TextBlock Classes="Error" Text="{Binding SampleError}" TextWrapping="Wrap"
+                       IsVisible="{Binding SampleError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <StackPanel Spacing="6" IsVisible="{Binding HasSample}">
+              <TextBlock Text="{Binding SampleStatus}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBlock Classes="Hint" Text="{Binding SampleCoverage}" TextWrapping="Wrap"
+                         IsVisible="{Binding SampleCoverage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              <ItemsControl ItemsSource="{Binding SampleCoverageRows}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:SummaryLine">
+                    <Grid ColumnDefinitions="150,*" ColumnSpacing="12" Margin="0,3">
+                      <TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                      <TextBlock Grid.Column="1" Classes="Muted" Text="{Binding Value}" TextWrapping="Wrap" />
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <Expander Header="{loc:Tr Export.Sample.Details}">
+                <ItemsControl ItemsSource="{Binding SampleRows}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SummaryLine">
+                      <StackPanel Margin="0,3">
+                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Classes="Muted" Text="{Binding Value}" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </Expander>
+              <Button Content="{loc:Tr Export.Sample.Open}" Command="{Binding OpenSampleFolderCommand}"
+                      HorizontalAlignment="Left" />
             </StackPanel>
-
-            <Separator />
-
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Filters.Title}" FontSize="14" />
-              <Border Classes="Help" ToolTip.Tip="{loc:Tr Export.Filters.Hint}"><TextBlock /></Border>
-            </StackPanel>
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
-              <StackPanel Grid.Column="0">
-                <TextBlock Classes="Label" Text="{loc:Tr Export.Include}" />
-                <TextBox Classes="Mono" Text="{Binding IncludeRegex}" Watermark="^MyGame/Content/Characters/" />
-              </StackPanel>
-              <StackPanel Grid.Column="1">
-                <TextBlock Classes="Label" Text="{loc:Tr Export.Exclude}" />
-                <TextBox Classes="Mono" Text="{Binding ExcludeRegex}" Watermark="^Engine/" />
-              </StackPanel>
-            </Grid>
-            <TextBlock Classes="Warning" Text="{loc:Tr Export.Filters.LegacyIoStore}" IsVisible="{Binding ShowFilterIoStoreWarning}" />
-
-            <Separator />
-
-            <TextBlock Classes="CardTitle" Text="{loc:Tr Export.What.Title}" FontSize="14" Margin="0,0,0,8" />
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
-              <StackPanel Grid.Column="0" Spacing="2">
-                <CheckBox IsChecked="{Binding Overwrite}" Content="{loc:Tr Opt.Overwrite}" ToolTip.Tip="{loc:Tr Opt.Overwrite.Hint}" />
-                <CheckBox IsChecked="{Binding Verbose}" Content="{loc:Tr Opt.Verbose}" />
-                <CheckBox IsChecked="{Binding SkipWorlds}" Content="{loc:Tr Opt.NoWorlds}" ToolTip.Tip="{loc:Tr Opt.NoWorlds.Hint}" IsEnabled="{Binding IsFullMode}" />
-                <CheckBox IsChecked="{Binding ExportMaterials}" Content="{loc:Tr Opt.Materials}" ToolTip.Tip="{loc:Tr Opt.Materials.Hint}" IsEnabled="{Binding IsFullMode}" />
-                <CheckBox IsChecked="{Binding RawPackages}" Content="{loc:Tr Opt.RawPackages}" IsEnabled="{Binding NeedsMappings}" />
-              </StackPanel>
-              <StackPanel Grid.Column="1" Spacing="2">
-                <CheckBox IsChecked="{Binding SkipJson}" Content="{loc:Tr Opt.NoJson}" IsEnabled="{Binding IsFullMode}" />
-                <CheckBox IsChecked="{Binding SkipAssets}" Content="{loc:Tr Opt.NoAssets}" IsEnabled="{Binding IsFullMode}" />
-                <CheckBox IsChecked="{Binding SkipRawMisc}" Content="{loc:Tr Opt.NoRawMisc}" IsEnabled="{Binding IsFullMode}" />
-                <CheckBox IsChecked="{Binding SkipAudioConvert}" Content="{loc:Tr Opt.NoAudioConvert}" IsEnabled="{Binding IsFullMode}" />
-                <CheckBox IsChecked="{Binding AllMips}" Content="{loc:Tr Opt.AllMips}" IsEnabled="{Binding IsFullMode}" />
-                <CheckBox IsChecked="{Binding SkipMorphs}" Content="{loc:Tr Opt.NoMorphs}" IsEnabled="{Binding IsFullMode}" />
-              </StackPanel>
-            </Grid>
-
-            <Separator />
-
-            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
-              <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Formats.Title}" FontSize="14" />
-              <Border Classes="Help" ToolTip.Tip="{loc:Tr Export.Formats.Hint}"><TextBlock /></Border>
-            </StackPanel>
-            <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="16"
-                  IsEnabled="{Binding IsFullMode}">
-              <StackPanel Grid.Row="0" Grid.Column="0">
-                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Mesh}" />
-                <ComboBox ItemsSource="{Binding MeshFormats}" SelectedItem="{Binding MeshFormat}" />
-              </StackPanel>
-              <StackPanel Grid.Row="0" Grid.Column="1">
-                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Anim}" />
-                <ComboBox ItemsSource="{Binding AnimFormats}" SelectedItem="{Binding AnimFormat}" />
-              </StackPanel>
-              <StackPanel Grid.Row="0" Grid.Column="2">
-                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Texture}" />
-                <ComboBox ItemsSource="{Binding TextureFormats}" SelectedItem="{Binding TextureFormat}" />
-              </StackPanel>
-              <StackPanel Grid.Row="1" Grid.Column="0">
-                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Quality}" />
-                <ComboBox ItemsSource="{Binding MeshQualities}" SelectedItem="{Binding MeshQuality}" />
-              </StackPanel>
-              <StackPanel Grid.Row="1" Grid.Column="1">
-                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Nanite}" />
-                <ComboBox ItemsSource="{Binding NaniteFormats}" SelectedItem="{Binding NaniteFormat}" />
-              </StackPanel>
-              <StackPanel Grid.Row="1" Grid.Column="2">
-                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Sockets}" />
-                <ComboBox ItemsSource="{Binding SocketFormats}" SelectedItem="{Binding SocketFormat}" />
-              </StackPanel>
-              <StackPanel Grid.Row="2" Grid.Column="0">
-                <TextBlock Classes="Label" Text="{loc:Tr Fmt.Platform}" />
-                <ComboBox ItemsSource="{Binding Platforms}" SelectedItem="{Binding Platform}" />
-              </StackPanel>
-            </Grid>
           </StackPanel>
         </Expander>
 
-        <!-- Helper binaries -->
-        <Expander>
-          <Expander.Header>
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Margin="4,2">
-              <TextBlock Grid.Column="0" Classes="CardTitle" FontSize="15" Text="{loc:Tr Export.Tools.Title}" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Classes="SectionState" Text="{Binding ToolsSummary}" HorizontalAlignment="Right" />
-            </Grid>
-          </Expander.Header>
-          <StackPanel Margin="4,6,4,4">
-            <TextBlock Classes="Hint" Text="{loc:Tr Export.Tools.Hint}" Margin="0,0,0,4" />
+        <Expander Header="{loc:Tr Export.Advanced}">
+          <StackPanel Spacing="8">
+            <!-- Export options -->
+            <Expander>
+              <Expander.Header>
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Margin="4,2">
+                  <TextBlock Grid.Column="0" Classes="CardTitle" FontSize="15" Text="{loc:Tr Export.Options.Title}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Classes="SectionState" Text="{Binding OptionsSummary}"
+                             Classes.Changed="{Binding OptionsChanged}" HorizontalAlignment="Right" />
+                </Grid>
+              </Expander.Header>
 
-            <TextBlock Classes="Label" Text="{loc:Tr Tools.Retoc}" />
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-              <TextBox Text="{Binding RetocPath}" Watermark="{loc:Tr Common.Auto}" ToolTip.Tip="{loc:Tr Tools.Retoc.Hint}" />
-              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseRetocCommand}" />
-            </Grid>
+              <StackPanel Margin="4,6,4,4">
+                <TextBlock Classes="Label" Text="{loc:Tr Export.Profile.Label}" />
+                <WrapPanel>
+                  <Button Content="{loc:Tr Export.Profile.Quiet}" Command="{Binding UseQuietProfileCommand}" Margin="0,0,8,8" />
+                  <Button Content="{loc:Tr Export.Profile.Balanced}" Command="{Binding UseBalancedProfileCommand}" Margin="0,0,8,8" />
+                  <Button Content="{loc:Tr Export.Profile.Parallel}" Command="{Binding UseParallelProfileCommand}" Margin="0,0,8,8" />
+                </WrapPanel>
+                <TextBlock Classes="Hint" Text="{loc:Tr Export.Profile.Hint}" />
+                <TextBlock Classes="Label" Text="{loc:Tr Export.Threads}" Margin="0,0,0,4" />
+                <Grid ColumnDefinitions="*,56" ColumnSpacing="12">
+                  <Slider Grid.Column="0" Minimum="1" Maximum="{Binding MaxThreads}" Value="{Binding Threads}"
+                          TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Text="{Binding Threads}" VerticalAlignment="Center" FontWeight="SemiBold"
+                             HorizontalAlignment="Right" />
+                </Grid>
 
-            <TextBlock Classes="Label" Text="{loc:Tr Tools.Oodle}" />
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-              <TextBox Text="{Binding OodlePath}" Watermark="{loc:Tr Common.Auto}" />
-              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseOodleCommand}" />
-            </Grid>
+                <StackPanel IsVisible="{Binding IsRawMode}" Margin="0,8,0,0">
+                  <TextBlock Classes="Label" Text="{loc:Tr Export.Budget.Label}" />
+                  <NumericUpDown Value="{Binding MaxInFlightMiB}" Minimum="0" Maximum="1048576" Increment="16"
+                                 FormatString="0" HorizontalAlignment="Left" Width="160"
+                                 AutomationProperties.AutomationId="RawInputBudget" />
+                  <TextBlock Classes="Hint" Text="{loc:Tr Export.Budget.Hint}" />
+                </StackPanel>
 
-            <TextBlock Classes="Label" Text="{loc:Tr Tools.Zlib}" />
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-              <TextBox Text="{Binding ZlibPath}" Watermark="{loc:Tr Common.Auto}" />
-              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseZlibCommand}" />
-            </Grid>
+                <Separator />
 
-            <TextBlock Classes="Label" Text="{loc:Tr Tools.Vgmstream}" />
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-              <TextBox Text="{Binding VgmStreamPath}" Watermark="{loc:Tr Common.Optional}" ToolTip.Tip="{loc:Tr Tools.Vgmstream.Hint}" />
-              <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseVgmStreamCommand}" />
-            </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Filters.Title}" FontSize="14" />
+                  <Border Classes="Help" ToolTip.Tip="{loc:Tr Export.Filters.Hint}"><TextBlock /></Border>
+                </StackPanel>
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                  <StackPanel Grid.Column="0">
+                    <TextBlock Classes="Label" Text="{loc:Tr Export.Include}" />
+                    <TextBox Classes="Mono" Text="{Binding IncludeRegex}" Watermark="^MyGame/Content/Characters/" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1">
+                    <TextBlock Classes="Label" Text="{loc:Tr Export.Exclude}" />
+                    <TextBox Classes="Mono" Text="{Binding ExcludeRegex}" Watermark="^Engine/" />
+                  </StackPanel>
+                </Grid>
+                <TextBlock Classes="Warning" Text="{loc:Tr Export.Filters.LegacyIoStore}" IsVisible="{Binding ShowFilterIoStoreWarning}" />
+
+                <Separator />
+
+                <TextBlock Classes="CardTitle" Text="{loc:Tr Export.What.Title}" FontSize="14" Margin="0,0,0,8" />
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                  <StackPanel Grid.Column="0" Spacing="2">
+                    <CheckBox IsChecked="{Binding Overwrite}" Content="{loc:Tr Opt.Overwrite}" ToolTip.Tip="{loc:Tr Opt.Overwrite.Hint}" />
+                    <CheckBox IsChecked="{Binding Verbose}" Content="{loc:Tr Opt.Verbose}" />
+                    <CheckBox IsChecked="{Binding SkipWorlds}" Content="{loc:Tr Opt.NoWorlds}" ToolTip.Tip="{loc:Tr Opt.NoWorlds.Hint}" IsEnabled="{Binding IsFullMode}" />
+                    <CheckBox IsChecked="{Binding ExportMaterials}" Content="{loc:Tr Opt.Materials}" ToolTip.Tip="{loc:Tr Opt.Materials.Hint}" IsEnabled="{Binding IsFullMode}" />
+                    <CheckBox IsChecked="{Binding RawPackages}" Content="{loc:Tr Opt.RawPackages}" IsEnabled="{Binding NeedsMappings}" />
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="2">
+                    <CheckBox IsChecked="{Binding SkipJson}" Content="{loc:Tr Opt.NoJson}" IsEnabled="{Binding IsFullMode}" />
+                    <CheckBox IsChecked="{Binding SkipAssets}" Content="{loc:Tr Opt.NoAssets}" IsEnabled="{Binding IsFullMode}" />
+                    <CheckBox IsChecked="{Binding SkipRawMisc}" Content="{loc:Tr Opt.NoRawMisc}" IsEnabled="{Binding IsFullMode}" />
+                    <CheckBox IsChecked="{Binding SkipAudioConvert}" Content="{loc:Tr Opt.NoAudioConvert}" IsEnabled="{Binding IsFullMode}" />
+                    <CheckBox IsChecked="{Binding AllMips}" Content="{loc:Tr Opt.AllMips}" IsEnabled="{Binding IsFullMode}" />
+                    <CheckBox IsChecked="{Binding SkipMorphs}" Content="{loc:Tr Opt.NoMorphs}" IsEnabled="{Binding IsFullMode}" />
+                  </StackPanel>
+                </Grid>
+
+                <Separator />
+
+                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,4">
+                  <TextBlock Classes="CardTitle" Text="{loc:Tr Export.Formats.Title}" FontSize="14" />
+                  <Border Classes="Help" ToolTip.Tip="{loc:Tr Export.Formats.Hint}"><TextBlock /></Border>
+                </StackPanel>
+                <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="16"
+                      IsEnabled="{Binding IsFullMode}">
+                  <StackPanel Grid.Row="0" Grid.Column="0">
+                    <TextBlock Classes="Label" Text="{loc:Tr Fmt.Mesh}" />
+                    <ComboBox ItemsSource="{Binding MeshFormats}" SelectedItem="{Binding MeshFormat}" />
+                  </StackPanel>
+                  <StackPanel Grid.Row="0" Grid.Column="1">
+                    <TextBlock Classes="Label" Text="{loc:Tr Fmt.Anim}" />
+                    <ComboBox ItemsSource="{Binding AnimFormats}" SelectedItem="{Binding AnimFormat}" />
+                  </StackPanel>
+                  <StackPanel Grid.Row="0" Grid.Column="2">
+                    <TextBlock Classes="Label" Text="{loc:Tr Fmt.Texture}" />
+                    <ComboBox ItemsSource="{Binding TextureFormats}" SelectedItem="{Binding TextureFormat}" />
+                  </StackPanel>
+                  <StackPanel Grid.Row="1" Grid.Column="0">
+                    <TextBlock Classes="Label" Text="{loc:Tr Fmt.Quality}" />
+                    <ComboBox ItemsSource="{Binding MeshQualities}" SelectedItem="{Binding MeshQuality}" />
+                  </StackPanel>
+                  <StackPanel Grid.Row="1" Grid.Column="1">
+                    <TextBlock Classes="Label" Text="{loc:Tr Fmt.Nanite}" />
+                    <ComboBox ItemsSource="{Binding NaniteFormats}" SelectedItem="{Binding NaniteFormat}" />
+                  </StackPanel>
+                  <StackPanel Grid.Row="1" Grid.Column="2">
+                    <TextBlock Classes="Label" Text="{loc:Tr Fmt.Sockets}" />
+                    <ComboBox ItemsSource="{Binding SocketFormats}" SelectedItem="{Binding SocketFormat}" />
+                  </StackPanel>
+                  <StackPanel Grid.Row="2" Grid.Column="0">
+                    <TextBlock Classes="Label" Text="{loc:Tr Fmt.Platform}" />
+                    <ComboBox ItemsSource="{Binding Platforms}" SelectedItem="{Binding Platform}" />
+                  </StackPanel>
+                </Grid>
+              </StackPanel>
+            </Expander>
+
+            <!-- Helper binaries -->
+            <Expander>
+              <Expander.Header>
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Margin="4,2">
+                  <TextBlock Grid.Column="0" Classes="CardTitle" FontSize="15" Text="{loc:Tr Export.Tools.Title}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Classes="SectionState" Text="{Binding ToolsSummary}" HorizontalAlignment="Right" />
+                </Grid>
+              </Expander.Header>
+              <StackPanel Margin="4,6,4,4">
+                <TextBlock Classes="Hint" Text="{loc:Tr Export.Tools.Hint}" Margin="0,0,0,4" />
+
+                <TextBlock Classes="Label" Text="{loc:Tr Tools.Retoc}" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <TextBox Text="{Binding RetocPath}" Watermark="{loc:Tr Common.Auto}" ToolTip.Tip="{loc:Tr Tools.Retoc.Hint}" />
+                  <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseRetocCommand}" />
+                </Grid>
+
+                <TextBlock Classes="Label" Text="{loc:Tr Tools.Oodle}" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <TextBox Text="{Binding OodlePath}" Watermark="{loc:Tr Common.Auto}" />
+                  <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseOodleCommand}" />
+                </Grid>
+
+                <TextBlock Classes="Label" Text="{loc:Tr Tools.Zlib}" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <TextBox Text="{Binding ZlibPath}" Watermark="{loc:Tr Common.Auto}" />
+                  <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseZlibCommand}" />
+                </Grid>
+
+                <TextBlock Classes="Label" Text="{loc:Tr Tools.Vgmstream}" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                  <TextBox Text="{Binding VgmStreamPath}" Watermark="{loc:Tr Common.Optional}" ToolTip.Tip="{loc:Tr Tools.Vgmstream.Hint}" />
+                  <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseVgmStreamCommand}" />
+                </Grid>
+              </StackPanel>
+            </Expander>
+
+            <!-- Equivalent command line: for scripts, so out of the way -->
+            <Expander>
+              <Expander.Header>
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Margin="4,2">
+                  <TextBlock Grid.Column="0" Classes="CardTitle" FontSize="15" Text="{loc:Tr Export.Command.Label}" VerticalAlignment="Center" />
+                  <TextBlock Grid.Column="1" Classes="SectionState" Text="{loc:Tr Export.Command.Hint}" HorizontalAlignment="Right" />
+                </Grid>
+              </Expander.Header>
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" Margin="4,6,4,4">
+                <TextBox Grid.Column="0" Classes="Mono" Text="{Binding CommandLine}" IsReadOnly="True" TextWrapping="Wrap" MinHeight="0"
+                         AutomationProperties.Name="{loc:Tr Export.Command.Label}" />
+                <Button Grid.Column="1" Content="{loc:Tr Common.Copy}" Command="{Binding CopyCommandCommand}" VerticalAlignment="Top" />
+              </Grid>
+            </Expander>
           </StackPanel>
-        </Expander>
-
-        <!-- Equivalent command line: for scripts, so out of the way -->
-        <Expander>
-          <Expander.Header>
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Margin="4,2">
-              <TextBlock Grid.Column="0" Classes="CardTitle" FontSize="15" Text="{loc:Tr Export.Command.Label}" VerticalAlignment="Center" />
-              <TextBlock Grid.Column="1" Classes="SectionState" Text="{loc:Tr Export.Command.Hint}" HorizontalAlignment="Right" />
-            </Grid>
-          </Expander.Header>
-          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" Margin="4,6,4,4">
-            <TextBox Grid.Column="0" Classes="Mono" Text="{Binding CommandLine}" IsReadOnly="True" TextWrapping="Wrap" MinHeight="0" />
-            <Button Grid.Column="1" Content="{loc:Tr Common.Copy}" Command="{Binding CopyCommandCommand}" VerticalAlignment="Top" />
-          </Grid>
         </Expander>
 
         <!-- Hardware load while the run goes on, kept afterwards for a look back -->
-        <Panel IsVisible="{Binding Performance.IsVisible}">
+        <Expander Header="{loc:Tr Export.Performance}" IsVisible="{Binding Performance.IsVisible}">
           <views:PerformancePanel DataContext="{Binding Performance}" />
-        </Panel>
+        </Expander>
 
         <!-- Outcome: error -->
         <Border x:Name="ErrorCard" Classes="Card" IsVisible="{Binding HasError}" BorderBrush="{DynamicResource Brush.Error}">
@@ -397,6 +462,9 @@
               <Button Content="{loc:Tr Export.OpenOutput}" Command="{Binding OpenOutputCommand}" Margin="0,0,8,8" />
               <Button Content="{loc:Tr Export.OpenErrors}" Command="{Binding OpenErrorsCommand}" IsVisible="{Binding HasErrorsFile}" Margin="0,0,8,8" />
               <Button Content="{loc:Tr Export.OpenLog}" Command="{Binding OpenLogCommand}" IsVisible="{Binding CanOpenLog}" Margin="0,0,8,8" />
+              <Button Content="{Binding FailedSelectionText}" Command="{Binding PrepareFailedSelectionCommand}"
+                      IsVisible="{Binding CanPrepareFailedSelection}" Margin="0,0,8,8"
+                      ToolTip.Tip="{loc:Tr Export.FailedSelection.Hint}" />
             </WrapPanel>
           </StackPanel>
         </Border>
@@ -418,15 +486,17 @@
             BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="0,1,0,0" Padding="28,14">
       <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="10">
 
-        <Grid Grid.Row="0" Grid.ColumnSpan="4" ColumnDefinitions="Auto,*" ColumnSpacing="10" VerticalAlignment="Center"
+        <Grid Grid.Row="0" Grid.ColumnSpan="4" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalAlignment="Center"
               IsVisible="{Binding ShowReadiness}">
           <Panel Grid.Column="0">
             <Ellipse Classes="Dot Error" IsVisible="{Binding IsReadinessBlocked}" />
             <Ellipse Classes="Dot Warning" IsVisible="{Binding IsReadinessWarning}" />
             <Ellipse Classes="Dot" IsVisible="{Binding IsReadinessOk}" />
           </Panel>
-          <TextBlock Grid.Column="1" Classes="Status" Text="{Binding ReadinessText}" TextWrapping="NoWrap"
-                     TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ReadinessText}" />
+          <TextBlock Grid.Column="1" Classes="Status" Text="{Binding ReadinessText}" TextWrapping="Wrap"
+                     VerticalAlignment="Center" />
+          <Button Grid.Column="2" Classes="Link" Content="{loc:Tr Export.SwitchToRaw}"
+                  Command="{Binding SwitchToRawCommand}" IsVisible="{Binding CanSwitchToRaw}" />
         </Grid>
 
         <Grid Grid.Row="0" Grid.ColumnSpan="4" VerticalAlignment="Center" IsVisible="{Binding ShowProgress}"

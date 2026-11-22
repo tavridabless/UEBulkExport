@@ -110,6 +110,10 @@ public sealed class Options
         USAGE
           UEBulkExport.Cli --paks <path> --out <dir> [options]
           UEBulkExport --paks <path> --out <dir> [options]      (the GUI build accepts the same arguments)
+          UEBulkExport.Cli recipe --help                       (portable export settings)
+          UEBulkExport.Cli sample --help                       (convert a small sample by asset type)
+          UEBulkExport.Cli compare --help                      (compare two builds)
+          UEBulkExport.Cli recipe --help                       (save and apply portable export options)
         PATHS
           --paks <path>         Where the containers are. Accepts the Paks folder itself, any
                                 folder above it (the game's root works), or a single .utoc file.

@@ -9,9 +9,6 @@
     <Style Selector="TreeViewItem">
       <Setter Property="IsExpanded" Value="{ReflectionBinding IsExpanded, Mode=TwoWay}" />
     </Style>
-    <Style Selector="ListBox.Chips ListBoxItem">
-      <Setter Property="Margin" Value="0,0,6,0" />
-    </Style>
     <Style Selector="ListBox.Rows ListBoxItem">
       <Setter Property="Padding" Value="10,6" />
       <Setter Property="MinHeight" Value="36" />
@@ -36,10 +33,15 @@
 
     <!-- Empty state -->
     <Border Grid.Row="2" Classes="Card" IsVisible="{Binding !HasData}" VerticalAlignment="Top">
-      <TextBlock Text="{loc:Tr Browser.NotScanned}" TextWrapping="Wrap" Classes="Muted" />
+      <Panel>
+        <TextBlock Text="{loc:Tr Browser.NotScanned}" IsVisible="{Binding !Export.ShowScanLine, FallbackValue=True}"
+                   TextWrapping="Wrap" Classes="Muted" />
+        <TextBlock Text="{Binding Export.ScanText}" IsVisible="{Binding Export.ShowScanLine, FallbackValue=False}"
+                   TextWrapping="Wrap" Classes="Muted" />
+      </Panel>
     </Border>
 
-    <!-- Toolbar: breadcrumb · search · type chips -->
+    <!-- Toolbar: path, search and scope -->
     <Border Grid.Row="1" Classes="Card" Padding="14,10" Margin="0,0,0,12" IsVisible="{Binding HasData}">
       <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="14" RowSpacing="8">
         <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
@@ -62,26 +64,24 @@
           </ItemsControl>
         </ScrollViewer>
 
-        <TextBox Grid.Column="1" Width="200" Text="{Binding Search}" Watermark="{loc:Tr Browser.Search.Placeholder}" />
+        <TextBox Grid.Column="1" Width="200" Text="{Binding Search}" Watermark="{loc:Tr Browser.Search.Placeholder}"
+                 AutomationProperties.Name="{loc:Tr Browser.Search.Placeholder}" />
 
-        <ListBox Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Left" Classes="Chips" ItemsSource="{Binding Chips}" SelectedItem="{Binding Chip}" AutoScrollToSelectedItem="False"
-                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
-          <ListBox.ItemsPanel>
-            <ItemsPanelTemplate>
-              <WrapPanel Orientation="Horizontal" />
-            </ItemsPanelTemplate>
-          </ListBox.ItemsPanel>
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="vm:FilterChip">
-              <TextBlock Text="{Binding Label}" FontSize="12" />
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-        <WrapPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal">
+        <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal">
+          <ComboBox Width="156" ItemsSource="{Binding Chips}" SelectedItem="{Binding Chip}" Margin="0,0,12,0"
+                    AutomationProperties.Name="{loc:Tr Browser.Filter.Label}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:FilterChip">
+                <TextBlock Text="{Binding Label}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
           <CheckBox Content="{loc:Tr Browser.Search.Descendants}" IsChecked="{Binding IncludeSubfolders}"
-                    Margin="0,0,16,0" ToolTip.Tip="{loc:Tr Browser.Search.Descendants.Hint}" />
+                    Margin="0,0,14,0" ToolTip.Tip="{loc:Tr Browser.Search.Descendants.Hint}" />
           <TextBlock Text="{Binding MatchesSummary}" Classes="Muted" FontSize="12" VerticalAlignment="Center" />
         </WrapPanel>
+        <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding LockedContainersSummary}" Classes="Warning" TextWrapping="Wrap"
+                   IsVisible="{Binding LockedContainersSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
       </Grid>
     </Border>
 
@@ -91,7 +91,8 @@
       <Border Grid.Column="0" Classes="Card" Padding="0">
         <Grid RowDefinitions="Auto,*">
           <TextBlock Grid.Row="0" Classes="CardTitle" FontSize="13" Text="{loc:Tr Browser.Folders}" Margin="16,12,16,6" />
-          <TreeView Grid.Row="1" ItemsSource="{Binding Roots}" SelectedItem="{Binding SelectedFolder}" Margin="4,0,4,8">
+          <TreeView Grid.Row="1" ItemsSource="{Binding Roots}" SelectedItem="{Binding SelectedFolder}" Margin="4,0,4,8"
+                    AutomationProperties.Name="{loc:Tr Browser.Folders}">
             <TreeView.ItemTemplate>
               <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:FolderNode">
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -118,12 +119,12 @@
           </Grid>
 
           <ListBox Grid.Row="1" Classes="Rows" ItemsSource="{Binding Rows}" SelectedItem="{Binding FocusedRow}"
-                   Margin="8,0,8,8" Background="Transparent" DoubleTapped="OnRowDoubleTapped">
+                   Margin="8,0,8,8" Background="Transparent" DoubleTapped="OnRowDoubleTapped" KeyDown="OnRowKeyDown">
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:BrowserRow">
                 <Grid ColumnDefinitions="34,22,*,60,90">
                   <CheckBox Grid.Column="0" IsChecked="{Binding IsChecked}" MinWidth="0" Padding="0" Margin="0"
-                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            HorizontalAlignment="Center" VerticalAlignment="Center" AutomationProperties.Name="{Binding Name}" />
                   <PathIcon Grid.Column="1" Width="14" Height="14" VerticalAlignment="Center"
                             Foreground="{DynamicResource Brush.Accent}" IsVisible="{Binding IsFolder}"
                             Data="M3 6 A2 2 0 0 1 5 4 L9 4 L11 6 L19 6 A2 2 0 0 1 21 8 L21 18 A2 2 0 0 1 19 20 L5 20 A2 2 0 0 1 3 18 Z" />
@@ -158,14 +159,10 @@
 
           <ScrollViewer IsVisible="{Binding HasDetail}">
             <StackPanel Spacing="10">
-              <Border Height="120" CornerRadius="8" Background="{DynamicResource Brush.Field}"
-                      BorderBrush="{DynamicResource Brush.CardBorder}" BorderThickness="1">
-                <PathIcon Width="42" Height="42" Foreground="{DynamicResource Brush.Accent}"
-                          Data="M4 7 L12 3 L20 7 L20 17 L12 21 L4 17 Z M4 7 L12 11 L20 7 M12 11 L12 21" />
-              </Border>
-
               <TextBlock Text="{Binding DetailName}" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
               <TextBlock Text="{Binding DetailKind}" Classes="Muted" FontSize="12" />
+              <Button Content="{loc:Tr Common.OpenFolder}" IsVisible="{Binding DetailIsFolder}"
+                      Command="{Binding OpenRowCommand}" CommandParameter="{Binding FocusedRow}" />
 
               <WrapPanel>
                 <Border Classes="Tag" IsVisible="{Binding DetailHasExtension}"><TextBlock Text="{Binding DetailExtension}" /></Border>
@@ -175,8 +172,10 @@
 
               <TextBlock Classes="Label" Text="{loc:Tr Browser.Details.Path}" Margin="0,6,0,4" />
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                <TextBox Text="{Binding DetailPath}" IsReadOnly="True" Classes="Mono" />
-                <Button Grid.Column="1" Padding="8" MinHeight="0" ToolTip.Tip="{loc:Tr Common.Copy}" Click="OnCopyPath">
+                <TextBox Text="{Binding DetailPath}" IsReadOnly="True" Classes="Mono"
+                         AutomationProperties.Name="{loc:Tr Browser.Details.Path}" />
+                <Button Grid.Column="1" Padding="8" MinHeight="0" ToolTip.Tip="{loc:Tr Common.Copy}"
+                        AutomationProperties.Name="{loc:Tr Common.Copy}" Click="OnCopyPath">
                   <Path Width="14" Height="14" Stretch="Uniform" StrokeThickness="1.6" StrokeJoin="Round" StrokeLineCap="Round"
                         Stroke="{DynamicResource Brush.Text}"
                         Data="M9 9 L9 5 A1 1 0 0 1 10 4 L19 4 A1 1 0 0 1 20 5 L20 14 A1 1 0 0 1 19 15 L15 15 M5 9 L14 9 A1 1 0 0 1 15 10 L15 19 A1 1 0 0 1 14 20 L5 20 A1 1 0 0 1 4 19 L4 10 A1 1 0 0 1 5 9 Z" />
@@ -185,12 +184,15 @@
               <TextBlock Text="{Binding ClipboardStatus}" Classes="Muted" FontSize="12" TextWrapping="Wrap" />
 
               <TextBlock Classes="Label" Text="{loc:Tr Browser.Details.Container}" Margin="0,4,0,4" />
-              <TextBox Text="{Binding DetailContainer}" IsReadOnly="True" />
+              <TextBox Text="{Binding DetailContainer}" IsReadOnly="True"
+                       AutomationProperties.Name="{loc:Tr Browser.Details.Container}" />
 
               <TextBlock Classes="Label" Text="{loc:Tr Browser.Details.Output}" Margin="0,4,0,4" />
               <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
-                <TextBox Text="{Binding Export.OutputPath}" Watermark="{loc:Tr Export.Out.Placeholder}" />
-                <Button Grid.Column="1" Padding="8" MinHeight="0" Command="{Binding BrowseOutputCommand}" ToolTip.Tip="{loc:Tr Common.BrowseFolder}">
+                <TextBox Text="{Binding Export.OutputPath}" Watermark="{loc:Tr Export.Out.Placeholder}"
+                         AutomationProperties.Name="{loc:Tr Browser.Details.Output}" />
+                <Button Grid.Column="1" Padding="8" MinHeight="0" Command="{Binding BrowseOutputCommand}"
+                        ToolTip.Tip="{loc:Tr Common.BrowseFolder}" AutomationProperties.Name="{loc:Tr Common.BrowseFolder}">
                   <PathIcon Width="13" Height="13" Data="M3 6 A2 2 0 0 1 5 4 L9 4 L11 6 L19 6 A2 2 0 0 1 21 8 L21 18 A2 2 0 0 1 19 20 L5 20 A2 2 0 0 1 3 18 Z" />
                 </Button>
               </Grid>
@@ -202,35 +204,33 @@
 
     <!-- Action bar -->
     <Border Grid.Row="3" Classes="Card" Padding="16,12" Margin="0,12,0,0" IsVisible="{Binding HasData}">
-      <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="10" RowSpacing="8">
-        <Border Grid.Column="0" Width="32" Height="32" CornerRadius="8" Background="{DynamicResource Brush.Field}" Margin="0,0,6,0">
-          <PathIcon Width="18" Height="18" Foreground="{DynamicResource Brush.Accent}"
-                    Data="M12 3 L21 8 L12 13 L3 8 Z M3 12 L12 17 L21 12 M3 16 L12 21 L21 16" />
-        </Border>
-        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+        <StackPanel VerticalAlignment="Center">
           <TextBlock Text="{Binding SelectedCountText}" FontWeight="SemiBold" FontSize="14" />
-          <TextBlock Text="{Binding SelectedSubText}" Classes="Muted" FontSize="12" />
-          <TextBlock Text="{Binding VisibleSelectionSummary}" Classes="Muted" FontSize="12" />
+          <TextBlock Text="{Binding SelectedSubText}" Classes="Muted" FontSize="12" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding VisibleSelectionSummary}" Classes="Muted" FontSize="12" TextWrapping="Wrap"
+                     IsVisible="{Binding HasSelection}" />
         </StackPanel>
-        <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Right">
-        <Button Margin="0,0,8,4" Content="{loc:Tr Browser.SelectAll}" Command="{Binding SelectAllShownCommand}" />
-        <Button Margin="0,0,8,4" Content="{loc:Tr Browser.SelectMatches}" Command="{Binding SelectAllMatchesCommand}"
-                ToolTip.Tip="{loc:Tr Browser.SelectMatches.Hint}" />
-        <Button Margin="0,0,8,4" Content="{loc:Tr Browser.ClearSelection}" Command="{Binding ClearSelectionCommand}" IsEnabled="{Binding HasSelection}" />
-        <Button Margin="0,0,8,4" AutomationProperties.AutomationId="ExcludeButton" Command="{Binding ExcludeCheckedCommand}" ToolTip.Tip="{loc:Tr Browser.Exclude.Hint}"
-                IsEnabled="{Binding SelectedCount}">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <PathIcon Width="13" Height="13" Data="M12 2 A10 10 0 1 0 12 22 A10 10 0 1 0 12 2 Z M12 4.5 A7.5 7.5 0 1 1 12 19.5 A7.5 7.5 0 1 1 12 4.5 Z M7 11 L17 11 L17 13 L7 13 Z" />
-            <TextBlock Text="{loc:Tr Browser.Exclude}" />
-          </StackPanel>
+        <Button Grid.Column="1" Content="{loc:Tr Browser.Selection.Actions}" VerticalAlignment="Center">
+          <Button.Flyout>
+            <MenuFlyout>
+              <MenuItem Header="{loc:Tr Browser.SelectAll}" Command="{Binding SelectAllShownCommand}" />
+              <MenuItem Header="{loc:Tr Browser.SelectMatches}" Command="{Binding SelectAllMatchesCommand}"
+                        ToolTip.Tip="{loc:Tr Browser.SelectMatches.Hint}" />
+              <MenuItem Header="{loc:Tr Browser.ClearSelection}" Command="{Binding ClearSelectionCommand}"
+                        IsEnabled="{Binding HasSelection}" />
+              <MenuItem Header="{loc:Tr Browser.Exclude}" Command="{Binding ExcludeCheckedCommand}"
+                        AutomationProperties.AutomationId="ExcludeButton" ToolTip.Tip="{loc:Tr Browser.Exclude.Hint}"
+                        IsEnabled="{Binding HasSelection}" />
+              <Separator />
+              <MenuItem Header="{Binding ExportButtonText}" Command="{Binding ExportSelectedCommand}"
+                        AutomationProperties.AutomationId="ExportSelectedButton" />
+            </MenuFlyout>
+          </Button.Flyout>
         </Button>
-        <Button Margin="0,0,0,4" AutomationProperties.AutomationId="ExportSelectedButton" Classes="Primary" Command="{Binding ExportSelectedCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <PathIcon Width="14" Height="14" Data="M12 21 L12 8 M7 13 L12 8 L17 13 M4 4 L20 4" Foreground="{DynamicResource Brush.AccentText}" />
-            <TextBlock Text="{Binding ExportButtonText}" />
-          </StackPanel>
-        </Button>
-        </WrapPanel>
+        <Button Grid.Column="2" VerticalAlignment="Center" AutomationProperties.AutomationId="ReviewBrowserExportButton"
+                Classes="Primary" Content="{loc:Tr Browser.ReviewExport}" Command="{Binding ReviewExportCommand}"
+                ToolTip.Tip="{loc:Tr Browser.ReviewExport.Hint}" AutomationProperties.HelpText="{loc:Tr Browser.ReviewExport.Hint}" />
       </Grid>
     </Border>
   </Grid>

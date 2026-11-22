@@ -21,17 +21,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.22" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
-    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.22" Condition="'$(Configuration)' == 'Debug'" />
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2"
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.Diagnostics" Condition="'$(Configuration)' == 'Debug'" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="CommunityToolkit.WinUI.Notifications"
                       Condition="'$(TargetFramework)' == 'net10.0-windows10.0.18362.0'" />
     <!-- The notification helper accepts any newer System.Drawing.Common; pin the current runtime
          package so NuGet does not select its vulnerable 4.7-era minimum. -->
-    <PackageReference Include="System.Drawing.Common" Version="10.0.0"
+    <PackageReference Include="System.Drawing.Common"
                       Condition="'$(TargetFramework)' == 'net10.0-windows10.0.18362.0'" />
   </ItemGroup>
 

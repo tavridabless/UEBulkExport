@@ -46,6 +46,38 @@ public static class DialogService
         PickFileAsync("Dialog.PickLibrary", startPath,
             new FilePickerFileType(L["Dialog.Filter.Libraries"]) { Patterns = ["*.dll", "*.so", "*.dylib"] });
 
+    public static Task<string?> PickExportRecipeAsync() =>
+        PickFileAsync("Export.Recipe.PickFile", null, RecipeFileType());
+
+    public static Task<string?> SaveExportRecipeAsync() =>
+        SaveJsonAsync("Export.Recipe.SaveFile", "UEBulkExport.recipe.json", RecipeFileType());
+
+    public static Task<string?> PickCompareManifestAsync() =>
+        PickFileAsync("Compare.Manifest.Open", null, ManifestFileType());
+
+    public static Task<string?> SaveCompareManifestAsync() =>
+        SaveJsonAsync("Compare.Manifest.Save", "UEBulkExport.changes.json", ManifestFileType());
+
+    private static async Task<string?> SaveJsonAsync(string titleKey, string suggestedName, FilePickerFileType fileType)
+    {
+        if (Owner?.StorageProvider is not { } storage) return null;
+        var result = await storage.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = L[titleKey],
+            SuggestedFileName = suggestedName,
+            DefaultExtension = "json",
+            FileTypeChoices = [fileType],
+            ShowOverwritePrompt = true
+        });
+        return result?.TryGetLocalPath();
+    }
+
+    private static FilePickerFileType RecipeFileType() =>
+        new(L["Export.Recipe.FileType"]) { Patterns = ["*.json"] };
+
+    private static FilePickerFileType ManifestFileType() =>
+        new(L["Compare.Manifest.FileType"]) { Patterns = ["*.json"] };
+
     private static async Task<string?> PickFileAsync(string titleKey, string? startPath, FilePickerFileType type)
     {
         if (Owner?.StorageProvider is not { } storage) return null;

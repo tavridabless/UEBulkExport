@@ -34,6 +34,8 @@ public sealed partial class FolderNode : ObservableObject
     public long TotalBytes => _totalBytes >= 0 ? _totalBytes : _totalBytes = Files.Sum(f => f.Size) + Children.Sum(c => c.TotalBytes);
 
     public IEnumerable<GameFile> AllFiles => Files.Concat(Children.SelectMany(c => c.AllFiles));
+
+    public override string ToString() => Name;
 }
 
 /// <summary>One line in the file list: a sub-folder or a file in the current search scope.</summary>
@@ -88,11 +90,14 @@ public sealed partial class BrowserRow : ObservableObject
         OnPropertyChanged(nameof(TypeText));
         OnPropertyChanged(nameof(SizeText));
     }
+
+    public override string ToString() => Name;
 }
 
 public sealed record FilterChip(string Key, string LabelKey)
 {
     public string Label => Loc.Instance[LabelKey];
+    public override string ToString() => Label;
 }
 
 public sealed record ExtensionRow(string Extension, int Count, long Bytes)
@@ -124,6 +129,7 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     private int _matchingRowCount;
     private int _matchingFileCount;
     private long _matchingBytes;
+    private readonly List<int> _matchingPageStarts = [];
     private long _totalBytes;
     // Only the current scope is cached. Searching/changing type filters scans this array once,
     // without re-walking the tree or re-sorting on every keystroke.
@@ -159,7 +165,9 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     [ObservableProperty] private BrowserSortField _sortField;
     [ObservableProperty] private bool _sortDescending;
     [ObservableProperty] private string _clipboardStatus = "";
-    [ObservableProperty] private bool _hasData;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ReviewExportCommand))]
+    private bool _hasData;
     [ObservableProperty] private string _totalSummary = "";
     [ObservableProperty] private int _selectedCount;
     [ObservableProperty] private int _excludedCount;
@@ -170,10 +178,14 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     /// <summary>Raised by the export button: the paths to export, or null for the whole container.</summary>
     public event Action<IReadOnlySet<string>?>? ExportRequested;
 
+    /// <summary>Opens the export form with a snapshot of the current scope.</summary>
+    public event Action<IReadOnlySet<string>?>? ExportReviewRequested;
+
     public bool HasSelection => SelectedCount > 0 || ExcludedCount > 0;
     public string SelectedCountText => L.Format("Browser.SelectedCount", SelectedCount);
     public string SelectedSubText => L.Format("Browser.SelectedSub", ExcludedCount);
-    public string ExportButtonText => SelectedCount > 0 ? L["Browser.ExportSelected"] : L["Browser.ExportAll"];
+    public string ExportButtonText => SelectedCount > 0 ? L["Browser.ExportSelected"]
+        : ExcludedCount > 0 ? L["Browser.ExportRemaining"] : L["Browser.ExportAll"];
     public int MatchingRowCount => _matchingRowCount;
     public int PageNumber => _pageIndex + 1;
     public int PageCount => Math.Max(1, (_matchingRowCount - 1) / MaxRows + 1);
@@ -184,6 +196,8 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     public long MatchingBytes => _matchingBytes;
     public bool HasFileMatches => MatchingFileCount > 0;
     public string MatchesSummary => L.Format("Browser.Matches.Summary", MatchingFileCount, Format.Bytes(MatchingBytes));
+    public string LockedContainersSummary => Containers.Count(c => c.IsLocked) is var count and > 0
+        ? L.Format("Export.Aes.Required", count) : "";
     public string VisibleSelectionSummary => L.Format("Browser.Selection.Visible",
         Rows.Count(r => r.IsChecked), Rows.Count(r => r.IsExcluded));
     public string NameSortHeader => SortHeader("Browser.Column.Name", BrowserSortField.Name);
@@ -196,6 +210,7 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     // ---------------------------------------------------------------- details
 
     public bool HasDetail => FocusedRow is not null;
+    public bool DetailIsFolder => FocusedRow?.IsFolder == true;
     public string DetailName => FocusedRow?.Name ?? "";
     public string DetailKind => FocusedRow switch
     {
@@ -245,6 +260,7 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
         if (Roots.Count > 0) Roots[0].IsExpanded = true;
 
         TotalSummary = L.Format("Browser.Total", listing.TotalCount, Format.Bytes(listing.TotalBytes));
+        OnPropertyChanged(nameof(LockedContainersSummary));
         HasData = true;
         SelectedFolder = Roots.FirstOrDefault();
     }
@@ -256,6 +272,7 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
         Breadcrumb.Clear();
         Extensions.Clear();
         Containers.Clear();
+        OnPropertyChanged(nameof(LockedContainersSummary));
         _selected.Clear();
         _excluded.Clear();
         SelectedCount = ExcludedCount = 0;
@@ -264,6 +281,7 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
         _pageIndex = _matchingRowCount = 0;
         _matchingFileCount = 0;
         _matchingBytes = 0;
+        _matchingPageStarts.Clear();
         _scopeFiles = [];
         _scopeFolders = [];
         _cachedScopeFolder = null;
@@ -403,35 +421,51 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
 
     private void RefreshRows(bool resetPage = true)
     {
-        if (resetPage) _pageIndex = 0;
-        _matchingRowCount = 0;
-        _matchingFileCount = 0;
-        _matchingBytes = 0;
+        if (resetPage)
+        {
+            _pageIndex = 0;
+            _matchingRowCount = 0;
+            _matchingFileCount = 0;
+            _matchingBytes = 0;
+            _matchingPageStarts.Clear();
+        }
+
         var focusPath = FocusedRow?.Path;
         var focusIsFolder = FocusedRow?.IsFolder;
         if (SelectedFolder is null) { FocusedRow = null; _rows.Clear(); NotifyPaging(); return; }
         EnsureScope();
-        var rows = new List<BrowserRow>(Math.Min(MaxRows, _scopeFiles.Length + _scopeFolders.Length));
 
+        // Cache just the first match's offset for each page. Page changes recheck only their
+        // own slice of the sorted scope and keep the totals from the full filter pass.
+        var scopeRowCount = _scopeFolders.Length + _scopeFiles.Length;
+        var rowLimit = resetPage ? MaxRows : Math.Min(MaxRows, _matchingRowCount - _pageIndex * MaxRows);
+        var rows = new List<BrowserRow>(Math.Min(rowLimit, scopeRowCount));
         var search = Search.Trim();
-        var first = (long)_pageIndex * MaxRows;
-
-        bool OnPage() => _matchingRowCount >= first && _matchingRowCount < first + MaxRows;
-
-        foreach (var child in _scopeFolders)
+        var first = resetPage ? 0 : _matchingPageStarts[_pageIndex];
+        for (var index = first; index < scopeRowCount; index++)
         {
-            if (search.Length > 0 && !child.Name.Contains(search, StringComparison.OrdinalIgnoreCase)) continue;
-            if (OnPage()) rows.Add(new BrowserRow(this, child));
-            _matchingRowCount++;
-        }
+            var folder = index < _scopeFolders.Length ? _scopeFolders[index] : null;
+            var file = folder is null ? _scopeFiles[index - _scopeFolders.Length] : null;
+            if (folder is not null)
+            {
+                if (search.Length > 0 && !folder.Name.Contains(search, StringComparison.OrdinalIgnoreCase)) continue;
+            }
+            else if (!MatchesFile(file!, search)) continue;
 
-        foreach (var f in _scopeFiles)
-        {
-            if (!MatchesFile(f, search)) continue;
-            if (OnPage()) rows.Add(new BrowserRow(this, f));
-            _matchingRowCount++;
-            _matchingFileCount++;
-            _matchingBytes += f.Size;
+            if (resetPage)
+            {
+                if (_matchingRowCount % MaxRows == 0) _matchingPageStarts.Add(index);
+                _matchingRowCount++;
+                if (file is not null)
+                {
+                    _matchingFileCount++;
+                    _matchingBytes += file.Size;
+                }
+            }
+
+            if (rows.Count < rowLimit)
+                rows.Add(folder is not null ? new BrowserRow(this, folder) : new BrowserRow(this, file!));
+            if (!resetPage && rows.Count == rowLimit) break;
         }
 
         _rows.ReplaceWith(rows);
@@ -591,6 +625,7 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     private void RefreshDetails()
     {
         OnPropertyChanged(nameof(HasDetail));
+        OnPropertyChanged(nameof(DetailIsFolder));
         OnPropertyChanged(nameof(DetailName));
         OnPropertyChanged(nameof(DetailKind));
         OnPropertyChanged(nameof(DetailSize));
@@ -660,16 +695,21 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void ExportSelected()
+    private void ExportSelected() => ExportRequested?.Invoke(GetExportPaths());
+
+    [RelayCommand(CanExecute = nameof(HasData))]
+    private void ReviewExport()
     {
-        IReadOnlySet<string>? paths = null;
+        if (HasData) ExportReviewRequested?.Invoke(GetExportPaths());
+    }
 
+    private IReadOnlySet<string>? GetExportPaths()
+    {
         if (_selected.Count > 0)
-            paths = _selected.Where(p => !_excluded.Contains(p)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        else if (_excluded.Count > 0)
-            paths = _all.Select(f => f.Path).Where(p => !_excluded.Contains(p)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        ExportRequested?.Invoke(paths);
+            return _selected.Where(p => !_excluded.Contains(p)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return _excluded.Count > 0
+            ? _all.Select(f => f.Path).Where(p => !_excluded.Contains(p)).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            : null;
     }
 
     [RelayCommand]
@@ -685,6 +725,7 @@ public sealed partial class BrowserViewModel : ObservableObject, IDisposable
         RefreshDetails();
         OnPropertyChanged(nameof(PagingSummary));
         OnPropertyChanged(nameof(MatchesSummary));
+        OnPropertyChanged(nameof(LockedContainersSummary));
         NotifySort();
     }
 

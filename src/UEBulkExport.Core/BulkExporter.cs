@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using CUE4Parse.Encryption.Aes;
+using System.Text.RegularExpressions;
 using CUE4Parse.FileProvider;
 using CUE4Parse.FileProvider.Objects;
 using CUE4Parse.MappingsProvider.Usmap;
@@ -11,7 +11,6 @@ using CUE4Parse.UE4.Assets.Exports.Sound;
 using CUE4Parse.UE4.Assets.Exports.Texture;
 using CUE4Parse.UE4.Assets.Exports.Wwise;
 using CUE4Parse.UE4.IO.Objects;
-using CUE4Parse.UE4.Objects.Core.Misc;
 using CUE4Parse.UE4.Objects.Engine;
 using CUE4Parse.UE4.Objects.Engine.Animation;
 using CUE4Parse.UE4.Versions;
@@ -22,26 +21,26 @@ using CUE4Parse_Conversion.Sounds;
 
 namespace UEBulkExport;
 
-public sealed class BulkExporter : IDisposable
+public sealed partial class BulkExporter : IDisposable
 {
+    private const long SmallRawEntryBytes = 1024 * 1024;
+
     private readonly Options _options;
     private readonly ExportOptions _exportOptions;
     private readonly ExportOptions _animExportOptions;
     private readonly ExportOptions _worldExportOptions;
     private readonly DefaultFileProvider _provider;
     private readonly ConcurrentBag<ExportError> _errors = [];
-    private readonly HashSet<string> _alreadyDone = new(StringComparer.OrdinalIgnoreCase);
-    private readonly string _resumeProfile;
     private ResumeJournal? _journal;
-    private bool _indexLoaded;
     private string? _stagingRun;
     private FileStream? _outputLock;
     private RawInputByteBudget? _rawInputBudget;
 
     private int _processed, _exported, _skipped, _failed, _failedObjects, _written, _unsupported, _retocPackages;
 
-    private readonly record struct ExportError(string Path, string Exception, string Message);
+    private readonly record struct ExportError(string Path, string Exception, string Message, string? InputPath);
     private readonly record struct WorkResult(bool Wrote, bool HadErrors, IReadOnlyList<string>? Outputs = null);
+    private static readonly string[] LegacyPayloadExtensions = [".uexp", ".ubulk", ".uptnl", ".m.ubulk"];
 
     /// <summary>Raised every few seconds while a run is in progress, and once more when it ends.</summary>
     public event Action<ExportProgress>? ProgressChanged;
@@ -58,7 +57,6 @@ public sealed class BulkExporter : IDisposable
         _exportOptions = options.ToExportOptions();
         _animExportOptions = options.ToAnimExportOptions();
         _worldExportOptions = options.ToWorldExportOptions();
-        _resumeProfile = ResumeJournal.CreateProfile(options);
 
         _provider = new DefaultFileProvider(
             options.PaksDirectory,
@@ -71,7 +69,7 @@ public sealed class BulkExporter : IDisposable
     public void Mount()
     {
         _provider.Initialize();
-        SubmitKeys();
+        ContainerAesKeys.Submit(_provider, _options.AesKeys);
         _provider.Mount();
 
         Log.Info($"mounted {_provider.MountedVfs.Count} container(s), {_provider.Files.Count} entries");
@@ -122,23 +120,6 @@ public sealed class BulkExporter : IDisposable
             Log.Warn($"  {vfs.Name} (key guid {vfs.EncryptionKeyGuid})");
     }
 
-    private void SubmitKeys()
-    {
-        var keys = new List<KeyValuePair<FGuid, FAesKey>>
-        {
-            // The zero GUID covers unencrypted containers and those left on the default key.
-            new(new FGuid(), new FAesKey(new byte[32]))
-        };
-
-        foreach (var raw in _options.AesKeys)
-        {
-            var (guid, key) = Cli.SplitAesKey(raw);
-            keys.Add(new KeyValuePair<FGuid, FAesKey>(guid is null ? new FGuid() : new FGuid(guid), new FAesKey(key)));
-        }
-
-        _provider.SubmitKeys(keys);
-    }
-
     /// <summary>
     /// Shipping UE5 packages store properties unversioned, so without a mappings file nothing at
     /// all can be deserialized. Find that out on one package up front rather than after ten
@@ -178,18 +159,24 @@ public sealed class BulkExporter : IDisposable
 
     // ------------------------------------------------------------------ selection
 
-    public IReadOnlyList<GameFile> SelectFiles()
+    public IReadOnlyList<GameFile> SelectFiles(CancellationToken cancellationToken = default)
     {
         var include = Cli.CompileFilter(_options.IncludeRegex, "--include");
         var exclude = Cli.CompileFilter(_options.ExcludeRegex, "--exclude");
 
+        cancellationToken.ThrowIfCancellationRequested();
         var selected = _provider.Files.Values
             .DistinctBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
-            .Where(f => include is null || include.IsMatch(f.Path))
-            .Where(f => exclude is null || !exclude.IsMatch(f.Path))
-            .Where(f => _options.SelectedPaths is null || _options.SelectedPaths.Contains(f.Path))
+            .Where(file =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return (_options.SelectedPaths is null || _options.SelectedPaths.Contains(file.Path)) &&
+                       (include is null || Matches(include, file.Path, "--include")) &&
+                       (exclude is null || !Matches(exclude, file.Path, "--exclude"));
+            })
             .OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (selected.Count == 0 && (include is not null || exclude is not null || _options.SelectedPaths is not null))
             throw new UserFacingException(
@@ -201,6 +188,16 @@ public sealed class BulkExporter : IDisposable
                 "Run --mode list to inspect the container.");
 
         return selected;
+    }
+
+    private static bool Matches(Regex filter, string path, string argument)
+    {
+        try { return filter.IsMatch(path); }
+        catch (RegexMatchTimeoutException)
+        {
+            throw new UserFacingException($"The {argument} filter took too long to match a container path.",
+                "Simplify the regular expression, or use --paths-file to select entries by exact path.");
+        }
     }
 
     public static ContainerListing GetListing(IReadOnlyCollection<GameFile> files)
@@ -259,10 +256,10 @@ public sealed class BulkExporter : IDisposable
     /// <summary>Works out how each entry would be treated, without touching the disk.</summary>
     public ExportPlan BuildPlan(IReadOnlyList<GameFile> files)
     {
-        LoadIndex();
-        var work = files.Where(ShouldProcess).ToList();
+        var completed = ReadIndex();
+        var work = files.Where(file => ShouldProcess(file, _options, completed)).ToList();
 
-        var alreadyDone = _options.Resume ? files.Count(f => _alreadyDone.Contains(f.Path)) : 0;
+        var alreadyDone = files.Count(f => completed.Contains(f.Path));
 
         return new ExportPlan(
             _options.Mode,
@@ -286,10 +283,10 @@ public sealed class BulkExporter : IDisposable
         };
     }
 
-    public void PrintPlan(IReadOnlyList<GameFile> files)
-    {
-        var plan = BuildPlan(files);
+    public void PrintPlan(IReadOnlyList<GameFile> files) => PrintPlan(BuildPlan(files));
 
+    public void PrintPlan(ExportPlan plan)
+    {
         Log.Raw("");
         Log.Raw("dry run - nothing will be written");
         Log.Raw("");
@@ -345,22 +342,57 @@ public sealed class BulkExporter : IDisposable
             ? new RawInputByteBudget(_options.MaxInFlightBytes)
             : null;
 
-        Directory.CreateDirectory(_options.OutputDirectory);
-        OpenStagingRun();
-        OpenIndex();
+        List<GameFile> work;
+        int preSkipped;
+        bool cancelled;
+        Stopwatch clock;
 
-        var work = files.Where(ShouldProcess).ToList();
-        var preSkipped = files.Count - work.Count;
-        if (_options.Mode == ExportMode.Full && _options.ExportMaterials && _options.Threads > 1)
-            Log.Warn("parallel material export may contend on shared dependencies; rerun with --threads 1 to resume only incomplete packages");
+        try
+        {
+            Directory.CreateDirectory(_options.OutputDirectory);
+            OpenStagingRun();
+            var profile = ResumeJournal.CreateProfile(_options);
+            var completed = ReadIndex(profile);
+            _journal = new ResumeJournal(IndexPath, _options.OutputDirectory, profile, overwrite: !_options.Resume);
 
-        Log.Info($"{work.Count} entries to process ({preSkipped} skipped by mode/resume), {_options.Threads} threads");
-        if (_rawInputBudget is not null)
-            Log.Info($"raw source-byte budget: {_options.MaxInFlightBytes / 1048576.0:N1} MiB; oversized entries run alone (not a total RAM limit)");
+            work = files.Where(file => ShouldProcess(file, _options, completed)).ToList();
+            preSkipped = files.Count - work.Count;
+            if (_options.Mode == ExportMode.Full && _options.ExportMaterials && _options.Threads > 1)
+                Log.Warn("parallel material export may contend on shared dependencies; rerun with --threads 1 to resume only incomplete packages");
 
-        var clock = Stopwatch.StartNew();
-        var cancelled = false;
+            Log.Info($"{work.Count} entries to process ({preSkipped} skipped by mode/resume), {_options.Threads} threads");
+            if (_rawInputBudget is not null)
+                Log.Info($"raw source-byte budget: {_options.MaxInFlightBytes / 1048576.0:N1} MiB; oversized entries run alone (not a total RAM limit)");
 
+            clock = Stopwatch.StartNew();
+            cancelled = await ProcessWorkAsync(work, clock, ct);
+            clock.Stop();
+            WriteErrorReport();
+        }
+        finally
+        {
+            CloseRun();
+        }
+
+        var summary = new ExportSummary(
+            clock.Elapsed, _processed, _exported, _written, _retocPackages,
+            _skipped + preSkipped, _unsupported, _failed, _failedObjects,
+            Path.GetFullPath(_options.OutputDirectory), cancelled)
+        {
+            RawInputBudget = _rawInputBudget?.Snapshot(),
+            FailedInputPaths = _errors.Select(error => error.InputPath).OfType<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase).ToArray()
+        };
+
+        ProgressChanged?.Invoke(Snapshot(work.Count, clock, "done"));
+        PrintSummary(summary);
+
+        return summary;
+    }
+
+    private async Task<bool> ProcessWorkAsync(List<GameFile> work, Stopwatch clock, CancellationToken ct)
+    {
         try
         {
             await using var progress = StartProgressReporter(work.Count, clock);
@@ -368,6 +400,7 @@ public sealed class BulkExporter : IDisposable
             var individualWork = _options.Mode == ExportMode.Legacy
                 ? work.Where(f => !(f.IsUePackage && f is FIoStoreEntry)).ToList()
                 : work;
+            var batchRawCheckpoints = _options.Mode == ExportMode.Raw && _options.Threads > 1;
 
             await Parallel.ForEachAsync(individualWork,
                 new ParallelOptions { MaxDegreeOfParallelism = _options.Threads, CancellationToken = ct },
@@ -379,7 +412,15 @@ public sealed class BulkExporter : IDisposable
                         if (result.Wrote) Interlocked.Increment(ref _exported);
                         else Interlocked.Increment(ref _skipped);
 
-                        if (!result.HadErrors) MarkDone(file.Path, result.Outputs ?? []);
+                        if (!result.HadErrors && _journal is { } journal)
+                        {
+                            // Journal flushes matter most when copying many small files. Keep
+                            // other entries on the synchronous path without an extra queue hop.
+                            if (batchRawCheckpoints && file.Size is >= 0 and <= SmallRawEntryBytes)
+                                await journal.MarkDoneAsync(file.Path, result.Outputs ?? []);
+                            else
+                                journal.MarkDone(file.Path, result.Outputs ?? []);
+                        }
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested)
                     {
@@ -388,7 +429,7 @@ public sealed class BulkExporter : IDisposable
                     catch (Exception e)
                     {
                         Interlocked.Increment(ref _failed);
-                        RecordError(file.Path, e);
+                        RecordError(file.Path, e, file.Path);
                     }
                     finally
                     {
@@ -400,34 +441,15 @@ public sealed class BulkExporter : IDisposable
             // cancelled retoc never discards progress that could already have been checkpointed.
             if (_options.Mode == ExportMode.Legacy)
                 await ConvertIoStoreAsync(work, ct);
+
+            return false;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Stop cleanly: whatever finished is in the index, so the next run resumes from here.
-            cancelled = true;
             Log.Warn("cancelled - finished entries are recorded, run the same command again to resume");
+            return true;
         }
-        finally
-        {
-            clock.Stop();
-            CloseIndex();
-            CloseStagingRun();
-        }
-
-        WriteErrorReport();
-
-        var summary = new ExportSummary(
-            clock.Elapsed, _processed, _exported, _written, _retocPackages,
-            _skipped + preSkipped, _unsupported, _failed, _failedObjects,
-            Path.GetFullPath(_options.OutputDirectory), cancelled)
-        {
-            RawInputBudget = _rawInputBudget?.Snapshot()
-        };
-
-        ProgressChanged?.Invoke(Snapshot(work.Count, clock, "done"));
-        PrintSummary(summary);
-
-        return summary;
     }
 
     private async Task ConvertIoStoreAsync(IReadOnlyList<GameFile> work, CancellationToken ct)
@@ -444,42 +466,38 @@ public sealed class BulkExporter : IDisposable
             Log.Info($"converting {packages.Count} IoStore package(s) with retoc");
             await Retoc.ConvertAsync(executable, _options, _options.PaksDirectory, staging, ct);
 
-            var stagedFiles = Directory.EnumerateFiles(staging, "*", SearchOption.AllDirectories).ToList();
-            var stagedByRelativePath = stagedFiles.ToDictionary(
-                path => RelativeStagingPath(staging, path), StringComparer.OrdinalIgnoreCase);
-            var packageFiles = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-            var converted = new List<GameFile>();
+            var stagedByRelativePath = Directory.EnumerateFiles(staging, "*", SearchOption.AllDirectories)
+                .ToDictionary(path => Path.GetRelativePath(staging, path), StringComparer.OrdinalIgnoreCase);
+            var sharedOutputs = stagedByRelativePath.Where(entry => !IsLegacyPackageOutput(entry.Key))
+                .Select(entry => entry.Value).ToList();
+            var sharedPublished = false;
 
+            // retoc converts full containers, even when only one checkpoint needs repair. Leave
+            // already checkpointed package outputs in place and publish only the remaining work.
             foreach (var file in packages)
             {
+                ct.ThrowIfCancellationRequested();
                 var mainRelative = file.Path.Replace('/', Path.DirectorySeparatorChar);
-                if (!stagedByRelativePath.ContainsKey(mainRelative))
+                if (!stagedByRelativePath.TryGetValue(mainRelative, out var main))
                 {
                     // One package retoc could not convert must not throw away all the others.
                     _failed++;
                     _processed++;
                     checkpointed++;
-                    RecordError(file.Path, new IOException("retoc did not create this package"));
+                    RecordError(file.Path, new IOException("retoc did not create this package"), file.Path);
                     continue;
                 }
 
-                packageFiles[file.Path] = PackageOutputsInStaging(staging, mainRelative);
-                converted.Add(file);
-            }
-
-            var outputs = PublishStagingTree(staging);
-            var claimed = packageFiles.Values.SelectMany(paths => paths)
-                .Select(path => RelativeStagingPath(staging, path))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var common = outputs.Where(path => !claimed.Contains(
-                Path.GetRelativePath(_options.OutputDirectory, path))).ToList();
-
-            for (var index = 0; index < converted.Count; index++)
-            {
-                var file = converted[index];
-                var artifacts = packageFiles[file.Path].Select(path =>
-                    Path.Combine(_options.OutputDirectory, Path.GetRelativePath(staging, path))).ToList();
-                if (index == 0) artifacts.AddRange(common);
+                var artifacts = new List<string>();
+                foreach (var extension in LegacyPayloadExtensions)
+                    if (stagedByRelativePath.TryGetValue(Path.ChangeExtension(mainRelative, extension), out var payload))
+                        artifacts.Add(PublishStagedFile(staging, payload));
+                artifacts.Add(PublishStagedFile(staging, main));
+                if (!sharedPublished)
+                {
+                    artifacts.AddRange(sharedOutputs.Select(path => PublishStagedFile(staging, path)));
+                    sharedPublished = true;
+                }
 
                 MarkDone(file.Path, artifacts);
                 _retocPackages++;
@@ -543,8 +561,6 @@ public sealed class BulkExporter : IDisposable
         Log.Info($"  output            : {s.OutputDirectory}");
     }
 
-    private bool ShouldProcess(GameFile file) => ShouldProcess(file, _options, _alreadyDone);
-
     /// <summary>Pure so it can be tested without a container: which entries a mode touches at all.</summary>
     internal static bool ShouldProcess(GameFile file, Options options, ISet<string> alreadyDone)
     {
@@ -594,9 +610,6 @@ public sealed class BulkExporter : IDisposable
 
         if (!file.IsUePackage)
         {
-            if (file.IsUePackagePayload && !_options.WriteRawPackages) return default;
-            if (!_options.WriteRawMisc) return default;
-
             var path = OutputPath(file.Path);
             return new WorkResult(WriteBytes(path, file.Read()), false, [path]);
         }
@@ -734,7 +747,7 @@ public sealed class BulkExporter : IDisposable
                     Interlocked.Increment(ref _failedObjects);
                     hadErrors = true;
                     RecordError($"{containerPath} :: {result.ObjectPath}",
-                        result.Error ?? new Exception("exporter reported failure"));
+                        result.Error ?? new Exception("exporter reported failure"), containerPath);
                     continue;
                 }
 
@@ -765,7 +778,8 @@ public sealed class BulkExporter : IDisposable
     /// </summary>
     private async Task<WorkResult> ExportSoundsAsync(UObject[] exports, GameFile file, CancellationToken ct)
     {
-        var directory = Path.GetDirectoryName(OutputPath(file.Path))!;
+        var outputRoot = Path.GetFullPath(_options.OutputDirectory);
+        var directory = Path.GetDirectoryName(Path.GetRelativePath(outputRoot, OutputPath(file.Path)))!;
         var wrote = false;
         var hadErrors = false;
         var outputs = new List<string>();
@@ -777,9 +791,10 @@ public sealed class BulkExporter : IDisposable
             SoundDecoder.Decode(export, true, out var format, out var data);
             if (data is null || data.Length == 0) continue;
 
-            var extension = string.IsNullOrWhiteSpace(format) ? "bin" : format.ToLowerInvariant().TrimStart('.');
-            var basePath = Path.Combine(directory, SafeName(export.Name));
-            var soundPath = $"{basePath}.{extension}";
+            var extension = string.IsNullOrWhiteSpace(format) ? "" : SafeName(format.ToLowerInvariant().TrimStart('.'));
+            if (extension.Length == 0) extension = "bin";
+            var name = SafeName(export.Name);
+            var soundPath = OutputPath(Path.Combine(directory, $"{name}.{extension}"));
 
             wrote |= WriteBytes(soundPath, data);
             outputs.Add(soundPath);
@@ -787,7 +802,7 @@ public sealed class BulkExporter : IDisposable
             // "bin" means the format is unknown; vgmstream would only fail on it on every run.
             if (_options.ConvertAudio && extension is not ("wav" or "ogg" or "bin"))
             {
-                var wavPath = $"{basePath}.wav";
+                var wavPath = OutputPath(Path.Combine(directory, $"{name}.wav"));
                 var conversion = await Audio.TryConvertToWavAsync(soundPath, wavPath, ct);
                 if (conversion == AudioConversionStatus.Converted)
                 {
@@ -799,7 +814,7 @@ public sealed class BulkExporter : IDisposable
                     hadErrors = true;
                     Interlocked.Increment(ref _failedObjects);
                     RecordError($"{file.Path} :: {export.Name}",
-                        new IOException("vgmstream did not produce a complete WAV file"));
+                        new IOException("vgmstream did not produce a complete WAV file"), file.Path);
                 }
             }
         }
@@ -809,8 +824,34 @@ public sealed class BulkExporter : IDisposable
 
     // ------------------------------------------------------------------ output plumbing
 
-    private string OutputPath(string containerPath) =>
-        Path.Combine(_options.OutputDirectory, containerPath.Replace('/', Path.DirectorySeparatorChar));
+    private string OutputPath(string containerPath)
+    {
+        if (!Path.IsPathRooted(containerPath))
+        {
+            var root = Path.GetFullPath(_options.OutputDirectory);
+            var output = Path.GetFullPath(containerPath, root);
+            var relative = Path.GetRelativePath(root, output);
+            if (IsChildPath(relative) && !IsControlPath(relative)) return output;
+        }
+
+        throw new IOException($"The entry path cannot be written in the export folder: {containerPath}");
+    }
+
+    private static bool IsChildPath(string relative) => relative is not ("." or "..") &&
+        !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
+        !Path.IsPathRooted(relative);
+
+    private static bool IsControlPath(string relative)
+    {
+        var separator = relative.IndexOf(Path.DirectorySeparatorChar);
+        var top = separator < 0 ? relative.AsSpan() : relative.AsSpan(0, separator);
+        const StringComparison comparison = StringComparison.OrdinalIgnoreCase;
+
+        return top.Equals(".uebulk-staging", comparison) || top.Equals(".uebulk-export.lock", comparison) ||
+               top.Equals("errors.csv", comparison) || top.Equals("UEBulkExport.log", comparison) ||
+               top.Equals("_selection.txt", comparison) ||
+               (top.StartsWith("_completed.", comparison) && top.EndsWith(".txt", comparison));
+    }
 
     /// <summary>Object names come from the asset and can carry characters the filesystem rejects.</summary>
     internal static string SafeName(string name)
@@ -834,21 +875,17 @@ public sealed class BulkExporter : IDisposable
     private string IndexPath => Path.Combine(_options.OutputDirectory,
         $"_completed.{_options.Mode.ToString().ToLowerInvariant()}.txt");
 
-    private void OpenIndex()
+    private HashSet<string> ReadIndex(string? profile = null)
     {
-        if (_options.Resume) LoadIndex();
-        _journal = new ResumeJournal(IndexPath, _options.OutputDirectory, _resumeProfile,
-            overwrite: !_options.Resume);
-    }
+        if (!_options.Resume || !File.Exists(IndexPath))
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-    private void LoadIndex()
-    {
-        if (_indexLoaded || !_options.Resume) return;
-        _indexLoaded = true;
-        _alreadyDone.UnionWith(ResumeJournal.Load(IndexPath, _options.OutputDirectory, _resumeProfile));
+        var completed = ResumeJournal.Load(IndexPath, _options.OutputDirectory,
+            profile ?? ResumeJournal.CreateProfile(_options));
+        if (completed.Count > 0)
+            Log.Info($"resuming: {completed.Count} entries already finished (pass --overwrite to redo them)");
 
-        if (_alreadyDone.Count > 0)
-            Log.Info($"resuming: {_alreadyDone.Count} entries already finished (pass --overwrite to redo them)");
+        return completed;
     }
 
     private void MarkDone(string containerPath, IEnumerable<string> outputPaths)
@@ -856,10 +893,14 @@ public sealed class BulkExporter : IDisposable
         _journal?.MarkDone(containerPath, outputPaths);
     }
 
-    private void CloseIndex()
+    private void CloseRun()
     {
-        _journal?.Dispose();
-        _journal = null;
+        try { _journal?.Dispose(); }
+        finally
+        {
+            _journal = null;
+            CloseStagingRun();
+        }
     }
 
     // ------------------------------------------------------------------ crash-safe staging
@@ -911,25 +952,18 @@ public sealed class BulkExporter : IDisposable
             ? Path.GetFullPath(stagedPath)
             : Path.GetFullPath(stagedPath, stagingRoot);
         var relative = Path.GetRelativePath(Path.GetFullPath(stagingRoot), staged);
-        if (relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar,
-                StringComparison.Ordinal) || Path.IsPathRooted(relative))
+        if (!IsChildPath(relative))
             throw new IOException($"Converter wrote outside its staging directory: {stagedPath}");
 
-        var output = Path.Combine(_options.OutputDirectory, relative);
+        var output = OutputPath(relative);
         AtomicFile.Publish(staged, output);
         return output;
     }
 
-    private IReadOnlyList<string> PublishStagingTree(string stagingRoot)
-    {
-        var outputs = new List<string>();
-        foreach (var path in Directory.EnumerateFiles(stagingRoot, "*", SearchOption.AllDirectories).ToList())
-            outputs.Add(PublishStagedFile(stagingRoot, path));
-        return outputs;
-    }
-
     private void CloseStagingRun()
     {
+        if (_outputLock is null) return;
+
         if (_stagingRun is not null) TryDeleteDirectory(_stagingRun);
         _stagingRun = null;
 
@@ -941,7 +975,7 @@ public sealed class BulkExporter : IDisposable
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
 
-        _outputLock?.Dispose();
+        _outputLock.Dispose();
         _outputLock = null;
     }
 
@@ -952,28 +986,21 @@ public sealed class BulkExporter : IDisposable
         catch (UnauthorizedAccessException) { }
     }
 
-    private static string RelativeStagingPath(string stagingRoot, string path) =>
-        Path.GetRelativePath(Path.GetFullPath(stagingRoot), Path.GetFullPath(path));
-
-    private static IReadOnlyList<string> PackageOutputsInStaging(string stagingRoot, string mainRelativePath)
+    private static bool IsLegacyPackageOutput(string path)
     {
-        var mainPath = Path.Combine(stagingRoot, mainRelativePath);
-        var directory = Path.GetDirectoryName(mainPath)!;
-        var stem = Path.GetFileNameWithoutExtension(mainPath);
-        var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { ".uasset", ".umap", ".uexp", ".ubulk", ".uptnl" };
-
-        return Directory.EnumerateFiles(directory, stem + ".*")
-            .Where(path => extensions.Contains(Path.GetExtension(path)))
-            .ToList();
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".uasset", StringComparison.OrdinalIgnoreCase) ||
+               extension.Equals(".umap", StringComparison.OrdinalIgnoreCase) ||
+               LegacyPayloadExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
     }
 
     // ------------------------------------------------------------------ diagnostics
 
-    private void RecordError(string path, Exception e)
+    private void RecordError(string path, Exception e, string? inputPath = null)
     {
-        var message = e.Message.Split('\n')[0].Replace('"', '\'').Trim();
-        _errors.Add(new ExportError(path, e.GetType().Name, message));
+        if (!ShouldRecordSampleError()) return;
+        var message = e.Message.Split('\n')[0].Trim();
+        _errors.Add(new ExportError(path, e.GetType().Name, message, inputPath));
 
         if (_options.Verbose) Log.Error($"{path}: {e.GetType().Name}: {message}");
     }
@@ -987,11 +1014,21 @@ public sealed class BulkExporter : IDisposable
             return;
         }
 
-        using (var writer = new StreamWriter(path, append: false))
+        var temporary = AtomicFile.CreateTemporaryPath(path);
+        try
         {
-            writer.WriteLine("path,exception,message");
-            foreach (var error in _errors.OrderBy(e => e.Path, StringComparer.Ordinal))
-                writer.WriteLine($"\"{error.Path}\",\"{error.Exception}\",\"{error.Message}\"");
+            using (var writer = new StreamWriter(temporary))
+            {
+                writer.WriteLine("path,exception,message");
+                foreach (var error in _errors.OrderBy(e => e.Path, StringComparer.Ordinal))
+                    writer.WriteLine($"{CsvField(error.Path)},{CsvField(error.Exception)},{CsvField(error.Message)}");
+            }
+
+            AtomicFile.Publish(temporary, path);
+        }
+        finally
+        {
+            AtomicFile.TryDelete(temporary);
         }
 
         Log.Raw("");
@@ -1002,6 +1039,8 @@ public sealed class BulkExporter : IDisposable
                      .Take(5))
             Log.Warn($"  [{group.Count(),6}] {group.Key}");
     }
+
+    private static string CsvField(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
 
     private ExportProgress Snapshot(int total, Stopwatch clock, string phase)
     {
@@ -1034,8 +1073,7 @@ public sealed class BulkExporter : IDisposable
 
     public void Dispose()
     {
-        CloseIndex();
-        CloseStagingRun();
-        _provider.Dispose();
+        try { CloseRun(); }
+        finally { _provider.Dispose(); }
     }
 }

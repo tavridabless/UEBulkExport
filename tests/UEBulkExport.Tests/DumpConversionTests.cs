@@ -127,6 +127,7 @@ public sealed class DumpConversionTests
     [InlineData("/Game", "/Game")]
     [InlineData("/Game/ConvertedDump/", "/Game/ConvertedDump")]
     [InlineData("\\Game\\Monsters", "/Game/Monsters")]
+    [InlineData("/game/Asset-Pack", "/Game/Asset-Pack")]
     public void NormalizeDestination_accepts_Unreal_content_paths(string value, string expected)
     {
         Assert.Equal(expected, DumpConversionService.NormalizeDestination(value));
@@ -135,6 +136,9 @@ public sealed class DumpConversionTests
     [Theory]
     [InlineData("Content/Converted")]
     [InlineData("/Engine/Converted")]
+    [InlineData("/Game/Migrated//Meshes")]
+    [InlineData("/Game/Invalid Folder")]
+    [InlineData("/Game/Mesh.uasset")]
     [InlineData("")]
     public void NormalizeDestination_rejects_non_Game_paths(string value)
     {
@@ -169,6 +173,19 @@ public sealed class DumpConversionTests
             "UnrealEditor-Cmd.exe");
 
         Assert.Equal("5.8", DumpConversionService.DetectTargetVersion("", editor));
+    }
+
+    [Theory]
+    [InlineData("[]", "")]
+    [InlineData("{\"EngineAssociation\":false}", "")]
+    [InlineData("{\"EngineAssociation\":\" 5.8 \"}", "5.8")]
+    public void Project_discovery_handles_unexpected_descriptor_shapes(string descriptor, string expected)
+    {
+        using var temp = new TempDir();
+        var project = temp.File("Target.uproject");
+        File.WriteAllText(project, descriptor);
+
+        Assert.Equal(expected, UEBulkExport.Gui.Services.ConversionPathDiscovery.ReadEngineAssociation(project));
     }
 
     [Fact]
@@ -262,9 +279,11 @@ public sealed class DumpConversionTests
         File.WriteAllText(readOnly, "map");
         File.SetAttributes(readOnly, FileAttributes.ReadOnly);
         var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Bad.uasset" };
+        var work = temp.Dir("Work");
+        var existingFile = temp.File("Work", "Source", "Keep.txt");
 
         string root;
-        using (var mirror = DumpConversionService.SourceMirror.Create(source, temp.Dir("Work"), excluded, default))
+        using (var mirror = DumpConversionService.SourceMirror.Create(source, work, excluded, default))
         {
             root = mirror.Root;
             Assert.True(File.Exists(Path.Combine(root, "Good.uasset")));
@@ -276,6 +295,7 @@ public sealed class DumpConversionTests
         }
 
         Assert.False(Directory.Exists(root));
+        Assert.True(File.Exists(existingFile));
         Assert.Equal("good", File.ReadAllText(Path.Combine(source, "Good.uasset")));
         Assert.Equal("bad", File.ReadAllText(Path.Combine(source, "Bad.uasset")));
         Assert.True(File.GetAttributes(readOnly).HasFlag(FileAttributes.ReadOnly));

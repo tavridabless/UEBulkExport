@@ -237,6 +237,7 @@ public sealed class CliAesKeyTests
     {
         var e = Assert.Throws<UserFacingException>(() => Cli.ValidateAesKey(raw));
         Assert.Contains("not a valid AES key", e.Headline);
+        if (raw.Length > 0) Assert.DoesNotContain(raw, e.Headline);
     }
 
     [Fact]
@@ -384,6 +385,18 @@ public sealed class CliPrepareTests : IDisposable
     private readonly TempDir _tmp = new();
 
     public void Dispose() => _tmp.Dispose();
+
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("--version")]
+    public void Informational_switch_text_is_accepted_as_a_filter_value(string pattern)
+    {
+        _tmp.File("x.pak");
+        var options = Cli.Parse(["--paks", _tmp.Path, "--mode", "list", "--exclude", pattern]);
+
+        Assert.NotNull(options);
+        Assert.Equal(pattern, options.ExcludeRegex);
+    }
 
     [Fact]
     public void Missing_paks_throws()

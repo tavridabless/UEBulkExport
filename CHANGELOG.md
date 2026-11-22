@@ -6,8 +6,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-22
+
 ### Added
 
+- Run a control export by asset type and review actual conversion results in an isolated folder.
+- Compare two builds by virtual path and size, or verify equal-size entries by SHA-256. Review
+  added and modified entries in Raw export.
+- Save and load portable export recipes. Supply source and output folders, local tools and
+  AES keys separately when applying a recipe.
+- Group build differences into packages and save a portable selection tied to verified archive
+  fingerprints. Apply the manifest with local sources and AES keys to plan or export its exact
+  file selection.
+- Report requested and achieved sample coverage for each asset type.
+- Recognize changed sources during repeated migration and optionally reimport only those assets.
+- Review the Browser selection and exclusions on the Export page before starting.
+- Select the specific input files with errors from the export summary and retry them with
+  the current options.
 - Added a full-trust desktop plugin API and plugin manager. Manifest metadata is discovered without
   executing DLLs; plugins are disabled by default, enabled per user, loaded after restart, and can
   add navigation pages or grant host capabilities. Both application-local and per-user plugin
@@ -16,8 +31,33 @@ All notable changes to this project are documented here. The format follows
   and immediately signal when conversion pauses for the user's decision. Clicking a notification
   restores the window on the relevant page; notifications can be disabled in Settings.
 
+### Changed
+
+- Reduce the number of controls shown on Export, Browser and Compare. Keep recipes, selection
+  actions, performance details and less frequently used options in menus or expandable sections.
+- Keep marked comparison rows when changing search and change-type filters.
+
 ### Fixed
 
+- Catch selective Legacy IoStore requests before output creation and offer the Exact copy mode.
+
+- Try AES candidates in order so repeated keys for a container cannot race to mount it.
+
+- Clear Browser entries and export selections when the source changes, and discard results from
+  superseded scans. Folder rows can be opened with Enter or with the details panel button.
+- Update the filtered log incrementally as messages arrive, and use localized accessible names
+  for navigation, export options and Browser controls.
+- Preserve package payloads with `--raw-packages --no-raw-misc`, refresh resume state under the
+  output lock, and publish a CSV report with correctly escaped fields.
+- Preserve completed IoStore package files when resuming an export to repair a missing payload.
+  Clarify the use of retoc version inference for Unreal Engine 5.8 and later.
+- Share a durable journal flush across concurrent small raw entries and avoid rescanning all
+  Browser results while paging through an existing filter.
+- Keep list mode from creating an output directory, omit invalid AES values from diagnostics,
+  and handle flag-shaped filter values as arguments.
+- Scope migration checkpoints to their destination and isolate each temporary source copy.
+- Pin the patched ImageSharp 3.2.0 dependency and verify the native animation library in the
+  installer smoke test.
 - Windows completion and error messages now use real toast notifications retained in Action
   Center. The notification-area balloon remains as a fallback, and Settings has a test button.
 - Plugin switches now stay in sync after resetting settings, status colors distinguish errors and
@@ -268,9 +308,10 @@ First release.
 - A UE4SS mod under `tools/` that dumps a `.usmap` on a timer, for keyboards without a numeric
   keypad.
 
-[Unreleased]: https://github.com/tavridabless/UEBulkExport/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/tavridabless/UEBulkExport/compare/v2.2.0...HEAD
 [1.0.0]: https://github.com/tavridabless/UEBulkExport/releases/tag/v1.0.0
 [1.1.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.0.0...v1.1.0
 [1.2.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.1.0...v1.2.0
 [2.0.0]: https://github.com/tavridabless/UEBulkExport/compare/v1.2.0...v2.0.0
 [2.1.0]: https://github.com/tavridabless/UEBulkExport/compare/v2.0.0...v2.1.0
+[2.2.0]: https://github.com/tavridabless/UEBulkExport/compare/v2.1.0...v2.2.0

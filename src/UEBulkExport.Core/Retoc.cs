@@ -26,6 +26,7 @@ public static class Retoc
 
     public static async Task<string> ResolveAsync(string? explicitPath, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         if (explicitPath is not null) return Path.GetFullPath(explicitPath);
 
         if (!OperatingSystem.IsWindows() || System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
@@ -37,15 +38,12 @@ public static class Retoc
         var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "UEBulkExport", "native");
         var executable = Path.Combine(cache, "retoc-0.1.5.exe");
-        if (File.Exists(executable) &&
-            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(executable))) == ExecutableSha256)
-            return executable;
-
-        Directory.CreateDirectory(cache);
-        Log.Info("downloading retoc 0.1.5 for IoStore package conversion ...");
-
         try
         {
+            if (File.Exists(executable) && await FileMatchesHashAsync(executable, ct)) return executable;
+
+            Directory.CreateDirectory(cache);
+            Log.Info("downloading retoc 0.1.5 for IoStore package conversion ...");
             using var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
             var archiveBytes = await client.GetByteArrayAsync(DownloadUrl, ct);
             var hash = Convert.ToHexString(SHA256.HashData(archiveBytes));
@@ -65,20 +63,19 @@ public static class Retoc
                 await using (var target = File.Create(temporary))
                     await source.CopyToAsync(target, ct);
 
-                if (Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(temporary, ct)))
-                    != ExecutableSha256)
+                if (!await FileMatchesHashAsync(temporary, ct))
                     throw new InvalidDataException("retoc executable failed its SHA-256 check");
 
                 File.Move(temporary, executable, overwrite: true);
             }
             finally
             {
-                if (File.Exists(temporary)) File.Delete(temporary);
+                AtomicFile.TryDelete(temporary);
             }
 
             return executable;
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             throw new UserFacingException(
                 $"Could not obtain retoc: {e.Message}",
@@ -89,6 +86,7 @@ public static class Retoc
     public static async Task ConvertAsync(string executable, Options options, string inputPath,
         string outputDirectory, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         // Cli.Prepare rejects several keys up front; a second key here means a caller skipped it.
         if (options.AesKeys.Count > 1)
             throw new UserFacingException("retoc accepts only one AES key for a conversion run.");
@@ -96,14 +94,16 @@ public static class Retoc
         var start = new ProcessStartInfo(executable)
         {
             CreateNoWindow = true,
+            UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             WorkingDirectory = Path.GetDirectoryName(executable)!
         };
 
+        string? key = null;
         if (options.AesKeys.Count == 1)
         {
-            var (_, key) = Cli.SplitAesKey(options.AesKeys[0]);
+            (_, key) = Cli.SplitAesKey(options.AesKeys[0]);
             start.ArgumentList.Add("--aes-key");
             start.ArgumentList.Add(key);
         }
@@ -141,24 +141,22 @@ public static class Retoc
 
         try
         {
-            var stdout = process.StandardOutput.ReadToEndAsync(ct);
-            var stderr = process.StandardError.ReadToEndAsync(ct);
+            var stdout = ReadOutputTailAsync(process.StandardOutput, key, logSummary: true, ct);
+            var stderr = ReadOutputTailAsync(process.StandardError, key, logSummary: false, ct);
             await process.WaitForExitAsync(ct);
 
-            var output = await stdout;
-            var errors = await stderr;
+            var tails = await Task.WhenAll(stdout, stderr);
+            var output = tails[0];
+            var errors = tails[1];
 
             if (process.ExitCode != 0)
                 throw new UserFacingException(
                     $"retoc conversion failed (exit {process.ExitCode}).",
-                    LastLines(string.IsNullOrWhiteSpace(errors) ? output : errors) + (unknownVersion
+                    (string.IsNullOrWhiteSpace(errors) ? output : errors) + (unknownVersion
                         ? Environment.NewLine + Environment.NewLine +
-                          $"This retoc does not support {engineVersion} yet. Choose the raw mode (an exact copy) " +
-                          "or converted files, or pass a newer retoc build with --retoc."
+                          $"No explicit {engineVersion} argument was passed. retoc tried to infer the version " +
+                          "from the containers. Try raw mode, converted files, or a newer build with --retoc."
                         : ""));
-
-            foreach (var line in output.Split('\n').Where(l => l.Contains("Extracted", StringComparison.OrdinalIgnoreCase)))
-                Log.Info($"retoc: {line.Trim()}");
         }
         catch (OperationCanceledException)
         {
@@ -179,12 +177,36 @@ public static class Retoc
         catch (Win32Exception) { }
     }
 
-    private static string LastLines(string output) =>
-        string.Join(Environment.NewLine, output.Split('\n').TakeLast(8)).Trim();
+    private static async Task<bool> FileMatchesHashAsync(string path, CancellationToken ct)
+    {
+        await using var stream = File.OpenRead(path);
+        return Convert.ToHexString(await SHA256.HashDataAsync(stream, ct)) == ExecutableSha256;
+    }
+
+    internal static async Task<string> ReadOutputTailAsync(TextReader reader, string? key, bool logSummary,
+        CancellationToken ct)
+    {
+        const int tailSize = 8;
+        var tail = new Queue<string>(tailSize);
+        var secret = key is not null && key.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? key[2..] : key;
+
+        while (await reader.ReadLineAsync(ct) is { } line)
+        {
+            if (!string.IsNullOrEmpty(secret))
+                line = line.Replace(secret, "[redacted]", StringComparison.OrdinalIgnoreCase);
+
+            if (logSummary && line.Contains("Extracted", StringComparison.OrdinalIgnoreCase))
+                Log.Info($"retoc: {line.Trim()}");
+            if (tail.Count == tailSize) tail.Dequeue();
+            tail.Enqueue(line);
+        }
+
+        return string.Join(Environment.NewLine, tail).Trim();
+    }
 
     /// <summary>
-    /// False when the bundled retoc is known not to handle this engine version. Game-specific
-    /// profiles cannot be judged and count as supported.
+    /// Reports whether the bundled retoc accepts an explicit version for a plain engine profile.
+    /// Game-specific profiles are always passed through for container-based detection.
     /// </summary>
     public static bool SupportsEngine(string cue4ParseGame) =>
         ToRetocEngineVersion(cue4ParseGame) is not { } version || KnownEngineVersions.Contains(version);

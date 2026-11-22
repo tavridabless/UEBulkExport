@@ -11,14 +11,19 @@ public static class CliRunner
     {
         try
         {
-            var options = Cli.Parse(args);
+            if (args.Length > 0 && args[0] == "sample") return await AssetSampleCommand.RunAsync(args[1..], ct);
+            var isComparison = args.Length > 0 && args[0] == "compare";
+            CompareManifestVerification? verification = null;
+            var options = isComparison ? CompareCommand.Execute(args[1..], out verification, ct)
+                : args.Length > 0 && args[0] == "recipe" ? RecipeCommand.Execute(args)
+                : Cli.Parse(args);
             if (options is null) return 0;
 
-            if (!string.IsNullOrEmpty(options.OutputDirectory) && !options.DryRun)
-            {
-                Directory.CreateDirectory(options.OutputDirectory);
-                Log.OpenFile(Path.Combine(options.OutputDirectory, "UEBulkExport.log"));
-            }
+            ct.ThrowIfCancellationRequested();
+
+            var logToOutput = options.Mode != ExportMode.List && !string.IsNullOrEmpty(options.OutputDirectory) &&
+                !options.DryRun;
+            if (verification is null && logToOutput) OpenOutputLog(options.OutputDirectory);
 
             Log.Info($"UEBulkExport {Cli.Version} - {options.Mode} export");
             Log.Info($"containers: {options.PaksDirectory}");
@@ -29,7 +34,9 @@ public static class CliRunner
             exporter.ProgressChanged += PrintProgress;
             exporter.Mount();
 
-            var files = exporter.SelectFiles();
+            var files = exporter.SelectFiles(ct);
+            verification?.CheckExportFiles(files);
+            if (verification is not null && logToOutput) OpenOutputLog(options.OutputDirectory);
 
             if (options.Mode == ExportMode.List)
             {
@@ -67,6 +74,12 @@ public static class CliRunner
         {
             Log.Close();
         }
+    }
+
+    private static void OpenOutputLog(string outputDirectory)
+    {
+        Directory.CreateDirectory(outputDirectory);
+        Log.OpenFile(Path.Combine(outputDirectory, "UEBulkExport.log"));
     }
 
     private static void PrintProgress(ExportProgress p)

@@ -8,6 +8,8 @@ using CUE4Parse_Conversion.Options;
 
 namespace UEBulkExport;
 
+public enum LegacyIoStoreIssue { None, FilteredSelection, MultipleKeys }
+
 public static class Cli
 {
     public static string Version =>
@@ -16,25 +18,21 @@ public static class Cli
     /// <summary>Returns null when the run is over before it starts: --help or --version.</summary>
     public static Options? Parse(string[] args)
     {
-        if (args.Length == 0 || args.Contains("--help") || args.Contains("-h") || args.Contains("/?"))
+        if (args.Length == 0)
         {
             Log.Raw(Options.Usage);
             return null;
         }
 
-        if (args.Contains("--version"))
-        {
-            Log.Raw($"UEBulkExport {Version}");
-            return null;
-        }
-
-        var o = ParseArguments(args);
-        Prepare(o);
+        var o = ParseArguments(args, allowInformationalCommands: true);
+        if (o is not null) Prepare(o);
         return o;
     }
 
     /// <summary>Turns the raw argument list into an <see cref="Options"/> without validating or resolving anything.</summary>
-    public static Options ParseArguments(string[] args)
+    public static Options ParseArguments(string[] args) => ParseArguments(args, allowInformationalCommands: false)!;
+
+    private static Options? ParseArguments(string[] args, bool allowInformationalCommands)
     {
         var o = new Options();
 
@@ -46,6 +44,12 @@ public static class Cli
 
             switch (a)
             {
+                case "--help" or "-h" or "/?" when allowInformationalCommands:
+                    Log.Raw(Options.Usage);
+                    return null;
+                case "--version" when allowInformationalCommands:
+                    Log.Raw($"UEBulkExport {Version}");
+                    return null;
                 case "--paks": o.PaksDirectory = Next(a); break;
                 case "--out": o.OutputDirectory = Next(a); break;
                 case "--usmap": o.UsmapPath = Next(a); break;
@@ -122,7 +126,7 @@ public static class Cli
         if (o.RetocPath is not null && !File.Exists(o.RetocPath))
             throw new UserFacingException($"retoc not found: {o.RetocPath}");
 
-        if (o.PathsFile is not null && !File.Exists(o.PathsFile))
+        if (o.SelectedPaths is null && o.PathsFile is not null && !File.Exists(o.PathsFile))
             throw new UserFacingException($"Paths file not found: {o.PathsFile}");
 
         foreach (var key in o.AesKeys) ValidateAesKey(key);
@@ -134,25 +138,34 @@ public static class Cli
     /// <summary>Checks rules that depend on the actual container directory.</summary>
     private static void ValidateResolved(Options o)
     {
-        if (o.Mode != ExportMode.Legacy || !Discovery.HasIoStoreContainers(o.PaksDirectory)) return;
-
-        if (o.IncludeRegex is not null || o.ExcludeRegex is not null || o.SelectedPaths is not null)
+        if (o.Mode != ExportMode.Legacy) return;
+        var issue = CheckLegacyIoStore(o.Mode, Discovery.HasIoStoreContainers(o.PaksDirectory),
+            o.IncludeRegex is not null || o.ExcludeRegex is not null || o.SelectedPaths is not null,
+            o.AesKeys.Count);
+        if (issue == LegacyIoStoreIssue.FilteredSelection)
             throw new UserFacingException(
                 "--include/--exclude/--paths-file cannot be used with legacy IoStore conversion.",
                 "retoc cannot apply regular-expression filters. Use --mode raw for filtered byte dumps.");
 
-        // Better to learn this now than after the containers have been mounted and retoc fetched.
-        if (o.AesKeys.Count > 1)
+        if (issue == LegacyIoStoreIssue.MultipleKeys)
             throw new UserFacingException(
                 "retoc accepts only one AES key for a conversion run.",
                 "Run containers with different keys separately, using one --aes value each time.");
+    }
+
+    public static LegacyIoStoreIssue CheckLegacyIoStore(ExportMode mode, bool hasIoStore,
+        bool hasFilteredSelection, int keyCount)
+    {
+        if (mode != ExportMode.Legacy || !hasIoStore) return LegacyIoStoreIssue.None;
+        if (hasFilteredSelection) return LegacyIoStoreIssue.FilteredSelection;
+        return keyCount > 1 ? LegacyIoStoreIssue.MultipleKeys : LegacyIoStoreIssue.None;
     }
 
     internal static Regex? CompileFilter(string? pattern, string argument)
     {
         if (pattern is null) return null;
 
-        try { return new Regex(pattern, RegexOptions.IgnoreCase); }
+        try { return new Regex(pattern, RegexOptions.IgnoreCase, TimeSpan.FromSeconds(1)); }
         catch (ArgumentException e)
         {
             throw new UserFacingException($"{argument} is not a valid regular expression: {e.Message}");
@@ -168,11 +181,13 @@ public static class Cli
             o.UsmapPath = Discovery.FindMappings(o.PaksDirectory, o.OutputDirectory);
 
         if (o.SelectedPaths is null && o.PathsFile is not null)
-            o.SelectedPaths = File.ReadLines(o.PathsFile)
-                .Select(l => l.Trim())
-                .Where(l => l.Length > 0 && !l.StartsWith('#'))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            o.SelectedPaths = ReadSelection(o.PathsFile);
     }
+
+    internal static IReadOnlySet<string> ReadSelection(string path) => File.ReadLines(path)
+        .Select(line => line.Trim())
+        .Where(line => line.Length > 0 && !line.StartsWith('#'))
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     // ------------------------------------------------------------------ AES keys
 
@@ -200,12 +215,12 @@ public static class Cli
 
         if (!HexKey.IsMatch(key))
             throw new UserFacingException(
-                $"'{raw}' is not a valid AES key.",
+                "The supplied value is not a valid AES key.",
                 "Expected 64 hexadecimal characters, usually written as 0x0123...CDEF, optionally as <guid>:0x....");
 
         if (guid is not null && !Guid.TryParse(guid, out _))
             throw new UserFacingException(
-                $"'{guid}' is not a valid container GUID.",
+                "The supplied value is not a valid container GUID followed by a key.",
                 "The form is <guid>:0x<64 hex chars>, for example 00000000-0000-0000-0000-000000000000:0x....");
     }
 

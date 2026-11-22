@@ -18,6 +18,7 @@ public interface IExportService
     Task<ScanResult> ScanAsync(Options options);
     Task<ExportPlan> DryRunAsync(Options options);
     Task<ExportSummary> ExportAsync(Options options);
+    Task<AssetSampleResult> SampleAsync(Options options, AssetSampleRequest request);
     void Cancel();
 }
 
@@ -29,6 +30,9 @@ public sealed class ExportService : IExportService
     public bool IsBusy { get { lock (_sync) return _cancellation is not null; } }
 
     public event Action<ExportProgress>? ProgressChanged;
+
+    public Task<AssetSampleResult> SampleAsync(Options options, AssetSampleRequest request) =>
+        Run(ct => Task.Run(() => AssetSampling.RunAsync(Clone(options), request, ct), ct));
 
     /// <summary>Mounts the containers and lists their entries. Does not write anything.</summary>
     public Task<ScanResult> ScanAsync(Options options) => Run(ct => Task.Run(() =>
@@ -66,12 +70,12 @@ public sealed class ExportService : IExportService
 
         using var exporter = new BulkExporter(o);
         exporter.Mount();
-        var files = exporter.SelectFiles();
+        var files = exporter.SelectFiles(ct);
         exporter.VerifyMappings(files);
         ct.ThrowIfCancellationRequested();
 
         var plan = exporter.BuildPlan(files);
-        exporter.PrintPlan(files);
+        exporter.PrintPlan(plan);
         return plan;
     }, ct));
 
@@ -97,9 +101,11 @@ public sealed class ExportService : IExportService
                 exporter.ProgressChanged += p => ProgressChanged?.Invoke(p);
                 exporter.Mount();
 
-                var files = exporter.SelectFiles();
+                var files = exporter.SelectFiles(ct);
                 exporter.VerifyMappings(files);
                 ct.ThrowIfCancellationRequested();
+                if (o.SelectedPaths is not null && o.PathsFile is not null)
+                    File.WriteAllLines(o.PathsFile, o.SelectedPaths.Order(StringComparer.OrdinalIgnoreCase));
 
                 return await exporter.RunAsync(files, ct);
             }, ct);

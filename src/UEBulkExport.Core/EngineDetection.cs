@@ -95,18 +95,26 @@ public static class EngineDetection
             var buffer = new byte[ChunkSize + overlap];
             var carried = 0;
             int read;
-            while ((read = stream.Read(buffer, carried, ChunkSize)) > 0)
+            while ((read = stream.ReadAtLeast(buffer.AsSpan(carried, ChunkSize), ChunkSize, false)) > 0)
             {
                 ct.ThrowIfCancellationRequested();
                 var length = carried + read;
                 var span = buffer.AsSpan(0, length);
+                // A match in the overlap may have additional version digits in the next read.
+                var startLimit = read < ChunkSize ? length : length - overlap;
 
-                if (Find(span, AsciiMarker) is { } version) return version;
-                if (Find(span, Utf16Marker, utf16: true) is { } wide) return wide;
+                if (Find(span, AsciiMarker, startLimit) is { } version) return version;
+                if (Find(span, Utf16Marker, startLimit, utf16: true) is { } wide) return wide;
+                if (read < ChunkSize) return null;
 
-                carried = Math.Min(overlap, length);
+                carried = overlap;
                 Array.Copy(buffer, length - carried, buffer, 0, carried);
             }
+
+            // A file may end exactly at a chunk boundary. Scan its remaining overlap at EOF.
+            ct.ThrowIfCancellationRequested();
+            var tail = buffer.AsSpan(0, carried);
+            return Find(tail, AsciiMarker, carried) ?? Find(tail, Utf16Marker, carried, utf16: true);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -116,15 +124,16 @@ public static class EngineDetection
         return null;
     }
 
-    private static string? Find(ReadOnlySpan<byte> data, byte[] marker, bool utf16 = false)
+    private static string? Find(ReadOnlySpan<byte> data, byte[] marker, int startLimit, bool utf16 = false)
     {
         var offset = 0;
-        while (offset < data.Length)
+        while (offset < startLimit)
         {
             var index = data[offset..].IndexOf(marker);
             if (index < 0) return null;
 
             var start = offset + index;
+            if (start >= startLimit) return null;
             var window = data.Slice(start, Math.Min(utf16 ? 64 : 32, data.Length - start));
             var text = utf16
                 ? Encoding.Unicode.GetString(window[..(window.Length & ~1)])

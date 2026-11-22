@@ -80,6 +80,37 @@ public sealed class UiLogSinkTests
     }
 
     [Fact]
+    public void Filtered_view_only_refreshes_for_appended_or_evicted_matching_entries()
+    {
+        var callbacks = new Queue<Action>();
+        var sink = new UiLogSink(callbacks.Enqueue);
+        using var vm = new LogViewModel(sink) { Filter = 2 };
+        var notifications = 0;
+        var scrolls = 0;
+        vm.Visible.CollectionChanged += (_, _) => notifications++;
+        vm.ScrollToEnd = () => scrolls++;
+
+        sink.Write(Entry(0));
+        sink.Write(Entry(1, LogLevel.Error));
+        callbacks.Dequeue()();
+        Assert.Equal(Entry(1, LogLevel.Error), Assert.Single(vm.Visible));
+        Assert.Equal(1, notifications);
+        Assert.Equal(1, scrolls);
+
+        // The first eviction removes an invisible row and the next one removes the error.
+        for (var index = 2; index <= 20_000; index++) sink.Write(Entry(index));
+        callbacks.Dequeue()();
+        Assert.Single(vm.Visible);
+        Assert.Equal(1, notifications);
+        Assert.Equal(1, scrolls);
+        sink.Write(Entry(20_001));
+        callbacks.Dequeue()();
+        Assert.Empty(vm.Visible);
+        Assert.Equal(2, notifications);
+        Assert.Equal(2, scrolls);
+    }
+
+    [Fact]
     public void Concurrent_producers_remain_bounded_and_raw_spacers_are_ignored()
     {
         var callbacks = new ConcurrentQueue<Action>();

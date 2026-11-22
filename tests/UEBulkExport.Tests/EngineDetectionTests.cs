@@ -52,6 +52,36 @@ public sealed class EngineDetectionTests
         Assert.Equal("5.4", EngineDetection.ReadVersion(exe));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadVersion_does_not_truncate_the_minor_version_at_a_chunk_boundary(bool utf16)
+    {
+        using var temp = new TempDir();
+        var exe = Path.Combine(temp.Path, "Game.exe");
+        const int chunkSize = 4 * 1024 * 1024;
+        var encoding = utf16 ? Encoding.Unicode : Encoding.ASCII;
+        var branch = encoding.GetBytes("++UE4+Release-4.27");
+        var data = new byte[chunkSize + 64];
+        branch.CopyTo(data, chunkSize - encoding.GetByteCount("++UE4+Release-4.2"));
+        File.WriteAllBytes(exe, data);
+
+        Assert.Equal("4.27", EngineDetection.ReadVersion(exe));
+    }
+
+    [Fact]
+    public void ReadVersion_checks_the_overlap_when_the_file_ends_at_a_chunk_boundary()
+    {
+        using var temp = new TempDir();
+        var exe = Path.Combine(temp.Path, "Game.exe");
+        var data = new byte[4 * 1024 * 1024];
+        var branch = Encoding.ASCII.GetBytes("++UE4+Release-4.27");
+        branch.CopyTo(data, data.Length - branch.Length);
+        File.WriteAllBytes(exe, data);
+
+        Assert.Equal("4.27", EngineDetection.ReadVersion(exe));
+    }
+
     [Fact]
     public void DetectFromContainers_reads_the_largest_executable_of_the_game()
     {

@@ -12,12 +12,16 @@ internal sealed class ResumeJournal : IDisposable
 {
     private sealed record Artifact(string Path, long Length);
     private sealed record Entry(string Profile, string Path, IReadOnlyList<Artifact> Outputs);
+    private sealed record Checkpoint(string Line, TaskCompletionSource Completion);
 
     private readonly string _outputDirectory;
     private readonly string _profile;
     private readonly FileStream _stream;
     private readonly StreamWriter _writer;
     private readonly Lock _gate = new();
+    private readonly Lock _pendingGate = new();
+    private readonly List<Checkpoint> _pending = [];
+    private bool _flushing;
 
     public ResumeJournal(string path, string outputDirectory, string profile, bool overwrite)
     {
@@ -71,7 +75,16 @@ internal sealed class ResumeJournal : IDisposable
             try
             {
                 var entry = JsonSerializer.Deserialize<Entry>(line);
-                if (entry is null || entry.Path is null || entry.Outputs is null || entry.Profile != profile ||
+                if (entry is null || entry.Path is null)
+                {
+                    invalid++;
+                    continue;
+                }
+
+                // A later export of the same entry may have replaced files with same-sized
+                // artifacts from a different profile. Only the latest checkpoint can confirm it.
+                completed.Remove(entry.Path);
+                if (entry.Outputs is null || entry.Profile != profile ||
                     !OutputsAreIntact(outputDirectory, entry.Outputs))
                 {
                     invalid++;
@@ -97,6 +110,64 @@ internal sealed class ResumeJournal : IDisposable
 
     public void MarkDone(string containerPath, IEnumerable<string> outputPaths)
     {
+        var line = CreateLine(containerPath, outputPaths);
+        lock (_gate)
+        {
+            _writer.WriteLine(line);
+            FlushToDisk();
+        }
+    }
+
+    public Task MarkDoneAsync(string containerPath, IEnumerable<string> outputPaths)
+    {
+        var checkpoint = new Checkpoint(CreateLine(containerPath, outputPaths),
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+        lock (_pendingGate)
+        {
+            _pending.Add(checkpoint);
+            if (!_flushing)
+            {
+                _flushing = true;
+                _ = Task.Run(FlushPending);
+            }
+        }
+        return checkpoint.Completion.Task;
+    }
+
+    private void FlushPending()
+    {
+        while (true)
+        {
+            Checkpoint[] batch;
+            lock (_pendingGate)
+            {
+                if (_pending.Count == 0)
+                {
+                    _flushing = false;
+                    return;
+                }
+                batch = [.. _pending];
+                _pending.Clear();
+            }
+
+            try
+            {
+                lock (_gate)
+                {
+                    foreach (var checkpoint in batch) _writer.WriteLine(checkpoint.Line);
+                    FlushToDisk();
+                }
+                foreach (var checkpoint in batch) checkpoint.Completion.SetResult();
+            }
+            catch (Exception e)
+            {
+                foreach (var checkpoint in batch) checkpoint.Completion.SetException(e);
+            }
+        }
+    }
+
+    private string CreateLine(string containerPath, IEnumerable<string> outputPaths)
+    {
         var requested = outputPaths
             .Select(Path.GetFullPath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -114,24 +185,22 @@ internal sealed class ResumeJournal : IDisposable
             .OrderBy(a => a.Path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        var line = JsonSerializer.Serialize(new Entry(_profile, containerPath, outputs));
+        return JsonSerializer.Serialize(new Entry(_profile, containerPath, outputs));
+    }
 
-        lock (_gate)
-        {
-            _writer.WriteLine(line);
-            _writer.Flush();
-            // MarkDone must not return until this entire record is durable. Buffer ordinary
-            // write fragments, but retain one disk barrier for every completed entry.
-            _stream.Flush(flushToDisk: true);
-        }
+    private void FlushToDisk()
+    {
+        // Each worker waits until its record is durable. Workers arriving during a disk flush
+        // can share the next flush once their output files have been durably published.
+        _writer.Flush();
+        _stream.Flush(flushToDisk: true);
     }
 
     public void Dispose()
     {
         lock (_gate)
         {
-            _writer.Flush();
-            _stream.Flush(flushToDisk: true);
+            FlushToDisk();
             _writer.Dispose();
         }
     }
@@ -150,6 +219,10 @@ internal sealed class ResumeJournal : IDisposable
             $"sockets={options.SocketFormat}", $"morphs={options.ExportMorphTargets}",
             $"mips={options.ExportAllTextureMips}"
         };
+
+        // These options used to record selected payloads as finished without writing them.
+        if (options.Mode is ExportMode.Full or ExportMode.Json && options.WriteRawPackages && !options.WriteRawMisc)
+            lines.Add("rawPayloads=1");
 
         foreach (var path in ContainerFiles(options.PaksDirectory))
         {
@@ -182,12 +255,18 @@ internal sealed class ResumeJournal : IDisposable
     {
         foreach (var output in outputs)
         {
-            var path = Path.GetFullPath(Path.Combine(outputDirectory,
-                output.Path.Replace('/', Path.DirectorySeparatorChar)));
-            if (!IsInside(outputDirectory, path)) return false;
-            var info = new FileInfo(path);
-            if (!info.Exists || info.Length != output.Length)
+            if (output?.Path is not { Length: > 0 } relative || Path.IsPathRooted(relative)) return false;
+            try
+            {
+                var path = Path.GetFullPath(relative, Path.GetFullPath(outputDirectory));
+                if (!IsInside(outputDirectory, path)) return false;
+                var info = new FileInfo(path);
+                if (!info.Exists || info.Length != output.Length) return false;
+            }
+            catch (ArgumentException)
+            {
                 return false;
+            }
         }
 
         return true;
@@ -204,7 +283,7 @@ internal sealed class ResumeJournal : IDisposable
     private static bool IsInside(string root, string path)
     {
         var relative = Path.GetRelativePath(Path.GetFullPath(root), Path.GetFullPath(path));
-        return relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar,
+        return relative is not ("." or "..") && !relative.StartsWith(".." + Path.DirectorySeparatorChar,
             StringComparison.Ordinal) && !Path.IsPathRooted(relative);
     }
 }

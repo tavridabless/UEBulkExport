@@ -3,6 +3,23 @@ namespace UEBulkExport.Tests;
 public sealed class ResumeJournalTests
 {
     [Fact]
+    public async Task Concurrent_checkpoints_can_be_loaded_before_the_journal_is_disposed()
+    {
+        using var temp = new TempDir();
+        var options = OptionsFor(temp);
+        var paths = Enumerable.Range(0, 24).Select(index => $"file-{index}.bin").ToArray();
+        foreach (var path in paths) File.WriteAllText(temp.File("Export", path), path);
+        var journalPath = Path.Combine(options.OutputDirectory, "_completed.raw.txt");
+        var profile = ResumeJournal.CreateProfile(options);
+        using var journal = new ResumeJournal(journalPath, options.OutputDirectory, profile, overwrite: true);
+
+        await Task.WhenAll(paths.Select(path =>
+            journal.MarkDoneAsync(path, [Path.Combine(options.OutputDirectory, path)])));
+
+        Assert.True(ResumeJournal.Load(journalPath, options.OutputDirectory, profile).SetEquals(paths));
+    }
+
+    [Fact]
     public void Checkpoint_is_visible_immediately_and_requires_intact_outputs()
     {
         using var temp = new TempDir();
@@ -92,6 +109,45 @@ public sealed class ResumeJournalTests
 
         Assert.NotEqual(oldProfile, newProfile);
         Assert.Empty(ResumeJournal.Load(journalPath, options.OutputDirectory, newProfile));
+    }
+
+    [Fact]
+    public void Same_sized_output_from_a_later_profile_invalidates_the_older_checkpoint()
+    {
+        using var temp = new TempDir();
+        var options = OptionsFor(temp);
+        var output = temp.File("Export", "asset.json");
+        var path = Path.Combine(options.OutputDirectory, "_completed.full.txt");
+
+        File.WriteAllText(output, "old");
+        using (var journal = new ResumeJournal(path, options.OutputDirectory, "old", overwrite: false))
+            journal.MarkDone("asset.uasset", [output]);
+
+        File.WriteAllText(output, "new");
+        using (var journal = new ResumeJournal(path, options.OutputDirectory, "new", overwrite: false))
+            journal.MarkDone("asset.uasset", [output]);
+
+        Assert.Empty(ResumeJournal.Load(path, options.OutputDirectory, "old"));
+        Assert.Contains("asset.uasset", ResumeJournal.Load(path, options.OutputDirectory, "new"));
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{\"Path\":null,\"Length\":1}")]
+    [InlineData("{\"Path\":\"bad\\u0000name\",\"Length\":1}")]
+    public void An_invalid_artifact_invalidates_only_its_checkpoint(string artifact)
+    {
+        using var temp = new TempDir();
+        var options = OptionsFor(temp);
+        var path = Path.Combine(options.OutputDirectory, "_completed.raw.txt");
+        var good = temp.File("Export", "good.bin");
+        using (var journal = new ResumeJournal(path, options.OutputDirectory, "profile", overwrite: true))
+            journal.MarkDone("good.bin", [good]);
+
+        File.AppendAllText(path,
+            $"{{\"Profile\":\"profile\",\"Path\":\"damaged.bin\",\"Outputs\":[{artifact}]}}" + Environment.NewLine);
+
+        Assert.Equal(["good.bin"], ResumeJournal.Load(path, options.OutputDirectory, "profile"));
     }
 
     [Fact]

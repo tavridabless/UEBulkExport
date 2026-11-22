@@ -47,9 +47,9 @@ public sealed partial class PluginItemViewModel : ObservableObject, IDisposable
         Descriptor = descriptor;
         _isEnabled = descriptor.IsEnabled;
 
-        if (!string.IsNullOrWhiteSpace(descriptor.Manifest.Icon))
+        if (descriptor.IconPath is { } iconPath)
         {
-            try { Icon = new Bitmap(Path.Combine(descriptor.Directory, descriptor.Manifest.Icon)); }
+            try { Icon = new Bitmap(iconPath); }
             catch (Exception e)
             {
                 Log.Warn($"plugin '{descriptor.Manifest.Id}' icon could not be opened: {e.Message}");

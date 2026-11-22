@@ -29,6 +29,7 @@ public sealed class UiLogSink : ILogSink
 
     /// <summary>Raised on the UI thread after a batch has been appended.</summary>
     public event Action? Appended;
+    internal event Action<IReadOnlyList<LogEntry>, IReadOnlyList<LogEntry>>? BatchChanged;
 
     public void Write(in LogEntry entry)
     {
@@ -65,9 +66,12 @@ public sealed class UiLogSink : ILogSink
             _flushScheduled = false;
         }
 
+        // The filtered view updates from the changed rows without re-enumerating the retained log.
+        var evicted = _entries.Take(Math.Max(0, _entries.Count + batch.Length - MaxEntries)).ToArray();
         var removed = _entries.AppendBounded(batch, MaxEntries);
         lock (_gate) _droppedEntries += removed;
 
+        BatchChanged?.Invoke(evicted, batch);
         Appended?.Invoke();
     }
 
@@ -78,7 +82,9 @@ public sealed class UiLogSink : ILogSink
             _pending.Clear();
             _droppedEntries = 0;
         }
-        Entries.Clear();
+        var evicted = _entries.ToArray();
+        _entries.Clear();
+        BatchChanged?.Invoke(evicted, []);
         Appended?.Invoke();
     }
 }

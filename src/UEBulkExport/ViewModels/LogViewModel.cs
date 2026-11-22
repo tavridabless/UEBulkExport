@@ -1,10 +1,9 @@
 using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using UEBulkExport.Gui.Services;
 using UEBulkExport.Gui.Localization;
+using UEBulkExport.Gui.Services;
 
 namespace UEBulkExport.Gui.ViewModels;
 
@@ -29,7 +28,7 @@ public sealed partial class LogViewModel : ObservableObject, IDisposable
     public LogViewModel(UiLogSink sink)
     {
         _sink = sink;
-        _sink.Entries.CollectionChanged += OnEntriesChanged;
+        _sink.BatchChanged += OnBatchChanged;
         _sink.Appended += NotifyRetention;
         Loc.Instance.LanguageChanged += NotifyRetention;
         Rebuild();
@@ -48,9 +47,14 @@ public sealed partial class LogViewModel : ObservableObject, IDisposable
         _ => true
     };
 
-    private void OnEntriesChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    private void OnBatchChanged(IReadOnlyList<LogEntry> evicted, IReadOnlyList<LogEntry> appended)
     {
-        Rebuild();
+        var wasEmpty = IsEmpty;
+        var changed = Filter == 0
+            ? _visible.RemoveFirstAndAppend(evicted.Count, appended)
+            : _visible.RemoveFirstAndAppend(evicted.Count(Passes), appended.Where(Passes));
+        if (!changed) return;
+        if (wasEmpty != IsEmpty) OnPropertyChanged(nameof(IsEmpty));
         if (AutoScroll) ScrollToEnd?.Invoke();
     }
 
@@ -64,7 +68,7 @@ public sealed partial class LogViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-        _sink.Entries.CollectionChanged -= OnEntriesChanged;
+        _sink.BatchChanged -= OnBatchChanged;
         _sink.Appended -= NotifyRetention;
         Loc.Instance.LanguageChanged -= NotifyRetention;
         ScrollToEnd = null;

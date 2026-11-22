@@ -10,10 +10,16 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- A native helper library has no managed metadata; the copy step warns about it harmlessly. -->
     <NoWarn>$(NoWarn);MSB3246</NoWarn>
+    <!-- CUE4Parse-Conversion pins ImageSharp 3.1.12 exactly. The executables and tests
+         consume the patched 3.2.0 version specified in Directory.Packages.props. -->
+    <NoWarn Condition="'$(MSBuildProjectName)' == 'UEBulkExport.Core' Or '$(MSBuildProjectName)' == 'UEBulkExport.Cli'
+                       Or '$(MSBuildProjectName)' == 'UEBulkExport' Or '$(MSBuildProjectName)' == 'UEBulkExport.Tests'">
+      $(NoWarn);NU1608
+    </NoWarn>
   </PropertyGroup>
 
   <PropertyGroup>
-    <Version>2.1.0</Version>
+    <Version>2.2.0</Version>
     <Authors>UEBulkExport contributors</Authors>
     <Product>UEBulkExport</Product>
     <Copyright>Copyright 2026 UEBulkExport contributors</Copyright>

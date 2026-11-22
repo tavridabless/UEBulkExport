@@ -1,7 +1,7 @@
 namespace UEBulkExport.CommandLine;
 
 /// <summary>Coloured console output: grey for information, yellow for warnings, red for errors.</summary>
-public sealed class ConsoleLogSink : ILogSink
+public sealed class ConsoleLogSink(bool diagnosticsToStderr = false) : ILogSink
 {
     private readonly Lock _gate = new();
 
@@ -9,6 +9,12 @@ public sealed class ConsoleLogSink : ILogSink
     {
         lock (_gate)
         {
+            if (diagnosticsToStderr && entry.Level != LogLevel.Raw)
+            {
+                Console.Error.WriteLine(entry.Format());
+                return;
+            }
+
             switch (entry.Level)
             {
                 case LogLevel.Raw:

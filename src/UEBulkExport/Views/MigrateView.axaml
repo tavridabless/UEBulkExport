@@ -75,9 +75,11 @@
                 </StackPanel>
                 <TextBox Text="{Binding DestinationPath}" Watermark="/Game/Migrated" />
               </StackPanel>
-              <StackPanel Grid.Column="1" VerticalAlignment="Bottom">
+              <StackPanel Grid.Column="1" VerticalAlignment="Bottom" Spacing="6">
                 <CheckBox IsChecked="{Binding Overwrite}" Content="{loc:Tr Migrate.Overwrite}"
                           ToolTip.Tip="{loc:Tr Migrate.Overwrite.Hint}" />
+                <CheckBox IsChecked="{Binding ReplaceChanged}" IsEnabled="{Binding CanChooseReplaceChanged}"
+                          Content="{loc:Tr Migrate.ReplaceChanged}" ToolTip.Tip="{loc:Tr Migrate.ReplaceChanged.Hint}" />
               </StackPanel>
             </Grid>
             <TextBlock Classes="Warning" Text="{Binding OverwriteWarning}" IsVisible="{Binding OverwriteWarningVisible}" />

@@ -79,7 +79,7 @@ downloads the pinned 6.7.3, checks its SHA-256 and installs it portably:
 ```powershell
 ./installer/install-inno.ps1 -Destination "$env:TEMP\inno-setup"   # once; prints the ISCC.exe path
 ./installer/build.ps1 -Iscc "$env:TEMP\inno-setup\ISCC.exe"          # -> artifacts/installer
-./installer/smoke-test.ps1 -Installer artifacts/installer/UEBulkExport-2.1.0-win-x64-setup.exe
+./installer/smoke-test.ps1 -Installer artifacts/installer/UEBulkExport-2.2.0-win-x64-setup.exe
 ```
 
 The version comes from `Directory.Build.props` unless `-Version` is given. The smoke test installs
@@ -87,6 +87,10 @@ the setup silently for the current user into a temporary folder, checks the payl
 installed CLI with `--version` and uninstalls it again. The CI workflow runs all three on every push
 and pull request and keeps the result as a build artifact for 14 days, so a change that breaks the
 installer shows up long before a release is tagged.
+
+If you pass `-Directory` to the smoke test, use a path that does not exist yet. The test checks
+that a full installation includes the native animation library and that uninstall removes the
+payload.
 
 The artwork sources live in `installer/branding`: `icon-source.webp` for the application icon and
 `design/*.webp` for the wizard and the README logo. The generated `wizard-*.png` files are not

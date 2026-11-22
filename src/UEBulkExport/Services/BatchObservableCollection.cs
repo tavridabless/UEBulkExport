@@ -38,6 +38,18 @@ internal sealed class BatchObservableCollection<T> : ObservableCollection<T>
         return removed;
     }
 
+    public bool RemoveFirstAndAppend(int removeCount, IEnumerable<T> items)
+    {
+        CheckReentrancy();
+        var list = (List<T>)Items;
+        list.RemoveRange(0, removeCount);
+        var remaining = list.Count;
+        list.AddRange(items);
+        if (removeCount == 0 && list.Count == remaining) return false;
+        NotifyReset();
+        return true;
+    }
+
     private void NotifyReset()
     {
         OnPropertyChanged(new PropertyChangedEventArgs(nameof(Count)));

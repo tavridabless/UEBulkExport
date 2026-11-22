@@ -43,6 +43,9 @@ public sealed class PluginDescriptor
     public Control? Page { get; internal set; }
     public bool IsLoaded => Page is not null;
     public bool IsValid => ValidationError is null;
+    internal string? IconPath => IsValid && !string.IsNullOrWhiteSpace(Manifest.Icon)
+        ? Path.Combine(Directory, Manifest.Icon)
+        : null;
     public string PageKey => $"plugin:{Manifest.Id}";
     public string NavigationLabel => string.IsNullOrWhiteSpace(Manifest.NavigationLabel)
         ? Manifest.Name
@@ -99,17 +102,18 @@ public sealed class PluginCatalog
     public static IReadOnlyList<PluginDescriptor> Discover(IEnumerable<string> roots)
     {
         var found = new List<PluginDescriptor>();
-        foreach (var rootCandidate in roots.Distinct(StringComparer.OrdinalIgnoreCase))
+        var seenRoots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rootCandidate in roots)
         {
             string root;
-            try { root = Path.GetFullPath(rootCandidate); }
+            try { root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(rootCandidate)); }
             catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
             {
                 Log.Warn($"invalid plugin root '{rootCandidate}': {e.Message}");
                 continue;
             }
 
-            if (!System.IO.Directory.Exists(root)) continue;
+            if (!seenRoots.Add(root) || !System.IO.Directory.Exists(root)) continue;
 
             IEnumerable<string> directories;
             try { directories = System.IO.Directory.EnumerateDirectories(root).Order(StringComparer.OrdinalIgnoreCase).ToArray(); }
@@ -139,12 +143,15 @@ public sealed class PluginCatalog
 
     private static PluginDescriptor ReadManifest(string directory, string path)
     {
-        var fallback = new PluginManifest { Name = Path.GetFileName(directory), Id = Path.GetFileName(directory) };
+        var fallback = new PluginManifest { Name = Path.GetFileName(directory) };
         var descriptor = new PluginDescriptor(directory, fallback);
 
         try
         {
             var info = new FileInfo(path);
+            if (File.GetAttributes(directory).HasFlag(FileAttributes.ReparsePoint) ||
+                info.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                throw new InvalidDataException("Plugin folders and manifests must be regular local entries.");
             if (info.Length is <= 0 or > MaximumManifestBytes)
                 throw new InvalidDataException("plugin.json must be between 1 byte and 64 KiB.");
 
@@ -194,6 +201,8 @@ public sealed class PluginCatalog
         if (!TryDirectChild(directory, manifest.EntryAssembly, ".dll", out var assemblyPath))
             return "entryAssembly must name a DLL directly inside the plugin folder.";
         if (!File.Exists(assemblyPath)) return $"Entry assembly '{manifest.EntryAssembly}' is missing.";
+        if (File.GetAttributes(assemblyPath).HasFlag(FileAttributes.ReparsePoint))
+            return "Entry assembly must be a regular file directly inside the plugin folder.";
         if (new FileInfo(assemblyPath).Length > MaximumEntryAssemblyBytes) return "Entry assembly is larger than 128 MiB.";
 
         if (!string.IsNullOrWhiteSpace(manifest.Icon))
@@ -203,6 +212,8 @@ public sealed class PluginCatalog
                 !TryDirectChild(directory, manifest.Icon, extension, out var iconPath))
                 return "Icon must be a PNG, JPEG, WEBP or BMP file directly inside the plugin folder.";
             if (!File.Exists(iconPath)) return $"Plugin icon '{manifest.Icon}' is missing.";
+            if (File.GetAttributes(iconPath).HasFlag(FileAttributes.ReparsePoint))
+                return "Plugin icon must be a regular file directly inside the plugin folder.";
             if (new FileInfo(iconPath).Length > 2 * 1024 * 1024) return "Plugin icon is larger than 2 MiB.";
         }
 
@@ -226,6 +237,7 @@ public sealed class PluginCatalog
     {
         fullPath = "";
         if (string.IsNullOrWhiteSpace(fileName) || Path.IsPathRooted(fileName) ||
+            fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains(':') ||
             !fileName.Equals(Path.GetFileName(fileName), StringComparison.Ordinal) ||
             !Path.GetExtension(fileName).Equals(extension, StringComparison.OrdinalIgnoreCase)) return false;
         fullPath = Path.GetFullPath(Path.Combine(directory, fileName));

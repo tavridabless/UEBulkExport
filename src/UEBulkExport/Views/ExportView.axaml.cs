@@ -20,13 +20,16 @@ public sealed partial class ExportView : UserControl
         };
     }
 
-    /// <summary>The result lands below the fold on a long form, so bring it into view when it appears.</summary>
+    /// <summary>Show the outcome or newly applied selection on the long export form.</summary>
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (_viewModel is null) return;
 
         switch (e.PropertyName)
         {
+            case nameof(ExportViewModel.SelectedPaths) when _viewModel.HasSelection:
+                Dispatcher.UIThread.Post(() => SelectionCard.BringIntoView(), DispatcherPriority.Background);
+                break;
             case nameof(ExportViewModel.HasSummary) when _viewModel.HasSummary:
                 Dispatcher.UIThread.Post(() => SummaryCard.BringIntoView(), DispatcherPriority.Background);
                 break;

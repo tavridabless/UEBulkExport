@@ -64,6 +64,42 @@ public sealed class PluginCatalogTests : IDisposable
     }
 
     [Fact]
+    public void Invalid_manifest_folder_name_does_not_duplicate_an_actual_plugin_id()
+    {
+        CreatePlugin("sample.plugin", "sample");
+        var broken = _tmp.Dir("sample.plugin");
+        File.WriteAllText(Path.Combine(broken, PluginCatalog.ManifestFileName), "{not-json");
+
+        var plugins = PluginCatalog.Discover([_tmp.Path]);
+
+        Assert.Equal("sample.plugin", Assert.Single(plugins, plugin => plugin.IsValid).Manifest.Id);
+    }
+
+    [Fact]
+    public void Same_plugin_root_with_and_without_a_trailing_separator_is_discovered_once()
+    {
+        CreatePlugin("sample.plugin", "sample");
+
+        var plugin = Assert.Single(PluginCatalog.Discover([_tmp.Path, _tmp.Path + Path.DirectorySeparatorChar]));
+
+        Assert.True(plugin.IsValid);
+    }
+
+    [Fact]
+    public void Plugin_icon_over_the_metadata_limit_is_not_exposed_for_decoding()
+    {
+        var folder = _tmp.Dir("sample");
+        File.WriteAllBytes(Path.Combine(folder, "Plugin.dll"), [0x4d, 0x5a]);
+        using (var icon = File.Create(Path.Combine(folder, "Icon.png"))) icon.SetLength(2 * 1024 * 1024 + 1);
+        WriteManifest(folder, Manifest("sample.plugin") with { Icon = "Icon.png" });
+
+        var plugin = Assert.Single(PluginCatalog.Discover([_tmp.Path]));
+
+        Assert.False(plugin.IsValid);
+        Assert.Null(plugin.IconPath);
+    }
+
+    [Fact]
     public void Null_manifest_strings_are_rejected_without_crashing_discovery()
     {
         var folder = _tmp.Dir("null-fields");
@@ -125,7 +161,8 @@ public sealed class PluginCatalogTests : IDisposable
         string Version,
         string Author,
         string EntryAssembly,
-        string EntryType);
+        string EntryType,
+        string Icon = "");
 }
 
 public sealed class LoadedTestPlugin : IUEBulkExportPlugin

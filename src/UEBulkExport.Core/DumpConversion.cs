@@ -25,6 +25,13 @@ public sealed class DumpConversionService
         ".wav", ".ogg", ".mp3"
     };
 
+    private static readonly EnumerationOptions DumpEnumeration = new()
+    {
+        RecurseSubdirectories = true,
+        IgnoreInaccessible = false,
+        AttributesToSkip = FileAttributes.ReparsePoint
+    };
+
     /// <summary>UE Viewer prints a line per package; this long without one means it is stuck.</summary>
     public static readonly TimeSpan DefaultUModelInactivityTimeout = TimeSpan.FromMinutes(15);
 
@@ -83,13 +90,7 @@ public sealed class DumpConversionService
         {
             try
             {
-                var enumeration = new EnumerationOptions
-                {
-                    RecurseSubdirectories = true,
-                    IgnoreInaccessible = false,
-                    AttributesToSkip = FileAttributes.ReparsePoint
-                };
-                foreach (var file in Directory.EnumerateFiles(source, "*", enumeration))
+                foreach (var file in EnumerateDumpFiles(source))
                 {
                     ct.ThrowIfCancellationRequested();
                     var extension = Path.GetExtension(file);
@@ -166,16 +167,16 @@ public sealed class DumpConversionService
         Warning("VersionCompatibilityUnverified");
         if (packages > 0 || maps > 0 || hidden > 0) Warning("CookedLimitations");
         if (options.Overwrite) Warning("Overwrite", destination);
+        else if (options.ReplaceChanged) Warning("ReplaceChanged", destination);
 
         try
         {
             if (File.Exists(project) && Directory.Exists(source))
             {
-                workingDirectory = string.IsNullOrWhiteSpace(options.WorkingDirectory)
-                    ? DefaultWorkingDirectory(Path.GetDirectoryName(Path.GetFullPath(project))!, source, options.SourceVersion)
-                    : Path.GetFullPath(options.WorkingDirectory.Trim());
+                workingDirectory = GetWorkingDirectory(Path.GetFullPath(source), Path.GetFullPath(project), options);
             }
         }
+        catch (UserFacingException) { Error("WorkingPathOverlap"); }
         catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
         {
             Error("WorkingPathInvalid", e.Message);
@@ -191,20 +192,26 @@ public sealed class DumpConversionService
         Func<DumpConversionIssue, CancellationToken, Task<bool>>? issueHandler = null,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
+        options = options with
+        {
+            SourceDirectory = options.SourceDirectory.Trim().Trim('"'),
+            TargetProject = options.TargetProject.Trim().Trim('"'),
+            UnrealEditorPath = options.UnrealEditorPath.Trim().Trim('"'),
+            UModelPath = options.UModelPath.Trim().Trim('"'),
+            MappingsPath = options.MappingsPath?.Trim().Trim('"')
+        };
         Validate(options);
 
         var started = Stopwatch.StartNew();
-        var source = Path.GetFullPath(options.SourceDirectory.Trim()).TrimEnd(Path.DirectorySeparatorChar);
-        var project = Path.GetFullPath(options.TargetProject.Trim());
-        var projectDirectory = Path.GetDirectoryName(project)!;
+        var source = Path.TrimEndingDirectorySeparator(Path.GetFullPath(options.SourceDirectory));
+        var project = Path.GetFullPath(options.TargetProject);
         var destination = NormalizeDestination(options.DestinationPath);
-        var workingDirectory = string.IsNullOrWhiteSpace(options.WorkingDirectory)
-            ? DefaultWorkingDirectory(projectDirectory, source, options.SourceVersion)
-            : Path.GetFullPath(options.WorkingDirectory.Trim());
-        var exportedDirectory = Path.Combine(workingDirectory, "Exported");
+        var workingDirectory = GetWorkingDirectory(source, project, options);
+        var exportRoot = Path.Combine(workingDirectory, "Exported");
 
         Directory.CreateDirectory(workingDirectory);
-        Directory.CreateDirectory(exportedDirectory);
+        using var workspaceLock = LockWorkingDirectory(workingDirectory);
         var errorReportPath = Path.Combine(workingDirectory, "conversion-errors.csv");
         if (File.Exists(errorReportPath)) File.Delete(errorReportPath);
         var failures = new List<DumpConversionFailure>();
@@ -212,13 +219,19 @@ public sealed class DumpConversionService
         progress?.Report(new("Discovering", 0.05, "Scanning the dump for cooked packages."));
 
         // Builds before this one renamed packages inside the dump; put back anything a crash left behind.
-        await Task.Run(() => RecoverHiddenPackages(source), ct);
-        var cookedPackages = await Task.Run(() =>
-            Directory.EnumerateFiles(source, "*.uasset", SearchOption.AllDirectories).Count(), ct);
+        await Task.Run(() => RecoverHiddenPackages(source, ct), ct);
+        var cookedInputs = await Task.Run(() => CollectCookedInputs(source, ct), ct);
+        var cookedPackages = cookedInputs.Count(path => Path.GetExtension(path).Equals(".uasset",
+            StringComparison.OrdinalIgnoreCase));
         var importRoot = source;
+        string? cookedStage = null;
 
         if (cookedPackages > 0)
         {
+            progress?.Report(new("Fingerprinting", 0.08, "Checking whether the cooked source changed."));
+            var exportedDirectory = await DumpConversionFreshness.OpenCookedStageAsync(exportRoot, source,
+                cookedInputs, options, ct);
+            cookedStage = exportedDirectory;
             if (IsUE5Source(options.SourceVersion))
             {
                 await ExportUE5Async(options, source, exportedDirectory, failures, progress, ct);
@@ -234,7 +247,7 @@ public sealed class DumpConversionService
 
                 // Relative paths of packages UE Viewer must not see.
                 var skipped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var corrupt in await Task.Run(() => FindPackagesWithEmptyPayloads(source).ToList(), ct))
+                foreach (var corrupt in await Task.Run(() => FindPackagesWithEmptyPayloads(source, ct).ToList(), ct))
                 {
                     var relative = Path.GetRelativePath(source, corrupt.PackagePath);
                     if (!skipped.Add(relative)) continue;
@@ -309,7 +322,7 @@ public sealed class DumpConversionService
                 ? $" Found {actorX:N0} ActorX animation/mesh files (.psa/.psk), which Unreal Engine 5 cannot import natively."
                 : "";
             var sourceHint = IsUE5Source(options.SourceVersion)
-                ? "Inspect Exported\\errors.csv. If no mappings were selected, retry with a .usmap from the same game build."
+                ? "Inspect the CUE4Parse errors.csv in the working folder. If no mappings were selected, retry with a .usmap from the same game build."
                 : "Check the source engine version and UE Viewer log.";
             throw new UserFacingException(
                 "No files supported by the target Unreal Editor were produced.",
@@ -320,14 +333,23 @@ public sealed class DumpConversionService
         var scriptPath = Path.Combine(workingDirectory, "import-assets.py");
         var resultPath = Path.Combine(workingDirectory, "import-result.json");
         var ledgerPath = Path.Combine(workingDirectory, "import-ledger.json");
-        var manifest = files.Select(path => new ImportManifestEntry(
-            path,
-            BuildAssetDestination(importRoot, path, destination))).ToArray();
+        var manifest = new List<ImportManifestEntry>(files.Length);
+        foreach (var path in files)
+        {
+            var relative = Path.GetRelativePath(importRoot, path);
+            var logicalSource = cookedStage is null ? $"interchange:{path}" : $"cooked:{source}|{relative}";
+            var sourceKey = $"{project}|{logicalSource}".ToUpperInvariant();
+            var legacyPath = cookedStage is null ? path : Path.Combine(exportRoot, relative);
+            var fingerprint = await DumpConversionFreshness.FingerprintImportAsync(path, importRoot, ct);
+            manifest.Add(new(path, BuildAssetDestination(importRoot, path, destination), sourceKey, legacyPath,
+                fingerprint));
+        }
 
         await File.WriteAllTextAsync(manifestPath,
             JsonSerializer.Serialize(manifest, JsonOptions), Encoding.UTF8, ct);
         await File.WriteAllTextAsync(scriptPath,
-            BuildImportScript(manifestPath, resultPath, ledgerPath, options.Overwrite), Encoding.UTF8, ct);
+            BuildImportScript(manifestPath, resultPath, ledgerPath, options.Overwrite, options.ReplaceChanged),
+            Encoding.UTF8, ct);
         if (File.Exists(resultPath)) File.Delete(resultPath);
 
         progress?.Report(new("Importing", 0.65,
@@ -357,7 +379,11 @@ public sealed class DumpConversionService
         foreach (var failedFile in result.FailedFiles ?? [])
             failures.Add(new DumpConversionFailure(failedFile, "Unreal import",
                 "The target Unreal Editor did not create an asset for this file."));
+        foreach (var staleFile in result.StaleFiles ?? [])
+            failures.Add(new DumpConversionFailure(staleFile, "Unreal import",
+                "The source changed. The existing target was left intact. Allow replacing changed assets to update it."));
         WriteFailureReport(errorReportPath, failures);
+        if (cookedStage is not null && result.Failed == 0) DumpConversionFreshness.PruneCookedStages(cookedStage);
 
         progress?.Report(new("Done", 1, "Dump conversion finished."));
         return new DumpConversionSummary(
@@ -372,7 +398,8 @@ public sealed class DumpConversionService
             workingDirectory,
             DetectTargetVersion(project, options.UnrealEditorPath),
             started.Elapsed,
-            result.AlreadyPresent);
+            result.AlreadyPresent,
+            result.StaleFiles?.Length ?? 0);
     }
 
     public void Cancel()
@@ -452,7 +479,7 @@ public sealed class DumpConversionService
         exporter.Mount();
         var files = exporter.SelectFiles();
         // Without mappings this is deliberately best effort: versioned packages and data that
-        // CUE4Parse can understand are still exported, while failures land in Exported/errors.csv.
+        // CUE4Parse can understand are still exported, while failures land in the stage's errors.csv.
         // With mappings, keep the fast preflight so a wrong file fails before a long run.
         if (options.UsmapPath is not null) exporter.VerifyMappings(files);
         var summary = await exporter.RunAsync(files, ct);
@@ -465,7 +492,7 @@ public sealed class DumpConversionService
             failures.Add(new DumpConversionFailure(
                 Path.Combine(output, "errors.csv"),
                 "CUE4Parse export",
-                $"{failed:N0} package or object export(s) failed; see Exported\\errors.csv."));
+                $"{failed:N0} package or object export(s) failed; see the listed CUE4Parse report."));
     }
 
     internal static Options CreateUE5ExportOptions(DumpConversionOptions conversion, string source, string output) =>
@@ -495,10 +522,23 @@ public sealed class DumpConversionService
     internal static string NormalizeDestination(string destination)
     {
         var value = destination.Trim().Replace('\\', '/').TrimEnd('/');
-        if (!value.Equals("/Game", StringComparison.OrdinalIgnoreCase) &&
-            !value.StartsWith("/Game/", StringComparison.OrdinalIgnoreCase))
-            throw new UserFacingException("The target content path must start with /Game.");
-        return value.Length == 5 ? "/Game" : value;
+        if (!IsGameDestination(value))
+            throw new UserFacingException("The target content path is invalid.",
+                "Use /Game or a valid content folder such as /Game/Migrated.");
+        return "/Game" + value[5..];
+    }
+
+    public static bool IsValidDestination(string destination) =>
+        IsGameDestination(destination.Trim().Replace('\\', '/').TrimEnd('/'));
+
+    private static bool IsGameDestination(string value)
+    {
+        if (value.Equals("/Game", StringComparison.OrdinalIgnoreCase)) return true;
+        if (!value.StartsWith("/Game/", StringComparison.OrdinalIgnoreCase)) return false;
+
+        // Unreal's long package names forbid these characters in content path segments.
+        return !value.Contains("//", StringComparison.Ordinal) &&
+               !value.Any(c => char.IsControl(c) || ":*?\"<>|' ,.&!~@#".Contains(c));
     }
 
     public static string DetectTargetVersion(string projectPath, string editorPath)
@@ -528,7 +568,7 @@ public sealed class DumpConversionService
     }
 
     internal static IEnumerable<string> EnumerateImportableFiles(string root) =>
-        Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+        EnumerateDumpFiles(root)
             .Where(path => ImportableExtensions.Contains(Path.GetExtension(path)))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
 
@@ -555,6 +595,53 @@ public sealed class DumpConversionService
 
     // Windows paths cannot contain quotes, so wrapping is enough.
     private static string Quote(string value) => $"\"{value}\"";
+
+    private static IEnumerable<string> EnumerateDumpFiles(string root, string pattern = "*") =>
+        Directory.EnumerateFiles(root, pattern, DumpEnumeration);
+
+    private static List<string> CollectCookedInputs(string root, CancellationToken ct)
+    {
+        var inputs = new List<string>();
+        foreach (var path in EnumerateDumpFiles(root))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (Path.GetExtension(path).ToLowerInvariant() is ".uasset" or ".umap" or ".uexp" or ".ubulk" or
+                ".uptnl" or ".tfc" or ".pak" or ".utoc" or ".ucas") inputs.Add(path);
+        }
+        return inputs;
+    }
+
+    private static bool IsInsideOrSame(string path, string root)
+    {
+        var relative = Path.GetRelativePath(root, path);
+        return !Path.IsPathRooted(relative) && relative != ".." &&
+               !relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
+    }
+
+    private static string GetWorkingDirectory(string source, string project, DumpConversionOptions options)
+    {
+        var work = string.IsNullOrWhiteSpace(options.WorkingDirectory)
+            ? DefaultWorkingDirectory(Path.GetDirectoryName(project)!, source, options.SourceVersion)
+            : Path.GetFullPath(options.WorkingDirectory.Trim().Trim('"'));
+        if (IsInsideOrSame(work, source) || IsInsideOrSame(source, work))
+            throw new UserFacingException("The migration working folder overlaps the dump folder.",
+                "Choose a separate working folder, or move the dump outside the working folder.");
+        return work;
+    }
+
+    private static FileStream LockWorkingDirectory(string directory)
+    {
+        try
+        {
+            return new FileStream(Path.Combine(directory, ".conversion.lock"), FileMode.OpenOrCreate,
+                FileAccess.ReadWrite, FileShare.None, bufferSize: 1, FileOptions.DeleteOnClose);
+        }
+        catch (IOException e)
+        {
+            throw new UserFacingException("Could not reserve the migration working folder.",
+                $"Check that it is writable and that another migration is not using it. {e.Message}");
+        }
+    }
 
     internal static string DefaultWorkingDirectory(string projectDirectory, string source, string sourceVersion)
     {
@@ -588,7 +675,7 @@ public sealed class DumpConversionService
     /// </summary>
     internal static IEnumerable<DumpConversionFailure> FindUnconvertedAudio(string root)
     {
-        foreach (var path in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        foreach (var path in EnumerateDumpFiles(root))
         {
             if (!EncodedAudioExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)) continue;
             if (File.Exists(Path.ChangeExtension(path, ".wav"))) continue;
@@ -602,30 +689,34 @@ public sealed class DumpConversionService
     }
 
     private static int CountActorXFiles(string root) =>
-        Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+        EnumerateDumpFiles(root)
             .Count(path => Path.GetExtension(path).Equals(".psa", StringComparison.OrdinalIgnoreCase) ||
                            Path.GetExtension(path).Equals(".psk", StringComparison.OrdinalIgnoreCase) ||
                            Path.GetExtension(path).Equals(".pskx", StringComparison.OrdinalIgnoreCase));
 
-    private static IEnumerable<(string PackagePath, string PayloadPath)> FindPackagesWithEmptyPayloads(string root)
+    private static IEnumerable<(string PackagePath, string PayloadPath)> FindPackagesWithEmptyPayloads(
+        string root, CancellationToken ct)
     {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var extension in new[] { "*.ubulk", "*.uexp" })
+        foreach (var package in EnumerateDumpFiles(root, "*.uasset"))
         {
-            foreach (var payload in Directory.EnumerateFiles(root, extension, SearchOption.AllDirectories))
+            ct.ThrowIfCancellationRequested();
+            foreach (var extension in new[] { ".ubulk", ".uexp" })
             {
-                if (new FileInfo(payload).Length != 0) continue;
-                var package = Path.ChangeExtension(payload, ".uasset");
-                if (File.Exists(package) && seen.Add(package)) yield return (package, payload);
+                var payload = new FileInfo(Path.ChangeExtension(package, extension));
+                if (!payload.Exists || payload.Attributes.HasFlag(FileAttributes.ReparsePoint) || payload.Length != 0)
+                    continue;
+                yield return (package, payload.FullName);
+                break;
             }
         }
     }
 
     /// <summary>Undoes the in-place renames earlier 2.1.0 builds used, if a crash left any behind.</summary>
-    private static void RecoverHiddenPackages(string root)
+    private static void RecoverHiddenPackages(string root, CancellationToken ct)
     {
-        foreach (var hidden in Directory.EnumerateFiles(root, "*.uasset.uebskip", SearchOption.AllDirectories))
+        foreach (var hidden in EnumerateDumpFiles(root, "*.uasset.uebskip"))
         {
+            ct.ThrowIfCancellationRequested();
             var original = hidden[..^".uebskip".Length];
             try
             {
@@ -665,22 +756,33 @@ public sealed class DumpConversionService
     private static string? ResolvePackagePath(string source, string package)
     {
         var relative = package.Replace('/', Path.DirectorySeparatorChar);
-        var direct = Path.GetFullPath(Path.Combine(source, relative));
-        if (direct.StartsWith(source + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) &&
-            File.Exists(direct)) return direct;
+        var direct = FindPhysicalPackage(relative);
+        if (direct is not null) return direct;
 
         var contentMarker = $"{Path.DirectorySeparatorChar}Content{Path.DirectorySeparatorChar}";
         var markerIndex = relative.IndexOf(contentMarker, StringComparison.OrdinalIgnoreCase);
         if (markerIndex >= 0 && Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar))
                 .Equals("Content", StringComparison.OrdinalIgnoreCase))
         {
-            var fromContent = Path.Combine(source, relative[(markerIndex + contentMarker.Length)..]);
-            if (File.Exists(fromContent)) return Path.GetFullPath(fromContent);
+            var fromContent = FindPhysicalPackage(relative[(markerIndex + contentMarker.Length)..]);
+            if (fromContent is not null) return fromContent;
         }
 
-        var name = Path.GetFileName(relative);
-        return Directory.EnumerateFiles(source, name, SearchOption.AllDirectories)
+        return EnumerateDumpFiles(source, "*.uasset")
             .FirstOrDefault(candidate => candidate.EndsWith(relative, StringComparison.OrdinalIgnoreCase));
+
+        string? FindPhysicalPackage(string path)
+        {
+            try
+            {
+                var physical = Path.GetFullPath(Path.Combine(source, path));
+                return IsInsideOrSame(physical, source) && File.Exists(physical) ? physical : null;
+            }
+            catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return null;
+            }
+        }
     }
 
     private static void WriteFailureReport(string path, IReadOnlyCollection<DumpConversionFailure> failures)
@@ -757,6 +859,11 @@ public sealed class DumpConversionService
         };
         setArguments(start);
 
+        // Open the log before launching a child which would otherwise outlive a log-open failure.
+        await using var log = new StreamWriter(logPath, appendLog, new UTF8Encoding(false)) { AutoFlush = true };
+        if (appendLog) await log.WriteLineAsync($"----- attempt {DateTime.Now:O} -----");
+        ct.ThrowIfCancellationRequested();
+
         Process? started;
         try { started = Process.Start(start); }
         catch (Win32Exception e)
@@ -770,8 +877,6 @@ public sealed class DumpConversionService
         var logGate = new object();
         var tail = new Queue<string>();
         var lastOutput = Environment.TickCount64;
-        await using var log = new StreamWriter(logPath, appendLog, new UTF8Encoding(false)) { AutoFlush = true };
-        if (appendLog) await log.WriteLineAsync($"----- attempt {DateTime.Now:O} -----");
 
         async Task Pump(StreamReader reader)
         {
@@ -847,25 +952,24 @@ public sealed class DumpConversionService
     private static Task DrainAsync(Task pumps) => Task.WhenAny(pumps, Task.Delay(TimeSpan.FromSeconds(10)));
 
     /// <summary>
-    /// The script the target editor runs. Every successful import is written to a ledger in the
-    /// working directory. Without Overwrite, a file whose recorded assets all still exist (or, for
-    /// files imported before the ledger existed, an asset of the same name in its destination
-    /// folder) is left alone and reported as already present, so a second run or a resume neither
-    /// re-imports it nor lists it as a failure.
+    /// Checkpoints imported assets with the fingerprint of their intermediate source. A stale
+    /// record authorizes replacement only when the user selected a replacement mode.
     /// </summary>
-    internal static string BuildImportScript(string manifestPath, string resultPath, string ledgerPath, bool overwrite)
+    internal static string BuildImportScript(string manifestPath, string resultPath, string ledgerPath, bool overwrite,
+        bool replaceChanged = false)
     {
         static string PythonString(string value) => JsonSerializer.Serialize(value);
-        return $$"""
+        return $$$"""
             import json
             import os
             import re
             import unreal
 
-            manifest_path = {{PythonString(manifestPath)}}
-            result_path = {{PythonString(resultPath)}}
-            ledger_path = {{PythonString(ledgerPath)}}
-            overwrite = {{(overwrite ? "True" : "False")}}
+            manifest_path = {{{PythonString(manifestPath)}}}
+            result_path = {{{PythonString(resultPath)}}}
+            ledger_path = {{{PythonString(ledgerPath)}}}
+            overwrite = {{{(overwrite ? "True" : "False")}}}
+            replace_changed = {{{(replaceChanged ? "True" : "False")}}}
 
             # Characters Unreal replaces with '_' when it names an asset after its source file.
             INVALID_NAME = re.compile(r"[\"' ,/.:|&!~\n\r\t@#(){}\[\]=;^%$`]")
@@ -877,56 +981,95 @@ public sealed class DumpConversionService
             def load_ledger():
                 if os.path.exists(ledger_path):
                     with open(ledger_path, "r", encoding="utf-8") as stream:
-                        return json.load(stream)
-                return {}
+                        data = json.load(stream)
+                    if "Version" not in data:
+                        return {"Version": 2, "Entries": {}, "Legacy": data}
+                    if data["Version"] != 2:
+                        raise ValueError("Unsupported import-ledger version")
+                    return data
+                return {"Version": 2, "Entries": {}, "Legacy": {}}
 
             ledger = load_ledger()
+            entries = ledger["Entries"]
+            legacy = {os.path.normcase(path): paths for path, paths in ledger["Legacy"].items()}
 
-            def already_present(item):
-                recorded = ledger.get(item["SourceFile"])
-                if recorded:
-                    return all(unreal.EditorAssetLibrary.does_asset_exist(path.split(".", 1)[0]) for path in recorded)
-                return unreal.EditorAssetLibrary.does_asset_exist(asset_path(item))
+            def asset_exists(path):
+                return unreal.EditorAssetLibrary.does_asset_exist(path.split(".", 1)[0])
+
+            def legacy_present(item, destination):
+                paths = legacy.get(os.path.normcase(item["LegacySourceFile"]), [])
+                if paths and all(path.casefold().startswith(destination + "/") for path in paths):
+                    return all(asset_exists(path) for path in paths)
+                return asset_exists(asset_path(item))
+
+            def write_json(path, data):
+                temporary = path + ".tmp"
+                with open(temporary, "w", encoding="utf-8") as stream:
+                    json.dump(data, stream, indent=2)
+                os.replace(temporary, path)
 
             with open(manifest_path, "r", encoding="utf-8-sig") as stream:
                 manifest = json.load(stream)
 
-            present = []
-            tasks = []
+            present = 0
+            stale_files = []
+            pending = []
             for item in manifest:
-                if not overwrite and already_present(item):
-                    present.append(item["SourceFile"])
+                destination = item["DestinationPath"].casefold()
+                record = entries.get(item["SourceKey"], {}).get(destination)
+                replace = overwrite
+                if not overwrite and record:
+                    existing = [asset_exists(path) for path in record["Assets"]]
+                    if record["Fingerprint"] == item["Fingerprint"]:
+                        if existing and all(existing):
+                            present += 1
+                            continue
+                    elif any(existing):
+                        if not replace_changed:
+                            stale_files.append(item["SourceFile"])
+                            continue
+                        replace = True
+                elif not overwrite and legacy_present(item, destination):
+                    present += 1
                     continue
-                task = unreal.AssetImportTask()
-                task.filename = item["SourceFile"]
-                task.destination_path = item["DestinationPath"]
-                task.automated = True
-                task.replace_existing = overwrite
-                task.replace_existing_settings = overwrite
-                task.save = True
-                tasks.append(task)
-
-            if tasks:
-                unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks(tasks)
+                pending.append((item, destination, replace))
 
             failed_files = []
             imported = 0
-            for task in tasks:
-                paths = [str(path) for path in task.imported_object_paths]
-                if paths:
-                    imported += 1
-                    ledger[task.filename] = paths
-                else:
-                    failed_files.append(task.filename)
+            # Keep early checkpoints frequent without rewriting a growing ledger for every small batch.
+            batch_size = 32
+            offset = 0
+            while offset < len(pending):
+                batch = pending[offset:offset + batch_size]
+                tasks = []
+                for item, _, replace in batch:
+                    task = unreal.AssetImportTask()
+                    task.filename = item["SourceFile"]
+                    task.destination_path = item["DestinationPath"]
+                    task.automated = True
+                    task.replace_existing = replace
+                    task.replace_existing_settings = replace
+                    task.save = True
+                    tasks.append(task)
+                unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks(tasks)
+                for task, (item, destination, _) in zip(tasks, batch):
+                    paths = [str(path) for path in task.imported_object_paths]
+                    if paths:
+                        imported += 1
+                        entries.setdefault(item["SourceKey"], {})[destination] = {
+                            "Fingerprint": item["Fingerprint"], "Assets": paths,
+                        }
+                    else:
+                        failed_files.append(task.filename)
+                write_json(ledger_path, ledger)
+                offset += len(batch)
+                batch_size *= 2
 
-            with open(ledger_path, "w", encoding="utf-8") as stream:
-                json.dump(ledger, stream, indent=2)
             result = {"Imported": imported, "Failed": len(failed_files), "FailedFiles": failed_files,
-                      "AlreadyPresent": len(present)}
-            with open(result_path, "w", encoding="utf-8") as stream:
-                json.dump(result, stream, indent=2)
-            unreal.log("UEBulkExport dump conversion: imported={}, failed={}, already present={}".format(
-                imported, len(failed_files), len(present)))
+                      "AlreadyPresent": present, "StaleFiles": stale_files}
+            write_json(result_path, result)
+            unreal.log("UEBulkExport dump conversion: imported={}, failed={}, already present={}, stale={}".format(
+                imported, len(failed_files), present, len(stale_files)))
             """;
     }
 
@@ -936,17 +1079,20 @@ public sealed class DumpConversionService
         PropertyNameCaseInsensitive = true
     };
 
-    private sealed record ImportManifestEntry(string SourceFile, string DestinationPath);
-    private sealed record ImportResult(int Imported, int Failed, string[]? FailedFiles = null, int AlreadyPresent = 0);
+    private sealed record ImportManifestEntry(string SourceFile, string DestinationPath, string SourceKey,
+        string LegacySourceFile, string Fingerprint);
+    private sealed record ImportResult(int Imported, int Failed, string[]? FailedFiles = null, int AlreadyPresent = 0,
+        string[]? StaleFiles = null);
 
     /// <summary>
-    /// A read-only view of the dump for UE Viewer, minus the packages it must skip. Files are hard
-    /// links where the file system allows it, so the copy costs no space and no time; the dump
-    /// itself is never renamed, moved or written.
+    /// A temporary view for UE Viewer to read, minus the packages it must skip. Writable files
+    /// use hard links when possible. Read-only files are copied so cleanup can preserve the
+    /// original attributes.
     /// </summary>
     internal sealed class SourceMirror : IDisposable
     {
         private readonly string _source;
+        private bool _ownsRoot;
 
         public string Root { get; }
 
@@ -966,17 +1112,16 @@ public sealed class DumpConversionService
         public static SourceMirror Create(string source, string workingDirectory,
             IReadOnlySet<string> excluded, CancellationToken ct)
         {
-            var inWorking = Path.Combine(workingDirectory, "Source");
-            var candidates = new List<string>();
-            if (SameVolume(source, workingDirectory)) candidates.Add(inWorking);
-
+            ct.ThrowIfCancellationRequested();
+            var name = $".uebulkexport-mirror-{Guid.NewGuid():N}";
+            var inWorking = Path.Combine(workingDirectory, name);
             var parent = Path.GetDirectoryName(source);
-            if (!string.IsNullOrEmpty(parent))
-                candidates.Add(Path.Combine(parent, $".{Path.GetFileName(source)}.uebulkexport-mirror"));
+            var linkRoot = SameVolume(source, workingDirectory) ? inWorking
+                : parent is not null ? Path.Combine(parent, name) : null;
 
-            foreach (var root in candidates)
+            if (linkRoot is not null)
             {
-                var mirror = new SourceMirror(source, root);
+                var mirror = new SourceMirror(source, linkRoot);
                 try
                 {
                     mirror.Populate(excluded, allowCopies: false, ct);
@@ -985,6 +1130,11 @@ public sealed class DumpConversionService
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {
                     mirror.Dispose();
+                }
+                catch
+                {
+                    mirror.Dispose();
+                    throw;
                 }
             }
 
@@ -1003,31 +1153,32 @@ public sealed class DumpConversionService
 
         public void Exclude(string relative)
         {
-            var path = Path.Combine(Root, relative);
-            if (File.Exists(path)) DeleteLink(path);
+            var path = Path.GetFullPath(Path.Combine(Root, relative));
+            if (_ownsRoot && IsInsideOrSame(path, Root) && File.Exists(path)) File.Delete(path);
         }
 
         public void Dispose()
         {
-            if (!Directory.Exists(Root)) return;
+            if (!_ownsRoot) return;
             try
             {
-                foreach (var file in Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories))
-                    DeleteLink(file);
                 Directory.Delete(Root, recursive: true);
+                _ownsRoot = false;
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
-                // A leftover working copy is harmless and is replaced on the next run.
+                Log.Warn($"Could not remove the temporary conversion mirror '{Root}': {e.Message}");
             }
         }
 
         private void Populate(IReadOnlySet<string> excluded, bool allowCopies, CancellationToken ct)
         {
-            if (Directory.Exists(Root)) Directory.Delete(Root, recursive: true);
+            if (IsInsideOrSame(Root, _source) || Directory.Exists(Root))
+                throw new IOException($"The mirror folder cannot be used: {Root}");
             Directory.CreateDirectory(Root);
+            _ownsRoot = true;
 
-            foreach (var file in Directory.EnumerateFiles(_source, "*", SearchOption.AllDirectories))
+            foreach (var file in EnumerateDumpFiles(_source))
             {
                 ct.ThrowIfCancellationRequested();
                 var relative = Path.GetRelativePath(_source, file);
@@ -1036,33 +1187,16 @@ public sealed class DumpConversionService
 
                 var target = Path.Combine(Root, relative);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                if (CreateHardLink(target, file, IntPtr.Zero)) continue;
+                // A read-only hard link cannot be removed without changing the original's attributes.
+                var readOnly = File.GetAttributes(file).HasFlag(FileAttributes.ReadOnly);
+                if (!readOnly && CreateHardLink(target, file, IntPtr.Zero)) continue;
 
-                if (!allowCopies)
+                if (!readOnly && !allowCopies)
                     throw new IOException($"Cannot create a hard link to {file} (error {Marshal.GetLastWin32Error()}).");
                 File.Copy(file, target);
+                if (readOnly) File.SetAttributes(target, File.GetAttributes(target) & ~FileAttributes.ReadOnly);
                 UsedCopies = true;
             }
-        }
-
-        /// <summary>
-        /// A hard link shares its attributes with the original, so clearing read-only to delete the
-        /// link would change the dump; put the attribute back on the original afterwards.
-        /// </summary>
-        private void DeleteLink(string path)
-        {
-            var attributes = File.GetAttributes(path);
-            if ((attributes & FileAttributes.ReadOnly) == 0)
-            {
-                File.Delete(path);
-                return;
-            }
-
-            File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
-            File.Delete(path);
-            var original = Path.Combine(_source, Path.GetRelativePath(Root, path));
-            if (File.Exists(original) && (File.GetAttributes(original) & FileAttributes.ReadOnly) == 0)
-                File.SetAttributes(original, File.GetAttributes(original) | FileAttributes.ReadOnly);
         }
 
         private static bool SameVolume(string a, string b) =>
@@ -1086,7 +1220,8 @@ public sealed record DumpConversionOptions(
     TimeSpan? UModelInactivityTimeout = null,
     TimeSpan? EditorInactivityTimeout = null,
     string? MappingsPath = null,
-    string? VgmStreamPath = null);
+    string? VgmStreamPath = null,
+    bool ReplaceChanged = false);
 
 public sealed record DumpConversionProgress(string Stage, double Fraction, string Message);
 
@@ -1128,4 +1263,5 @@ public sealed record DumpConversionSummary(
     string WorkingDirectory,
     string TargetVersion,
     TimeSpan Elapsed,
-    int AlreadyPresent = 0);
+    int AlreadyPresent = 0,
+    int StaleFiles = 0);

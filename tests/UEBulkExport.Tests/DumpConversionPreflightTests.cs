@@ -93,6 +93,51 @@ public sealed class DumpConversionPreflightTests
     }
 
     [Fact]
+    public async Task Migration_and_preflight_reject_a_workspace_inside_the_dump_before_writing_files()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var temp = new TempDir();
+        var source = temp.Dir("Dump");
+        temp.File("Dump", "Texture.png");
+        var project = temp.File("Target.uproject");
+        File.WriteAllText(project, "{}");
+        var executable = temp.File("Tools", "editor.exe");
+        var work = Path.Combine(source, "Work");
+        var options = new DumpConversionOptions(source, "4.27", executable, project, executable,
+            "/Game/Checked", work);
+        var service = new DumpConversionService();
+
+        var plan = await service.PreflightAsync(options);
+
+        Assert.False(plan.CanProceed);
+        Assert.Contains(plan.Diagnostics, item => item.Code == "WorkingPathOverlap");
+        await Assert.ThrowsAsync<UserFacingException>(() => service.RunAsync(options));
+        Assert.False(Directory.Exists(work));
+    }
+
+    [Fact]
+    public async Task Active_workspace_reservation_prevents_another_migration_from_writing_to_it()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        using var temp = new TempDir();
+        var source = temp.Dir("Dump");
+        var project = temp.File("Target.uproject");
+        var executable = temp.File("Tools", "editor.exe");
+        var work = temp.Dir("Work");
+        using var activeRun = new FileStream(Path.Combine(work, ".conversion.lock"),
+            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+        var options = new DumpConversionOptions(source, "4.27", executable, project, executable,
+            "/Game/Checked", work);
+
+        var failure = await Assert.ThrowsAsync<UserFacingException>(() => new DumpConversionService().RunAsync(options));
+
+        Assert.Contains("another migration", failure.Hint);
+        Assert.False(Directory.Exists(Path.Combine(work, "Exported")));
+    }
+
+    [Fact]
     public async Task Hidden_packages_are_reported_as_recoverable_without_false_empty_source_blocker()
     {
         using var temp = new TempDir();

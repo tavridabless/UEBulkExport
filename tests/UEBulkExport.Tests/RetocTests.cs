@@ -30,4 +30,18 @@ public sealed class RetocTests
     {
         Assert.Null(Retoc.ToRetocEngineVersion(game));
     }
+
+    [Fact]
+    public async Task Retoc_diagnostics_retain_only_the_tail_and_redact_the_configured_key()
+    {
+        var key = new string('A', 64);
+        using var output = new StringReader(string.Join('\n', Enumerable.Range(1, 9).Select(n => $"line {n}")) +
+            $"\nreported key: {key.ToLowerInvariant()}\n");
+
+        var tail = await Retoc.ReadOutputTailAsync(output, "0x" + key, logSummary: false, default);
+
+        Assert.StartsWith("line 3", tail);
+        Assert.EndsWith("reported key: [redacted]", tail);
+        Assert.DoesNotContain(key, tail, StringComparison.OrdinalIgnoreCase);
+    }
 }
