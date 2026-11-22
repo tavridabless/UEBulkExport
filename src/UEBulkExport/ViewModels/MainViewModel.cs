@@ -27,6 +27,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public MigrateViewModel Migrate { get; }
     public BrowserViewModel Browser { get; } = new();
     public CompareViewModel Compare { get; }
+    public BlueprintViewModel Blueprint { get; }
     public LogViewModel Log { get; }
     public PluginsViewModel Plugins { get; }
     public SettingsViewModel Settings { get; }
@@ -42,8 +43,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     // Export and migration run independently; the status line follows whichever is working.
     public string StatusText => Export.IsRunning ? Export.StatusText
         : Migrate.IsBusy || Migrate.IsPreviewing ? Migrate.StatusText
-        : Compare.IsBusy ? Compare.StatusText : Export.StatusText;
-    public bool IsBusy => Export.IsBusy || Migrate.IsBusy || Migrate.IsPreviewing || Migrate.IsConfirming || Compare.IsBusy;
+        : Compare.IsBusy ? Compare.StatusText : Blueprint.IsBusy ? Blueprint.StatusText : Export.StatusText;
+    public bool IsBusy => Export.IsBusy || Migrate.IsBusy || Migrate.IsPreviewing || Migrate.IsConfirming ||
+        Compare.IsBusy || Blueprint.IsBusy;
     public double ProgressFraction => Export.IsRunning ? Export.ProgressFraction
         : Migrate.IsBusy ? Migrate.Progress : Compare.IsBusy ? Compare.Progress : Export.ProgressFraction;
     public bool ShowProgress => Export.ShowProgress || Migrate.IsBusy || Compare.IsBusy;
@@ -54,6 +56,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (Export.CancelCommand.CanExecute(null)) Export.CancelCommand.Execute(null);
         if (Migrate.CancelCommand.CanExecute(null)) Migrate.CancelCommand.Execute(null);
         if (Compare.CancelCommand.CanExecute(null)) Compare.CancelCommand.Execute(null);
+        if (Blueprint.CancelCommand.CanExecute(null)) Blueprint.CancelCommand.Execute(null);
     }
 
     /// <summary>
@@ -73,6 +76,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Export = new ExportViewModel(settings);
         Migrate = new MigrateViewModel(settings);
         Compare = new CompareViewModel(settings, Export.Games, () => Export.CanRun);
+        Blueprint = new BlueprintViewModel(Export);
         Log = new LogViewModel(App.LogSink);
         Plugins = new PluginsViewModel(settings);
         Settings = new SettingsViewModel(settings, notifications);
@@ -82,6 +86,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             new("migrate", "Nav.Migrate", Icons.Migrate),
             new("browser", "Nav.Browser", Icons.Browser),
             new("compare", "Nav.Compare", Icons.Compare),
+            new("blueprint", "Nav.Blueprint", Icons.Blueprint),
             new("log", "Nav.Log", Icons.Log)
         };
         pages.AddRange(Plugins.Catalog.Plugins.Where(plugin => plugin.IsLoaded).Select(plugin =>
@@ -171,6 +176,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                     break;
             }
         };
+        Blueprint.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(BlueprintViewModel.IsBusy)) OnPropertyChanged(nameof(IsBusy));
+            if (e.PropertyName is nameof(BlueprintViewModel.IsBusy) or nameof(BlueprintViewModel.StatusText))
+                OnPropertyChanged(nameof(StatusText));
+        };
 
         Loc.Instance.LanguageChanged += OnLanguageChanged;
     }
@@ -196,6 +207,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         Migrate.Dispose();
         Browser.Dispose();
         Compare.Dispose();
+        Blueprint.Dispose();
         Log.Dispose();
         Plugins.Dispose();
     }
@@ -214,6 +226,8 @@ internal static class Icons
         "M3 6 A2 2 0 0 1 5 4 L9 4 L11 6 L19 6 A2 2 0 0 1 21 8 L21 18 A2 2 0 0 1 19 20 L5 20 A2 2 0 0 1 3 18 Z M3 10 L21 10";
 
     public const string Compare = "M4 7 L20 7 M16 3 L20 7 L16 11 M20 17 L4 17 M8 13 L4 17 L8 21";
+
+    public const string Blueprint = "M2 3 L9 3 L9 9 L2 9 Z M15 15 L22 15 L22 21 L15 21 Z M9 6 L13 6 L13 18 L15 18";
 
     public const string Log =
         "M6 3 L15 3 L20 8 L20 21 L6 21 Z M15 3 L15 8 L20 8 M9 12 L17 12 M9 16 L17 16";

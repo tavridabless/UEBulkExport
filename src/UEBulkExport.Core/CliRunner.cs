@@ -12,6 +12,8 @@ public static class CliRunner
         try
         {
             if (args.Length > 0 && args[0] == "sample") return await AssetSampleCommand.RunAsync(args[1..], ct);
+            if (args.Length > 0 && args[0] == "source") return ManagedSourceCommand.Run(args[1..], ct);
+            if (args.Length > 0 && args[0] == "blueprint") return await BlueprintCommand.RunAsync(args[1..], ct);
             var isComparison = args.Length > 0 && args[0] == "compare";
             CompareManifestVerification? verification = null;
             var options = isComparison ? CompareCommand.Execute(args[1..], out verification, ct)

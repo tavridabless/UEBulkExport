@@ -45,6 +45,7 @@ public sealed partial class MainWindow : Window
         _pages["migrate"] = new MigrateView { DataContext = shell.Migrate };
         _pages["browser"] = new BrowserView { DataContext = shell.Browser };
         _pages["compare"] = new CompareView { DataContext = shell.Compare };
+        _pages["blueprint"] = new BlueprintView { DataContext = shell.Blueprint };
         _pages["log"] = new LogView { DataContext = shell.Log };
         foreach (var plugin in shell.Plugins.Catalog.Plugins.Where(plugin => plugin.Page is not null))
             _pages[plugin.PageKey] = plugin.Page!;

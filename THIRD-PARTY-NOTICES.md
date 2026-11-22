@@ -10,6 +10,7 @@ are, where they come from, how they reach your machine, and under what terms.
 |---|---|---|---|
 | [CUE4Parse](https://github.com/FabianFG/CUE4Parse) | 1.2.2.202609 | Apache-2.0 | Mounts `.utoc`/`.ucas`/`.pak`, reads IoStore packages, resolves unversioned properties against a `.usmap` |
 | [CUE4Parse-Conversion](https://github.com/FabianFG/CUE4Parse) | 1.2.2.202609 | Apache-2.0 | Decodes textures and audio, writes glTF, ActorX, USD, UEFormat and JSON |
+| [ICSharpCode.Decompiler](https://github.com/icsharpcode/ILSpy) | 11.2.0.10050 | MIT | Reconstructs editable C# from local managed IL |
 | [SixLabors.ImageSharp](https://github.com/SixLabors/ImageSharp) | 3.2.0 | Six Labors Split License 1.0 | Transitive image encoder used by CUE4Parse-Conversion, pinned to a security update |
 | [Newtonsoft.Json](https://github.com/JamesNK/Newtonsoft.Json) | 13.0.4 | MIT | JSON serialisation, required by CUE4Parse |
 | [Avalonia](https://github.com/AvaloniaUI/Avalonia) | 11.3.22 | MIT | UI toolkit for the desktop window (`UEBulkExport.exe` only) |

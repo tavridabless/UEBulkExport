@@ -42,6 +42,10 @@ public static class DialogService
         PickFileAsync("Dialog.PickExe", startPath,
             new FilePickerFileType(L["Dialog.Filter.Executables"]) { Patterns = OperatingSystem.IsWindows() ? ["*.exe"] : ["*"] });
 
+    public static Task<string?> PickUnrealEditorForRecoveryAsync() =>
+        PickFileAsync("Blueprint.ProjectRecovery.PickEditor", null,
+            new FilePickerFileType("UnrealEditor-Cmd.exe") { Patterns = ["UnrealEditor-Cmd.exe"] });
+
     public static Task<string?> PickLibraryAsync(string? startPath = null) =>
         PickFileAsync("Dialog.PickLibrary", startPath,
             new FilePickerFileType(L["Dialog.Filter.Libraries"]) { Patterns = ["*.dll", "*.so", "*.dylib"] });

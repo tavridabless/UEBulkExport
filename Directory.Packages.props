@@ -16,6 +16,7 @@
     <PackageVersion Include="CommunityToolkit.WinUI.Notifications" Version="7.1.2" />
     <PackageVersion Include="CUE4Parse" Version="1.2.2.202609" />
     <PackageVersion Include="CUE4Parse-Conversion" Version="1.2.2.202609" />
+    <PackageVersion Include="ICSharpCode.Decompiler" Version="11.2.0.10050" />
     <!-- The transitive minimum (9.0.0) carries advisory GHSA-73j8-2gch-69rq. -->
     <PackageVersion Include="Microsoft.Bcl.Memory" Version="10.0.12" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />

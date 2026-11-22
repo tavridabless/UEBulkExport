@@ -173,6 +173,102 @@ version works. Actual version migration still needs representative cooked assets
 With an existing import record, a later run reports source changes as stale by default.
 Choose **Replace changed assets** to reimport the changed assets and keep unchanged results.
 
+## Blueprint and C# recovery preview
+
+The **Blueprints** page and the `blueprint` command inspect generated classes retained in cooked
+packages. The report includes parent classes, available members and defaults, function signatures,
+decoded Kismet instructions and directly identifiable control-flow edges. Limits and unresolved or
+missing data are visible in the report. The CLI exits with 2 for an empty or incomplete scan.
+
+To recover supported Blueprint classes in one pass, run `blueprint dump`. It creates a fresh UE 5.8
+project with editable assets in `/Game/RecoveredBlueprints`, a dependency map and a coverage report.
+It transfers referenced `/Game` StaticMeshes from the archives, including meshes used by component
+overrides. The new assets keep their original object paths, sockets, readable consecutive render LODs
+and supported simple collision primitives. Shared material and texture dependencies are imported
+once. The editor creates editable materials from recognized named parameters in cooked material
+caches and instance overrides, and decodes their supported Texture2D inputs. Installed `/Engine`
+references resolve in the target editor.
+`mesh-imports.json` lists data that could only be partially recovered. Original material graphs,
+complex collision data and stripped LODs may be unavailable in the cooked build.
+Use `--managed-dir` to scan loose managed binaries for verified original C# in matching Portable PDBs.
+Add `--decompile-csharp` to generate C# projects for assemblies with no recovered originals.
+
+```bat
+UEBulkExport.Cli blueprint dump --out "D:\Recovery" --editor "C:\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" --managed-dir "D:\Build\Binaries\Managed" --paks "D:\Build\Paks" --game 5.8
+```
+
+The output is stored in a new `recovery-…` folder. Open `Project\RecoveredProject.uproject` when the
+run creates assets. `recovery-result.json` points to the plans and files that were produced. Exit
+code 2 preserves the result and indicates gaps such as skipped classes, stubs or missing sources.
+The CLI dump scans up to 2,000 packages and 100,000 instructions. Coverage records when a limit
+is reached. In the desktop, select **Blueprints → Links → Reconstruction → Recover in a new UE
+project** to restore eligible classes from the current scan. Use `--batch-plan` or the same
+desktop menu to save a plan without launching Unreal Editor.
+
+```bat
+UEBulkExport.Cli blueprint --report blueprint.json --dependency-map links.json --linked-plan plan.json --class "/Game/BP_Example.BP_Example_C" --paks "D:\Build\Paks" --game 5.8 --include "/(BP_Example|BFL_Example)[.]uasset$"
+UEBulkExport.Cli blueprint restore --plan plan.json --editor "C:\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" --project "D:\Recovery\Recovery.uproject"
+```
+
+Use the exact class path printed by the scan for `--class`. The desktop **Links** tab and the JSON
+dependency map show observed parent, function call and directly referenced type relationships.
+The map distinguishes inspected targets, references outside the scan, native targets and unresolved
+calls. In the desktop, select a linked class to inspect it or show indirect links within the scan.
+
+Reconstruction creates editable Actor Blueprints and Blueprint Function Libraries in a Windows UE 5.8
+project with the Python Editor Script Plugin. Supported integer and Boolean bodies include constant
+returns, direct parameter returns, a Boolean branch with two literal returns, and verified calls to
+pure Blueprint Function Library functions that return their single scalar argument. A linked plan
+also supports proven reads and writes of scalar instance members, multiple custom events with
+typed scalar parameters and supported assignments, and virtual calls to supported pure functions
+without arguments on a typed Blueprint object input. When the editor assigns a generated event
+name, recovery can preserve the original callable entry point with a forwarding function.
+
+Plans can restore local SceneComponent and StaticMeshComponent trees on an Actor Blueprint, including
+available relative transforms, visibility flags, mesh references and supported socket attachments.
+Derived Actor Blueprints can inherit the reconstructed parent, override a supported pure function,
+and retain serialized scalar defaults and supported component template overrides. The plan creates
+the needed classes before their descendants and callers. Include the relevant classes in the scan.
+
+When restoring a standalone plan, use StaticMesh assets available in the target Unreal Editor
+project. To use a mesh available at another path, pass `--mesh-map` to `blueprint restore` or
+`blueprint dump`. Explicit mappings take precedence over automatic transfer and use exact
+Unreal object paths.
+
+```json
+{
+  "schemaVersion": 1,
+  "meshes": {
+    "/Game/Geometry/SM_Table.SM_Table": "/Game/Imported/SM_Table.SM_Table"
+  }
+}
+```
+
+Socket attachments require the socket on the selected StaticMesh. Use a prepared target project
+with `blueprint restore --project ...` for meshes you imported yourself.
+Use `--plan` for a single class.
+Other supported signatures receive marked stubs, and the report records omissions. Original editor
+layout, macro boundaries, arbitrary event graphs and native function bodies are outside this scope.
+Use assets you have the right to recover and supply a local AES key or mappings if required.
+
+The `source` command checks a managed C# assembly for original source stored in its embedded or
+matching sidecar Portable PDB. It copies verified bytes into a fresh folder without invoking the
+assembly. If the PDB contains no embedded source, the command reports the missing documents.
+
+```bat
+UEBulkExport.Cli source --assembly "D:\Build\Binaries\Managed\MyGame.dll" --out "D:\Recovery"
+```
+
+`source decompile` uses ILSpy to generate editable `.cs` files and an SDK project from managed IL
+without a PDB. It reports unresolved assembly references. Add `--reference-dir` for directories
+containing dependencies. Build the generated project with the .NET 10 SDK and the targeting pack
+for the framework listed in the report. Decompiled sources approximate the original code.
+Project generation completes without compiling or running the assembly.
+
+```bat
+UEBulkExport.Cli source decompile --assembly "D:\Build\Binaries\Managed\MyGame.dll" --reference-dir "D:\Build\Dependencies" --out "D:\Recovery"
+```
+
 ## Output
 
 <p align="center">
@@ -357,7 +453,7 @@ dump: `<project>\Saved\UEBulkExport\DumpConversion\<dump>_<version>_<id>\`. The 
 | `import-ledger.json` | Which source file produced which asset; used by repeated runs |
 
 **Limitations.** Migration rebuilds assets from cooked data; it is not an uncooker. Meshes,
-textures and supported audio can be restored. Blueprint graphs, materials, levels, Niagara
+textures and supported audio can be restored. Original Blueprint graphs, materials, levels, Niagara
 systems and other editor-only data were removed when the game was cooked and cannot be
 recovered. ActorX animation files (`.psa`, `.psk`) are listed in the report but are
 not imported, because Unreal Engine 5 cannot read them natively. Only migrate assets you have

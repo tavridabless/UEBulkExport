@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Inspect cooked Blueprint class metadata and Kismet bytecode from the desktop and CLI.
+- Rebuild supported editable Actor Blueprints and Blueprint Function Libraries in Unreal Editor 5.8,
+  including Boolean branches and verified calls to pure library functions.
+- Browse direct and indirect Blueprint dependencies on the desktop, export the dependency map,
+  and create a linked reconstruction plan that restores required libraries before their callers.
+- Recover all eligible scanned Blueprint classes into a new Unreal Editor 5.8 project in one
+  command, with coverage reports and optional verified C# source from local managed assemblies.
+- Recover original C# documents byte-for-byte from matching Portable PDBs with embedded sources.
+- Decompile supported managed assemblies without PDBs into editable C# files and SDK projects.
+- Rebuild proven Blueprint custom events with scalar inputs, scalar instance variable access, and
+  typed virtual calls.
+- Restore editable SceneComponent trees and supported Actor Blueprint inheritance, including
+  serialized inherited defaults and pure function overrides.
+- Restore StaticMeshComponent references, socket attachments and supported inherited component
+  template overrides with optional target mesh remapping.
+- Transfer referenced StaticMesh geometry and native sockets from cooked archives when creating a
+  new UE 5.8 Blueprint recovery project.
+- Import readable additional StaticMesh LODs, supported simple collision shapes and shared
+  material and texture dependencies into the recovered project. Report partial transfers.
+
 ## [2.2.0] - 2026-11-22
 
 ### Added

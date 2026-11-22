@@ -113,7 +113,8 @@ public sealed class Options
           UEBulkExport.Cli recipe --help                       (portable export settings)
           UEBulkExport.Cli sample --help                       (convert a small sample by asset type)
           UEBulkExport.Cli compare --help                      (compare two builds)
-          UEBulkExport.Cli recipe --help                       (save and apply portable export options)
+          UEBulkExport.Cli source --help                       (recover or decompile managed C#)
+          UEBulkExport.Cli blueprint --help                    (inspect and restore cooked Blueprint logic)
         PATHS
           --paks <path>         Where the containers are. Accepts the Paks folder itself, any
                                 folder above it (the game's root works), or a single .utoc file.

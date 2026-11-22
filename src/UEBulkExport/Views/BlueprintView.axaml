@@ -1,0 +1,217 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="using:UEBulkExport.Gui.Localization"
+             xmlns:vm="using:UEBulkExport.Gui.ViewModels"
+             x:Class="UEBulkExport.Gui.Views.BlueprintView"
+             x:DataType="vm:BlueprintViewModel">
+  <UserControl.Styles>
+    <Style Selector="TabControl.BlueprintDetails TabItem">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="Padding" Value="10,6" />
+    </Style>
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="12" Margin="28,24,28,18">
+    <StackPanel>
+      <TextBlock Classes="PageTitle" Text="{loc:Tr Blueprint.Title}" />
+      <TextBlock Classes="PageSubtitle" Text="{loc:Tr Blueprint.Subtitle}" />
+    </StackPanel>
+
+    <Border Grid.Row="1" Classes="Card" Padding="14,12" IsEnabled="{Binding CanEdit}">
+      <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+          <TextBox Text="{Binding PaksPath}" Watermark="{loc:Tr Blueprint.Source}"
+                   AutomationProperties.Name="{loc:Tr Blueprint.Source}" AutomationProperties.AutomationId="BlueprintSource" />
+          <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFolder}" Command="{Binding BrowseFolderCommand}" />
+          <Button Grid.Column="2" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseContainerCommand}" />
+        </Grid>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+          <TextBox Text="{Binding PackagePath}" Watermark="{loc:Tr Blueprint.Package.Optional}"
+                   ToolTip.Tip="{loc:Tr Blueprint.Package.Hint}" AutomationProperties.AutomationId="BlueprintPackage"
+                   AutomationProperties.Name="{loc:Tr Blueprint.Package}" />
+          <Button Grid.Column="1" Content="{loc:Tr Blueprint.Source.UseExport}" Command="{Binding UseExportCommand}" />
+        </Grid>
+        <Expander Header="{loc:Tr Blueprint.Options}" IsExpanded="{Binding AdvancedOpen}">
+          <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="8">
+            <StackPanel>
+              <TextBlock Classes="Label" Text="{loc:Tr Blueprint.Engine}" />
+              <ComboBox ItemsSource="{Binding Games}" SelectedItem="{Binding Game}" MaxDropDownHeight="340"
+                        AutomationProperties.Name="{loc:Tr Blueprint.Engine}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1">
+              <TextBlock Classes="Label" Text="{loc:Tr Blueprint.Aes}" />
+              <TextBox Text="{Binding AesText}" PasswordChar="●" ToolTip.Tip="{loc:Tr Blueprint.Aes.Hint}"
+                       AutomationProperties.Name="{loc:Tr Blueprint.Aes}" />
+            </StackPanel>
+            <StackPanel Grid.Row="1" Grid.ColumnSpan="2">
+              <TextBlock Classes="Label" Text="{loc:Tr Blueprint.Usmap}" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBox Text="{Binding UsmapPath}" AutomationProperties.Name="{loc:Tr Blueprint.Usmap}" />
+                <Button Grid.Column="1" Content="{loc:Tr Common.BrowseFile}" Command="{Binding BrowseUsmapCommand}" />
+              </Grid>
+            </StackPanel>
+          </Grid>
+        </Expander>
+      </StackPanel>
+    </Border>
+
+    <StackPanel Grid.Row="2" Spacing="6">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+        <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" TextWrapping="Wrap" />
+        <Button Grid.Column="1" Content="{loc:Tr Blueprint.Output.Save}" Command="{Binding SaveReportCommand}"
+                AutomationProperties.AutomationId="SaveBlueprintReport" IsVisible="{Binding HasReport}" />
+        <Button Grid.Column="2" Content="{loc:Tr Common.Cancel}" Command="{Binding CancelCommand}"
+                IsVisible="{Binding CanCancel}" />
+        <Button Grid.Column="3" Content="{loc:Tr Blueprint.Run}" Classes="Primary" Command="{Binding AnalyzeCommand}"
+                AutomationProperties.AutomationId="AnalyzeBlueprint" />
+      </Grid>
+      <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}"
+                   AutomationProperties.Name="{Binding StatusText}" />
+      <TextBlock Classes="Error" Text="{Binding Error}" IsVisible="{Binding HasError}" />
+    </StackPanel>
+
+    <Border Grid.Row="3" Classes="Card" Padding="12" IsVisible="{Binding HasReport}">
+      <Grid RowDefinitions="Auto,Auto,*" RowSpacing="8">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" VerticalAlignment="Center" />
+          <Button Grid.Column="1" Content="{loc:Tr Blueprint.Reconstruction.Save}" IsVisible="{Binding HasClasses}"
+                  Command="{Binding SaveReconstructionCommand}" ToolTip.Tip="{loc:Tr Blueprint.Reconstruction.Hint}"
+                  AutomationProperties.AutomationId="SaveBlueprintReconstruction" />
+        </Grid>
+        <TextBlock Grid.Row="1" Classes="Warning" Text="{Binding CoverageWarning}"
+                   IsVisible="{Binding HasCoverageWarning}" Margin="0" />
+        <Grid Grid.Row="2" ColumnDefinitions="210,*" ColumnSpacing="12">
+          <Grid RowDefinitions="Auto,Auto,*" RowSpacing="6">
+            <ComboBox ItemsSource="{Binding Classes}" SelectedItem="{Binding SelectedClass}" MaxDropDownHeight="325"
+                      AutomationProperties.Name="{loc:Tr Blueprint.Class}" IsVisible="{Binding HasClasses}">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:BlueprintClassRow">
+                  <TextBlock Text="{Binding Name}" ToolTip.Tip="{Binding Path}" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <TextBox Grid.Row="1" Text="{Binding Search}" Watermark="{loc:Tr Blueprint.Function.Search}"
+                     AutomationProperties.Name="{loc:Tr Blueprint.Function.Search}" IsVisible="{Binding HasFunctions}" />
+            <ListBox Grid.Row="2" ItemsSource="{Binding VisibleFunctions}" SelectedItem="{Binding SelectedFunction}"
+                     AutomationProperties.Name="{loc:Tr Blueprint.Function.List}">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:BlueprintFunctionRow">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding Name}" FontWeight="Medium" TextTrimming="CharacterEllipsis"
+                               ToolTip.Tip="{Binding Path}" />
+                    <TextBlock Text="{Binding ClassName}" Classes="Hint" Margin="0" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Grid.Row="2" Text="{loc:Tr Blueprint.Function.Empty}" Classes="Hint" TextWrapping="Wrap"
+                       Margin="8" IsVisible="{Binding !HasVisibleFunctions}" />
+          </Grid>
+
+          <Grid Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="6">
+            <StackPanel IsVisible="{Binding HasSelectedFunction}">
+              <TextBlock Text="{Binding SelectedFunction.Title}" Classes="CardTitle" TextTrimming="CharacterEllipsis"
+                         ToolTip.Tip="{Binding SelectedFunction.Path}" />
+              <TextBlock Text="{Binding SelectedFunction.Coverage}" Classes="Hint" Margin="0" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <TabControl Grid.Row="1" Classes="BlueprintDetails" SelectedIndex="{Binding ResultTabIndex}">
+              <TabItem Header="{loc:Tr Blueprint.Instructions}">
+                <Grid RowDefinitions="Auto,*">
+                  <TextBlock Text="{Binding SelectedFunction.Note}" Classes="Hint" TextWrapping="Wrap" />
+                  <ListBox Grid.Row="1" ItemsSource="{Binding SelectedFunction.Instructions}"
+                           AutomationProperties.Name="{loc:Tr Blueprint.Instructions}">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding}" Classes="Mono" TextWrapping="Wrap" />
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </Grid>
+              </TabItem>
+              <TabItem Header="{loc:Tr Blueprint.Flow}">
+                <ListBox ItemsSource="{Binding SelectedFunction.ControlFlow}"
+                         AutomationProperties.Name="{loc:Tr Blueprint.Flow}">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding}" Classes="Mono" TextWrapping="Wrap" />
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </TabItem>
+              <TabItem Header="{loc:Tr Blueprint.Values}">
+                <ListBox ItemsSource="{Binding DetailValues}"
+                         AutomationProperties.Name="{loc:Tr Blueprint.Values}">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Text="{Binding}" Classes="Mono" TextWrapping="Wrap" />
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </TabItem>
+              <TabItem Header="{loc:Tr Blueprint.Diagnostics}">
+                <Panel>
+                  <ListBox ItemsSource="{Binding Diagnostics}" AutomationProperties.Name="{loc:Tr Blueprint.Diagnostics}">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate>
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                  <TextBlock Text="{loc:Tr Blueprint.Diagnostics.Empty}" Classes="Hint" Margin="8"
+                             IsVisible="{Binding !HasDiagnostics}" />
+                </Panel>
+              </TabItem>
+              <TabItem Header="{loc:Tr Blueprint.Dependencies}" AutomationProperties.AutomationId="BlueprintDependencies">
+                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="5">
+                  <WrapPanel Orientation="Horizontal">
+                    <CheckBox Content="{loc:Tr Blueprint.Dependencies.Transitive}" IsChecked="{Binding IncludeTransitiveLinks}"
+                              AutomationProperties.AutomationId="IncludeTransitiveBlueprintLinks" Margin="0,0,8,4" />
+                    <Button Content="{loc:Tr Blueprint.Dependencies.Open}" Command="{Binding OpenDependencyCommand}"
+                            Margin="0,0,8,4" />
+                    <Button Content="{loc:Tr Blueprint.Dependencies.Reconstruction}" IsEnabled="{Binding CanSave}"
+                            AutomationProperties.AutomationId="SaveBlueprintPlans" Margin="0,0,0,4">
+                      <Button.Flyout>
+                        <MenuFlyout>
+                          <MenuItem Header="{loc:Tr Blueprint.ProjectRecovery.Run}" Command="{Binding RecoverProjectCommand}"
+                                    AutomationProperties.AutomationId="RecoverBlueprintProject"
+                                    ToolTip.Tip="{loc:Tr Blueprint.ProjectRecovery.Hint}" />
+                          <MenuItem Header="{loc:Tr Blueprint.Dependencies.Save}" Command="{Binding SaveLinkedReconstructionCommand}"
+                                    AutomationProperties.AutomationId="SaveLinkedBlueprintPlan"
+                                    ToolTip.Tip="{loc:Tr Blueprint.Dependencies.Save.Hint}" />
+                          <MenuItem Header="{loc:Tr Blueprint.Batch.Save}" Command="{Binding SaveBatchReconstructionCommand}"
+                                    AutomationProperties.AutomationId="SaveBatchBlueprintPlan"
+                                    ToolTip.Tip="{loc:Tr Blueprint.Batch.Hint}" />
+                        </MenuFlyout>
+                      </Button.Flyout>
+                    </Button>
+                  </WrapPanel>
+                  <TextBlock Grid.Row="1" Classes="Hint" Text="{Binding DependencySummary}" IsVisible="{Binding HasDependencyLinks}" />
+                  <ListBox Grid.Row="2" ItemsSource="{Binding DependencyLinks}" SelectedItem="{Binding SelectedDependency}"
+                           AutomationProperties.Name="{loc:Tr Blueprint.Dependencies}">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:BlueprintDependencyRow">
+                        <StackPanel Spacing="2" ToolTip.Tip="{Binding TargetLabel}">
+                          <TextBlock Text="{Binding TargetLabel}" TextTrimming="CharacterEllipsis" FontWeight="Medium" />
+                          <WrapPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Relation}" Classes="Hint" Margin="0,0,10,0" />
+                            <TextBlock Text="{Binding Resolution}" Classes="Hint" Margin="0,0,10,0" />
+                            <TextBlock Text="{loc:Tr Blueprint.Dependencies.Required}" IsVisible="{Binding Edge.IsRequiredForReconstruction}"
+                                       Classes="Hint" Margin="0" />
+                          </WrapPanel>
+                          <TextBlock Text="{Binding Context}" Classes="Mono" TextTrimming="CharacterEllipsis"
+                                     ToolTip.Tip="{Binding FullContext}" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                  <TextBlock Grid.Row="2" Text="{loc:Tr Blueprint.Dependencies.Empty}" Classes="Hint" Margin="8"
+                             TextWrapping="Wrap" IsVisible="{Binding !HasDependencyLinks}" />
+                </Grid>
+              </TabItem>
+            </TabControl>
+          </Grid>
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

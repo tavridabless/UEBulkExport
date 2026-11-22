@@ -10,12 +10,17 @@
   <ItemGroup>
     <PackageReference Include="CUE4Parse" />
     <PackageReference Include="CUE4Parse-Conversion" />
+    <PackageReference Include="ICSharpCode.Decompiler" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="Microsoft.Bcl.Memory" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="UEBulkExport.Tests" />
+    <None Update="ThirdParty/ILSpy-LICENSE.txt" TargetPath="ILSpy-LICENSE.txt"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="../../tools/blueprint-recovery/import_blueprint.py"
+                      LogicalName="UEBulkExport.ImportBlueprint" />
   </ItemGroup>
 
 </Project>

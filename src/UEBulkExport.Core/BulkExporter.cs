@@ -159,7 +159,10 @@ public sealed partial class BulkExporter : IDisposable
 
     // ------------------------------------------------------------------ selection
 
-    public IReadOnlyList<GameFile> SelectFiles(CancellationToken cancellationToken = default)
+    public IReadOnlyList<GameFile> SelectFiles(CancellationToken cancellationToken = default) =>
+        SelectFiles(cancellationToken, allowEmpty: false);
+
+    private IReadOnlyList<GameFile> SelectFiles(CancellationToken cancellationToken, bool allowEmpty)
     {
         var include = Cli.CompileFilter(_options.IncludeRegex, "--include");
         var exclude = Cli.CompileFilter(_options.ExcludeRegex, "--exclude");
@@ -178,7 +181,7 @@ public sealed partial class BulkExporter : IDisposable
             .ToList();
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (selected.Count == 0 && (include is not null || exclude is not null || _options.SelectedPaths is not null))
+        if (!allowEmpty && selected.Count == 0 && (include is not null || exclude is not null || _options.SelectedPaths is not null))
             throw new UserFacingException(
                 "The filters matched nothing.",
                 "Check --include / --exclude, or run with --mode list to see the container paths.");
